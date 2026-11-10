@@ -77,7 +77,7 @@
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@flamboyantengineer/ui-components": "git+https://github.com/FlamboyantEngineer/ui-components.git#9b3f8f1e32a100a0c1e2da6922d998df0ab0b53c",
+    "@flamboyantengineer/ui-components": "git+https://github.com/FlamboyantEngineer/ui-components.git#3f7adc110178af35a15f0ed82fc1cd3d9aa3189d",
     "esbuild": "^0.28.1",
     "eslint": "^10.6.0",
     "globals": "^17.0.0",

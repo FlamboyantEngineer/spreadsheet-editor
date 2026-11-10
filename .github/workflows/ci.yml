@@ -18,14 +18,6 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - name: Read the private base component library
-        env:
-          TOKEN: ${{ secrets.UI_COMPONENTS_READ_TOKEN }}
-        run: |
-          base="https://x-access-token:${TOKEN}@github.com/FlamboyantEngineer/"
-          git config --global --add url."$base".insteadOf "https://github.com/FlamboyantEngineer/"
-          git config --global --add url."$base".insteadOf "ssh://git@github.com/FlamboyantEngineer/"
-          git config --global --add url."$base".insteadOf "git@github.com:FlamboyantEngineer/"
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run check
