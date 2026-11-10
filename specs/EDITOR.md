@@ -32,6 +32,14 @@ Implementation: `scripts/labs.mjs`, `scripts/build-labs.mjs`, `labs/src/main.tsx
 
 Verification: `e2e/editor.spec.ts`, launched by the Playwright web-server configuration through `npm run labs`.
 
+## SE-LABS-2 — Installation diagnostics and portable startup
+
+Labs require Node 22 or newer and a completed development dependency installation (`npm ci --include=dev`). The launcher and standalone labs build must report a missing esbuild package with the exact installation command and private-library access guidance, without an uncaught module-resolution traceback. Actual build errors and missing transitive dependencies must retain their original diagnostics. Git package preparation launches the current Node executable directly, including from Windows paths with spaces, without relying on a shell or npm.cmd.
+
+Implementation: `scripts/lib/labs-setup.mjs`, `scripts/labs.mjs`, `scripts/build-labs.mjs`, `scripts/prepare.mjs`.
+
+Verification: `src/tooling/labs-startup.test.ts`, existing browser labs tests.
+
 ## Extraction boundary
 
 This stage extracts reusable grid and parser modules and provides an independent rational calculation engine, complete editor chrome, comments, tracked suggestions and host-neutral integration APIs. Existing consumers are migrated separately. Storage, authorization, collaboration transports, durable history and application lifecycle services stay outside this package. Hosts may supply extra workflow/assistant panes. Built-in unit/quantity evaluation, application-specific external formulas and XLSX import/export are outside this contract. Row/column insertion/deletion rewrites references and moves review anchors within the package.

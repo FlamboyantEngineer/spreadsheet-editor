@@ -17,7 +17,7 @@ This private `0.x` package is the standalone extraction stage. Consumer migratio
 Use Node 22 or newer and Git access to the private base component library:
 
 ```sh
-npm ci
+npm ci --include=dev
 npm run labs
 ```
 
@@ -28,6 +28,8 @@ npm run labs -- --port 4200 --host 0.0.0.0
 ```
 
 The included server is a local development harness. Mount `handleCalculationRequest` behind your application's routing and authorization for a deployed server.
+
+If startup reports that `esbuild` is missing, the checkout has no complete development install. Run `npm ci --include=dev` from the repository root and check that it finishes successfully before rerunning labs. This also includes development tools when `NODE_ENV=production` or an npm omit setting would otherwise leave them out. Git must be able to read the private `FlamboyantEngineer/ui-components` dependency; fix any installation/authentication error before starting labs. Use Node 22 or newer. These commands work in PowerShell and other supported shells.
 
 ## Embed the editor
 
