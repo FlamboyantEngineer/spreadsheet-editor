@@ -34,7 +34,7 @@ Verification: `e2e/editor.spec.ts`, launched by the Playwright web-server config
 
 ## SE-LABS-2 — Installation diagnostics and portable startup
 
-Labs require Node 22 or newer and a completed development dependency installation (`npm ci --include=dev`). The launcher and standalone labs build must report a missing esbuild package with the exact installation command and private-library access guidance, without an uncaught module-resolution traceback. Actual build errors and missing transitive dependencies must retain their original diagnostics. Git package preparation launches the current Node executable directly, including from Windows paths with spaces, without relying on a shell or npm.cmd.
+Labs require Node 22 or newer and a completed development dependency installation (`npm ci --include=dev`). The launcher and standalone labs build must report a missing esbuild package with the exact installation command and public-library installation guidance, without an uncaught module-resolution traceback. Actual build errors and missing transitive dependencies must retain their original diagnostics. Git package preparation launches the current Node executable directly, including from Windows paths with spaces, without relying on a shell or npm.cmd.
 
 Implementation: `scripts/lib/labs-setup.mjs`, `scripts/labs.mjs`, `scripts/build-labs.mjs`, `scripts/prepare.mjs`.
 

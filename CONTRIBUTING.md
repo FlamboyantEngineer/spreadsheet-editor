@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node 22 or newer, `npm ci`, and a scoped branch from `dev`. The private base component library is pinned by Git SHA in the development manifest and lockfile; hosts supply it as a peer. Keep React as a peer to avoid multiple renderer instances.
+Use Node 22 or newer, `npm ci`, and a scoped branch from `dev`. The public `@flamboyantengineer/ui-components` library from [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) is pinned by Git SHA in the development manifest and lockfile; hosts supply it as a peer. Keep React as a peer to avoid multiple renderer instances.
 
 Run `npm run labs` to build and serve the standalone demos, including the server evaluator. Changes require `npm run check` before commit. Use TypeScript tests beside source and browser tests under `e2e/`; test observable behavior and name the owning `SE-*` requirement. Update specifications and public type documentation with contract changes.
 
@@ -10,4 +10,4 @@ All generic UI controls use the base component library. React owns the toolbar, 
 
 The package is experimental until 1.0. Keep serialized model versions explicit and document incompatible changes. The initial extraction deliberately leaves consumer migration to separate changes. Source modules and their origin commit are recorded in NOTICE.md.
 
-CI uses the `UI_COMPONENTS_READ_TOKEN` repository secret for the private Git dependency. It needs read access to the base component repository. Never put tokens in manifests or lockfiles.
+The base component repository is public. Local installs and CI need no private-library token. Never put credentials in manifests or lockfiles.

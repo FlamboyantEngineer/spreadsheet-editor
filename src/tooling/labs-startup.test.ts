@@ -45,7 +45,8 @@ describe('SE-LABS-2: startup diagnostics and portable preparation', () => {
       expect(result.error).toBeUndefined();
       expect(result.stderr).toContain('esbuild is missing');
       expect(result.stderr).toContain('npm ci --include=dev');
-      expect(result.stderr).toContain('private ui-components repository');
+      expect(result.stderr).toContain('https://github.com/FlamboyantEngineer/ui-components');
+      expect(result.stderr).toContain('no private-library token is required');
       expect(result.stderr).not.toContain('ERR_MODULE_NOT_FOUND');
     },
   );

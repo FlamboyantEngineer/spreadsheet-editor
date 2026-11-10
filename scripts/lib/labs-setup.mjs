@@ -19,7 +19,7 @@ export async function loadEsbuild() {
           'From the repository root, run:\n\n' +
           '  npm ci --include=dev\n' +
           '  npm run labs\n\n' +
-          'If installation fails while fetching the private ui-components repository, fix GitHub access and rerun npm ci --include=dev.',
+          'If installation fails while fetching https://github.com/FlamboyantEngineer/ui-components, resolve the installation error and rerun npm ci --include=dev. This dependency is public; no private-library token is required.',
       );
     }
     throw error;

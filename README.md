@@ -14,7 +14,7 @@ This private `0.x` package is the standalone extraction stage. Consumer migratio
 
 ## Run the labs
 
-Use Node 22 or newer and Git access to the private base component library:
+Use Node 22 or newer and Git. The base component library comes from the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository:
 
 ```sh
 npm ci --include=dev
@@ -29,7 +29,7 @@ npm run labs -- --port 4200 --host 0.0.0.0
 
 The included server is a local development harness. Mount `handleCalculationRequest` behind your application's routing and authorization for a deployed server.
 
-If startup reports that `esbuild` is missing, the checkout has no complete development install. Run `npm ci --include=dev` from the repository root and check that it finishes successfully before rerunning labs. This also includes development tools when `NODE_ENV=production` or an npm omit setting would otherwise leave them out. Git must be able to read the private `FlamboyantEngineer/ui-components` dependency; fix any installation/authentication error before starting labs. Use Node 22 or newer. These commands work in PowerShell and other supported shells.
+If startup reports that `esbuild` is missing, the checkout has no complete development install. Run `npm ci --include=dev` from the repository root and check that it finishes successfully before rerunning labs. This also includes development tools when `NODE_ENV=production` or an npm omit setting would otherwise leave them out. Git must be able to fetch the public `FlamboyantEngineer/ui-components` dependency; resolve any installation error before starting labs. No private-library token is required. Use Node 22 or newer. These commands work in PowerShell and other supported shells.
 
 ## Embed the editor
 
@@ -165,6 +165,6 @@ The server-safe `createDocumentInsertion(workbook, result, options)` helper expo
 npm run check
 ```
 
-Checks include lint, formatting, types, unit tests, a clean package build, built-entry-point imports in plain Node, and Chromium browser tests. Browser tests use `CHROMIUM_PATH`, system Chromium when available, or Playwright's browser (`npx playwright install chromium`). CI needs `UI_COMPONENTS_READ_TOKEN` to install the private base library, as in the companion libraries.
+Checks include lint, formatting, types, unit tests, a clean package build, built-entry-point imports in plain Node, and Chromium browser tests. Browser tests use `CHROMIUM_PATH`, system Chromium when available, or Playwright's browser (`npx playwright install chromium`). CI installs the public base library without a private-repository token.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [source provenance](NOTICE.md). Application-specific external formulas, unit/quantity evaluation and XLSX import/export are outside this package; unknown functions return `#NAME?`. Hosts can use the formula adapter for application functions. CSV and workbook JSON import, workbook JSON export and clipboard operations are built in.
