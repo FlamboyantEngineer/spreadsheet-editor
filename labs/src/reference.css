@@ -1,0 +1,240 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #182735;
+  background: #f6f8fa;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 48px 32px;
+}
+header {
+  max-width: 800px;
+  margin-bottom: 32px;
+}
+h1 {
+  font-size: clamp(30px, 4vw, 46px);
+  letter-spacing: -0.04em;
+  margin: 10px 0 18px;
+}
+h2 {
+  font-size: 23px;
+  letter-spacing: -0.025em;
+}
+p {
+  line-height: 1.6;
+  color: #4d5d6b;
+}
+.lab-eyebrow {
+  color: #26736c;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.lab-controls,
+.se-editor__toolbar,
+.se-editor__formula-bar,
+.se-editor__sheets,
+.se-editor__insertion {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.lab-controls {
+  margin-bottom: 22px;
+}
+.ui-button {
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 14px;
+  border: 1px solid #c7d3db;
+  border-radius: 6px;
+  background: white;
+  color: #213845;
+  cursor: pointer;
+}
+.ui-button[data-selected],
+.ui-button[aria-pressed='true'] {
+  background: #e3f2ef;
+  border-color: #5b9b92;
+  color: #18584f;
+}
+.ui-button[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+.ui-button:focus-visible,
+.ui-text-field input:focus-visible {
+  outline: 2px solid #258475;
+  outline-offset: 3px;
+}
+.ui-text-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ui-field__label {
+  font-size: 12px;
+  color: #4d5d6b;
+}
+.ui-text-field input {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid #c7d3db;
+  border-radius: 5px;
+  width: 100%;
+  min-width: 70px;
+}
+.lab-controls .ui-text-field {
+  max-width: 235px;
+}
+.lab-examples {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.lab-examples > div {
+  padding: 18px;
+  border: 1px solid #d7e0e5;
+  background: white;
+  border-radius: 8px;
+  overflow: auto;
+}
+.lab-examples span {
+  display: block;
+  font-size: 12px;
+  color: #59707d;
+  margin-bottom: 10px;
+}
+.lab-examples output {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.se-editor {
+  border: 1px solid #cdd8de;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 20px 0;
+}
+.se-editor__formula-bar {
+  padding: 14px;
+  background: #f8fbfc;
+  border-bottom: 1px solid #dbe3e8;
+}
+.se-editor__formula-bar .ui-text-field {
+  flex: 1;
+  min-width: 250px;
+}
+.se-editor__formula-bar .ui-field__label {
+  white-space: nowrap;
+}
+.se-editor__formula-bar .ui-field__control {
+  flex: 1;
+}
+.se-editor__formula-bar output {
+  min-width: 160px;
+  font:
+    12px ui-monospace,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.se-editor__address {
+  font:
+    13px ui-monospace,
+    monospace;
+  min-width: 30px;
+}
+.se-editor__engine {
+  width: 100%;
+}
+.se-editor__engine .jtabs-headers,
+.se-editor__engine .jtabs-border {
+  display: none;
+}
+.se-editor__engine .jss_container {
+  width: 100%;
+  padding: 0;
+}
+.se-editor__engine .jss td {
+  font-size: 13px;
+}
+.se-editor__engine td[data-approximate='true'] {
+  color: #8c5410;
+}
+.se-editor__toolbar,
+.se-editor__sheets,
+.se-editor__insertion {
+  padding: 12px 14px;
+  border-top: 1px solid #e0e7eb;
+}
+.se-editor__status {
+  font-size: 12px;
+  margin: 0;
+  padding: 10px 14px;
+  background: #f8fbfc;
+}
+.se-editor__status[role='alert'] {
+  color: #a32323;
+}
+.lab-hint {
+  font-size: 13px;
+}
+.lab-document {
+  margin-top: 42px;
+  border-top: 1px solid #d2dce2;
+  padding-top: 18px;
+}
+.lab-document > .ui-button {
+  margin-right: 10px;
+}
+.lab-document-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 24px 0;
+  background: white;
+}
+.lab-document-table caption {
+  text-align: left;
+  font-size: 13px;
+  padding-bottom: 12px;
+}
+.lab-document-table td {
+  border: 1px solid #cdd8de;
+  padding: 12px;
+  font-size: 13px;
+}
+details {
+  margin-top: 20px;
+}
+summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+pre {
+  overflow: auto;
+  max-height: 400px;
+  font-size: 12px;
+  padding: 20px;
+  background: #eaf0f4;
+  border-radius: 6px;
+}
+@media (max-width: 760px) {
+  main {
+    padding: 24px 16px;
+  }
+  .lab-examples {
+    grid-template-columns: 1fr;
+  }
+}
