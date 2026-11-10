@@ -1,0 +1,92 @@
+{
+  "name": "@flamboyantengineer/spreadsheet-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embeddable React spreadsheet editor with exact arithmetic and interchangeable client/server calculation.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FlamboyantEngineer/spreadsheet-editor.git"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./calculation": {
+      "types": "./dist/calculation/index.d.ts",
+      "import": "./dist/calculation/index.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "import": "./dist/model/index.js"
+    },
+    "./document": {
+      "types": "./dist/document/index.d.ts",
+      "import": "./dist/document/index.js"
+    },
+    "./engine": {
+      "types": "./dist/engine/index.d.ts",
+      "import": "./dist/engine/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "specs",
+    "NOTICE.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "prepare": "node scripts/prepare.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --maxWorkers=2",
+    "build:labs": "node scripts/build-labs.mjs",
+    "labs": "node scripts/labs.mjs",
+    "test:labs": "playwright test",
+    "check:package": "node scripts/check-package.mjs",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run build && npm run check:package && npm run test:labs"
+  },
+  "peerDependencies": {
+    "@flamboyantengineer/ui-components": ">=0.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "dependencies": {
+    "@jspreadsheet-ce/react": "5.0.2",
+    "decimal.js": "10.6.0",
+    "jspreadsheet-ce": "5.0.4",
+    "jsuites": "5.13.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@flamboyantengineer/ui-components": "git+https://github.com/FlamboyantEngineer/ui-components.git#9b3f8f1e32a100a0c1e2da6922d998df0ab0b53c",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.6.0",
+    "globals": "^17.0.0",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "4.1.11"
+  }
+}

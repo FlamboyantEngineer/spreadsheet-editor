@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Read the private base component library
+        env:
+          TOKEN: ${{ secrets.UI_COMPONENTS_READ_TOKEN }}
+        run: |
+          base="https://x-access-token:${TOKEN}@github.com/FlamboyantEngineer/"
+          git config --global --add url."$base".insteadOf "https://github.com/FlamboyantEngineer/"
+          git config --global --add url."$base".insteadOf "ssh://git@github.com/FlamboyantEngineer/"
+          git config --global --add url."$base".insteadOf "git@github.com:FlamboyantEngineer/"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check
