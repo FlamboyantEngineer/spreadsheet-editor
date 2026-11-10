@@ -1,3 +1,10 @@
+import {
+  assertReviewData,
+  type CellFormat,
+  type SpreadsheetComment,
+  type SpreadsheetSuggestion,
+} from './review.js';
+
 export type CellInput = string | number | boolean | null;
 
 export interface Worksheet {
@@ -9,11 +16,16 @@ export interface Worksheet {
   rows?: Record<string, { height: number }>;
   mergeCells?: Record<string, [number, number]>;
   style?: Record<string, string>;
+  formats?: Record<string, CellFormat>;
+  freezeColumns?: number;
 }
 
 export interface Workbook {
   schemaVersion: 1;
   worksheets: Worksheet[];
+  name?: string;
+  comments?: SpreadsheetComment[];
+  suggestions?: SpreadsheetSuggestion[];
 }
 
 export interface WorkbookLimits {
@@ -48,6 +60,12 @@ export function assertWorkbook(
   ) {
     throw new TypeError('Invalid workbook version or worksheet count.');
   }
+  assertReviewData(workbook as Workbook);
+  if (
+    workbook.name !== undefined &&
+    (typeof workbook.name !== 'string' || workbook.name.length > 512)
+  )
+    throw new TypeError('Invalid workbook name.');
   const ids = new Set<string>(),
     names = new Set<string>();
   let cells = 0,
@@ -118,6 +136,30 @@ export function assertWorkbook(
         Object.values(sheet.style).some((value) => typeof value !== 'string'))
     )
       throw new TypeError('Invalid cell styles.');
+    if (
+      sheet.freezeColumns !== undefined &&
+      (!Number.isSafeInteger(sheet.freezeColumns) ||
+        sheet.freezeColumns < 0 ||
+        sheet.freezeColumns > 16_384)
+    )
+      throw new TypeError('Invalid frozen column count.');
+    if (
+      sheet.formats !== undefined &&
+      (!sheet.formats || typeof sheet.formats !== 'object' || Array.isArray(sheet.formats))
+    )
+      throw new TypeError('Invalid cell formats.');
+    for (const [address, format] of Object.entries(sheet.formats ?? {})) {
+      if (
+        !/^[A-Z]+[1-9]\d*$/.test(address) ||
+        !format ||
+        !['general', 'number', 'percent', 'currency', 'scientific', 'fraction'].includes(
+          format.kind,
+        ) ||
+        (format.decimals !== undefined &&
+          (!Number.isInteger(format.decimals) || format.decimals < 0 || format.decimals > 100))
+      )
+        throw new TypeError('Invalid cell format.');
+    }
     for (const row of sheet.data) {
       if (!Array.isArray(row)) throw new TypeError('Expected a worksheet row.');
       if (row.length > 16_384) throw new RangeError('Worksheet exceeds the column limit.');

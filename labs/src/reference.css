@@ -10,92 +10,39 @@ body {
   margin: 0;
 }
 main {
-  max-width: 1240px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 48px 32px;
+  padding: 40px 28px;
 }
 header {
-  max-width: 800px;
-  margin-bottom: 32px;
+  max-width: 850px;
+  margin-bottom: 24px;
 }
 h1 {
-  font-size: clamp(30px, 4vw, 46px);
+  font-size: clamp(28px, 4vw, 44px);
   letter-spacing: -0.04em;
   margin: 10px 0 18px;
 }
-h2 {
-  font-size: 23px;
-  letter-spacing: -0.025em;
-}
 p {
-  line-height: 1.6;
+  line-height: 1.55;
   color: #4d5d6b;
 }
 .lab-eyebrow {
   color: #26736c;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
-.lab-controls,
-.se-editor__toolbar,
-.se-editor__formula-bar,
-.se-editor__sheets,
-.se-editor__insertion {
+.lab-controls {
   display: flex;
-  align-items: center;
+  align-items: end;
   flex-wrap: wrap;
   gap: 12px;
-}
-.lab-controls {
   margin-bottom: 22px;
 }
-.ui-button {
-  font: inherit;
-  font-size: 13px;
-  padding: 9px 14px;
-  border: 1px solid #c7d3db;
-  border-radius: 6px;
-  background: white;
-  color: #213845;
-  cursor: pointer;
-}
-.ui-button[data-selected],
-.ui-button[aria-pressed='true'] {
-  background: #e3f2ef;
-  border-color: #5b9b92;
-  color: #18584f;
-}
-.ui-button[data-disabled] {
-  opacity: 0.5;
-  cursor: default;
-}
-.ui-button:focus-visible,
-.ui-text-field input:focus-visible {
-  outline: 2px solid #258475;
-  outline-offset: 3px;
-}
-.ui-text-field {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-.ui-field__label {
-  font-size: 12px;
-  color: #4d5d6b;
-}
-.ui-text-field input {
-  font: inherit;
-  font-size: 13px;
-  padding: 8px 10px;
-  border: 1px solid #c7d3db;
-  border-radius: 5px;
-  width: 100%;
-  min-width: 70px;
-}
-.lab-controls .ui-text-field {
-  max-width: 235px;
+.lab-controls .ui-field {
+  max-width: 170px;
 }
 .lab-examples {
   display: grid;
@@ -104,7 +51,7 @@ p {
   margin-bottom: 24px;
 }
 .lab-examples > div {
-  padding: 18px;
+  padding: 16px;
   border: 1px solid #d7e0e5;
   background: white;
   border-radius: 8px;
@@ -118,7 +65,7 @@ p {
 }
 .lab-examples output {
   font-family: ui-monospace, monospace;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .se-editor {
@@ -127,34 +74,143 @@ p {
   border-radius: 8px;
   overflow: hidden;
   margin: 20px 0;
+  font-size: 13px;
+}
+.se-editor__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px 16px;
+  background: #f5f9fa;
+}
+.se-editor__title {
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  margin: 0 auto 0 0;
+}
+.se-editor__header .ui-field {
+  min-width: 140px;
+}
+.se-editor__header .ui-save-status {
+  font-size: 12px;
+}
+.se-editor__menubar {
+  display: flex;
+  border: 0;
+  border-radius: 0;
+  padding: 4px 10px;
+  background: #f5f9fa;
+}
+.se-editor__toolbar {
+  padding: 8px 12px;
+  border-block: 1px solid #e0e7eb;
+  background: #fff;
+}
+.se-editor__toolbar .ui-toolbar-scroller__strip {
+  gap: 8px;
+}
+.se-editor__toolbar .ui-field {
+  flex: none;
+  min-width: 85px;
+}
+.se-editor__toolbar .ui-color-field {
+  min-width: 90px;
+}
+.se-editor__toolbar .ui-field__label {
+  font-size: 10px;
+}
+.se-editor__toolbar .ui-button {
+  flex: none;
+}
+.se-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 12px;
+  background: #fbfcfd;
+}
+.se-editor__actions .ui-button {
+  font-size: 12px;
 }
 .se-editor__formula-bar {
-  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-block: 1px solid #e0e7eb;
   background: #f8fbfc;
-  border-bottom: 1px solid #dbe3e8;
 }
-.se-editor__formula-bar .ui-text-field {
+.se-editor__formula-bar .ui-formula-bar {
   flex: 1;
-  min-width: 250px;
+  min-width: 200px;
+  border: 0;
+  background: none;
+  padding: 0;
+}
+.se-editor__formula-controls {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+.se-editor__formula-controls .ui-field {
+  flex: 1;
+  min-width: 0;
 }
 .se-editor__formula-bar .ui-field__label {
-  white-space: nowrap;
+  position: absolute;
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }
-.se-editor__formula-bar .ui-field__control {
-  flex: 1;
+.se-editor__formula-bar .se-editor__address {
+  flex: none;
+  width: 90px;
+  min-width: 0;
 }
 .se-editor__formula-bar output {
-  min-width: 160px;
+  flex: none;
+  width: 220px;
   font:
-    12px ui-monospace,
+    11px ui-monospace,
     monospace;
   overflow-wrap: anywhere;
 }
-.se-editor__address {
-  font:
-    13px ui-monospace,
-    monospace;
-  min-width: 30px;
+.se-editor__find {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e7eb;
+}
+.se-editor__workspace {
+  display: flex;
+  align-items: stretch;
+  min-height: 440px;
+}
+.se-editor__main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.se-editor__grid {
+  flex: 1;
+  min-width: 0;
+  zoom: var(--se-zoom, 1);
+}
+.se-editor__sidebar {
+  display: flex;
+  flex: none;
+  max-height: 600px;
+  border-inline-start: 1px solid #e0e7eb;
+}
+.se-editor__sidebar .ui-dock-panel__pane {
+  padding: 14px;
+}
+.se-editor__sidebar .ui-dock-panel {
+  border: 0;
 }
 .se-editor__engine {
   width: 100%;
@@ -173,26 +229,145 @@ p {
 .se-editor__engine td[data-approximate='true'] {
   color: #8c5410;
 }
-.se-editor__toolbar,
+.se-editor__engine td[data-se-comments] {
+  position: relative;
+}
+.se-editor__engine td[data-se-comments]::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 0;
+  height: 0;
+  border-top: 7px solid #ad690c;
+  border-left: 7px solid transparent;
+}
+.se-editor__engine td[data-se-suggestions] {
+  box-shadow: inset 0 0 0 2px #2a8c74;
+}
+.se-editor__grid[data-gridlines='false'] .jss tbody td {
+  border-color: transparent;
+}
 .se-editor__sheets,
 .se-editor__insertion {
-  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
   border-top: 1px solid #e0e7eb;
 }
-.se-editor__status {
-  font-size: 12px;
-  margin: 0;
-  padding: 10px 14px;
+.se-editor__sheets {
+  margin-top: auto;
   background: #f8fbfc;
+}
+.se-editor__sheets .ui-button {
+  font-size: 12px;
+}
+.se-editor__statusbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 7px 12px;
+  border-top: 1px solid #e0e7eb;
+  background: #f5f9fa;
+}
+.se-editor__status {
+  font-size: 11px;
+  margin: 0 auto 0 0;
 }
 .se-editor__status[role='alert'] {
   color: #a32323;
 }
-.lab-hint {
+.se-editor__summary {
+  font-size: 11px;
+  color: #4d5d6b;
+}
+.se-editor__statusbar .ui-zoom-control {
+  gap: 7px;
+}
+.se-editor__statusbar .ui-zoom-control__slider {
+  width: 90px;
+}
+.se-editor__notice {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #fff4dc;
+}
+.se-editor__notice p {
+  margin: 0;
+}
+.se-comments__actions {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.se-comments .ui-comment-thread {
+  margin-top: 16px;
+}
+.se-comments .ui-comment-composer {
+  margin-top: 12px;
+}
+.se-properties .ui-field {
+  margin-bottom: 10px;
+}
+.se-properties dt {
+  color: #627380;
+  margin-top: 12px;
+  font-size: 11px;
+}
+.se-properties dd {
+  margin: 3px 0;
+}
+.se-suggestion {
+  margin-top: 15px;
+  border: 1px solid #d5e0e3;
+  border-radius: 6px;
+  padding: 12px;
+}
+.se-suggestion h3 {
+  margin: 0 0 8px;
   font-size: 13px;
 }
+.se-suggestion .ui-attribution {
+  font-size: 11px;
+  color: #627380;
+}
+.se-suggestion__status {
+  text-transform: capitalize;
+  font-size: 11px;
+}
+.se-suggestion__change {
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.se-suggestion__change p {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.se-suggestion__change del {
+  background: #ffebe9;
+  color: #a32323;
+}
+.se-suggestion__change ins {
+  background: #d8f5e6;
+  color: #126b4c;
+  text-decoration: none;
+}
+.se-suggestion__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lab-hint {
+  font-size: 12px;
+}
 .lab-document {
-  margin-top: 42px;
+  margin-top: 36px;
   border-top: 1px solid #d2dce2;
   padding-top: 18px;
 }
@@ -230,11 +405,33 @@ pre {
   background: #eaf0f4;
   border-radius: 6px;
 }
-@media (max-width: 760px) {
+@media (max-width: 800px) {
   main {
-    padding: 24px 16px;
+    padding: 20px 12px;
   }
   .lab-examples {
     grid-template-columns: 1fr;
   }
+  .se-editor__formula-bar {
+    flex-wrap: wrap;
+  }
+  .se-editor__workspace {
+    overflow: auto;
+  }
+  .se-editor__sidebar .ui-dock-panel[data-expanded] {
+    min-width: 280px;
+  }
+  .se-editor__formula-bar output {
+    width: auto;
+  }
+}
+.se-editor__toolbar .ui-select-field {
+  width: 128px;
+  min-width: 0;
+  max-width: 128px;
+}
+.se-editor__toolbar .ui-color-field {
+  width: 112px;
+  min-width: 0;
+  max-width: 112px;
 }

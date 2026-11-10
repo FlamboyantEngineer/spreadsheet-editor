@@ -4,11 +4,13 @@ A standalone React spreadsheet editor built on [`@flamboyantengineer/ui-componen
 
 - Exact rational arithmetic, including scientific notation, large integers and cancellation. `1E-25` stays nonzero; `1-1E-25` stays distinct from `1`; `1-(1-1E-25)` returns exactly `1E-25`.
 - Client or server calculations through the same headless evaluator. Server mode accepts a host provider or the included HTTP adapter and Fetch-standard route handler.
-- Cross-sheet formulas, ranges, a formula bar, worksheet selection, undo/redo, row/column append, resizing, merged cells and multiple independent instances.
+- Full editor chrome: File/Edit/Insert/Format/View/Review menus, formatting toolbar, formula bar, worksheet tabs, find/replace, side panels, save status, selection statistics and zoom.
+- Threaded comments with replies, editing, reactions, resolve/reopen and cell markers. Reviewing mode records cell, formatting and structural suggestions with explicit acceptance/rejection and conflict checks.
+- Cross-sheet formulas, ranges, undo/redo, row/column insertion and deletion, reference rewriting, resizing, frozen columns, merged cells and independent editor instances.
 - Document insertion as an ordinary table snapshot or an editable spreadsheet retaining live formulas.
-- Unstyled React chrome using the base library's Button and TextField. The grid uses the extracted Jspreadsheet React host. Hosts own presentation; labs provide a reference stylesheet.
+- Unstyled React chrome using the base library's menus, controls, panels, comment threads, composers, formula bar and zoom control. The grid uses the extracted Jspreadsheet React host. Hosts own presentation; labs provide a reference stylesheet.
 
-This private `0.x` package is the standalone extraction stage. Consumer migrations are separate: neither the existing application nor `document-editor` is changed here. Application persistence, permissions, collaboration, reviews, history services and workflows remain host responsibilities.
+This private `0.x` package is the standalone extraction stage. Consumer migrations are separate: neither the existing application nor `document-editor` is changed here. Storage, authentication, collaboration transports, durable history and application workflow services remain host responsibilities.
 
 ## Run the labs
 
@@ -41,7 +43,33 @@ import { SpreadsheetEditor, createWorkbook } from '@flamboyantengineer/spreadshe
 />;
 ```
 
-`value` / `onChange` gives the host control of the workbook. `defaultValue` provides instance-local state. Optional props include `readOnly`, `initialSheetId`, `display`, `calculation`, `className` and `aria-label`. A read-only instance hides editing commands and locks grid/formula editing.
+`value` / `onChange` gives the host control of the workbook. `defaultValue` provides instance-local state. Optional props include `readOnly`, `initialSheetId`, `display`, `calculation`, `className` and `aria-label`. A read-only host locks editing, comment mutations and suggestion decisions across the grid, menus and panels while preserving reading, searching, copying and export.
+
+`mode` / `onModeChange` controls Authoring, Reviewing or Reading; `defaultMode` sets an uncontrolled instance's initial mode. `currentUser` supplies the comment/suggestion actor. Optional `permissions` independently controls `edit`, `comment`, `suggest` and `decideSuggestions` in the UI; the host enforces authorization at its persistence boundary.
+
+```tsx
+<SpreadsheetEditor
+  value={workbook}
+  onChange={setWorkbook}
+  currentUser={{ id: user.id, name: user.name }}
+  defaultMode="review"
+  onSave={async (snapshot) => persistWorkbook(snapshot)}
+  onRefresh={async () => refreshExternalFormulaData()}
+  panels={[{ id: 'workflow', label: 'Workflow', content: <WorkflowPanel /> }]}
+/>
+```
+
+`onSave` enables the Save command and saving/saved/error status. Edits made during a pending save remain dirty after that save completes. `onRefresh` supplies the external-data refresh action. Additional host `panels` appear beside built-in Properties, History, Comments and Suggestions; use unique ids other than those four built-ins. `clipboard` can supply asynchronous `readText` / `writeText`; otherwise the editor uses the browser clipboard.
+
+### Comments and review
+
+Comments and suggestions are optional, additive fields of the version-1 workbook, included in `onChange`, saves, JSON export and live document insertion. The host stores them with the workbook; no application-specific comment API or browser storage is used.
+
+- Comments anchor to a worksheet id and A1 range. Threads support replies, author-only post edit/delete, reactions, resolve/reopen, filters and navigation back to cells.
+- In Reviewing mode, direct grid edits, bulk paste, formula-bar edits, formatting and sheet structure changes create proposals. Canonical cells and calculations remain unchanged until acceptance. Rejected and accepted proposals retain their author and decision metadata.
+- Acceptance checks the recorded baseline before applying a proposal. Conflicting values or formatting are reported without overwriting current data. Row/column commands move references, formatting and comment anchors together; deleted anchors and affected proposals are marked as unavailable/outdated.
+
+The headless `/model` entry point exposes the same immutable comment, suggestion, formatting, clipboard-text and structure helpers. See [REVIEW.md](specs/REVIEW.md) and [EDITOR-CHROME.md](specs/EDITOR-CHROME.md).
 
 The host loads the vendor grid's structural CSS:
 
@@ -137,4 +165,4 @@ npm run check
 
 Checks include lint, formatting, types, unit tests, a clean package build, built-entry-point imports in plain Node, and Chromium browser tests. Browser tests use `CHROMIUM_PATH`, system Chromium when available, or Playwright's browser (`npx playwright install chromium`). CI needs `UI_COMPONENTS_READ_TOKEN` to install the private base library, as in the companion libraries.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [source provenance](NOTICE.md). This first package does not expose application-specific external formulas, unit/quantity evaluation, XLSX import/export, or middle-row/column reference rewriting; unknown functions return `#NAME?`. Hosts can use the formula adapter for application functions.
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [source provenance](NOTICE.md). Application-specific external formulas, unit/quantity evaluation and XLSX import/export are outside this package; unknown functions return `#NAME?`. Hosts can use the formula adapter for application functions. CSV and workbook JSON import, workbook JSON export and clipboard operations are built in.

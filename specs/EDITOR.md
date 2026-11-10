@@ -2,11 +2,11 @@
 
 ## SE-UI-1 — React editor and shared controls
 
-The editor renders React chrome using the base component library and a canonical React Jspreadsheet host. It supports controlled or local workbook state, a raw-value formula bar, worksheet selection, resize persistence, merged cells, row/column append and a bounded 50-step undo/redo history. Read-only mode locks editing and hides edit commands. A host-controlled workbook replacement resets available history.
+The editor renders the full reusable editor chrome using the base component library and a canonical React Jspreadsheet host. It supports controlled or local workbook state, the menu bar, formatting tools, raw-value formula bar, sheet actions, search/replace, right panels, save status, selection statistics, zoom and a bounded 50-step undo/redo history. Read-only mode locks content and review mutation in every input path. A host-controlled workbook replacement resets available history. [EDITOR-CHROME.md](EDITOR-CHROME.md) and [REVIEW.md](REVIEW.md) specify the controls, comments and tracked suggestions.
 
-Implementation: `src/editor/spreadsheet-editor.tsx`, `src/engine/workbook-grid.tsx`, `src/engine/jspreadsheet-host.tsx`.
+Implementation: `src/editor/spreadsheet-editor.tsx`, `src/editor/editor-toolbar.tsx`, `src/editor/use-editor.ts`, `src/engine/workbook-grid.tsx`, `src/engine/jspreadsheet-host.tsx`.
 
-Verification: `e2e/editor.spec.ts` (SE-UI-1, SE-UI-3, SE-UI-7), `src/model/workbook.test.ts`.
+Verification: `e2e/editor.spec.ts` (SE-UI-1, SE-UI-3, SE-UI-7), `e2e/full-editor.spec.ts`, `src/model/workbook.test.ts`.
 
 ## SE-UI-2 — Interchangeable calculation location
 
@@ -34,4 +34,4 @@ Verification: `e2e/editor.spec.ts`, launched by the Playwright web-server config
 
 ## Extraction boundary
 
-This stage extracts reusable grid and parser modules, provides an independent rational calculation engine and exposes host-neutral integration APIs. Existing consumers are migrated separately. Storage, application permissions, collaboration, review and lifecycle services stay outside this package. Built-in unit/quantity evaluation, application-specific external formulas, XLSX import/export and structural rewriting of references for insertion/deletion in the middle of a sheet are outside this initial contract. The toolbar appends rows and columns; it does not silently shift formula references.
+This stage extracts reusable grid and parser modules and provides an independent rational calculation engine, complete editor chrome, comments, tracked suggestions and host-neutral integration APIs. Existing consumers are migrated separately. Storage, authorization, collaboration transports, durable history and application lifecycle services stay outside this package. Hosts may supply extra workflow/assistant panes. Built-in unit/quantity evaluation, application-specific external formulas and XLSX import/export are outside this contract. Row/column insertion/deletion rewrites references and moves review anchors within the package.

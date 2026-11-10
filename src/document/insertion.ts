@@ -6,7 +6,8 @@ import {
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
 import { assertCalculationResult } from '../calculation/http.js';
 import type { CalculationResult } from '../calculation/evaluator.js';
-import { formatCellValue, type DisplayOptions } from '../calculation/format.js';
+import type { DisplayOptions } from '../calculation/format.js';
+import { formatWorksheetCell } from '../calculation/cell-format.js';
 
 export interface DocumentNode {
   type: string;
@@ -116,7 +117,11 @@ export function createDocumentInsertion(
       if (covered.has(`${x}:${y}`)) continue;
       const [colspan, rowspan] = spans.get(`${x}:${y}`) ?? [1, 1];
       row.push({
-        text: formatCellValue(values[y]?.[x] ?? null, options.display),
+        text: formatWorksheetCell(
+          values[y]?.[x] ?? null,
+          sheet.formats?.[formatSpreadsheetAddress(x, y)],
+          options.display,
+        ),
         colspan,
         rowspan,
       });

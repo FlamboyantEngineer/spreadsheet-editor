@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { UiProvider } from '@flamboyantengineer/ui-components/core';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
+import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import { SpreadsheetEditor } from '../../src/index.js';
 import {
   createHttpCalculator,
@@ -14,10 +15,12 @@ import { createDocumentInsertion, type DocumentInsertion } from '../../src/docum
 import type { Workbook } from '../../src/model/index.js';
 import 'jsuites/dist/jsuites.css';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
+import '@flamboyantengineer/ui-components/reference.css';
 import './reference.css';
 
 const sample: Workbook = {
   schemaVersion: 1,
+  name: 'Precision workbook',
   worksheets: [
     {
       id: 'calculations',
@@ -38,6 +41,32 @@ const sample: Workbook = {
       name: 'Inputs',
       data: [['3'], ['=Calculations!B3']],
       columns: [{ width: 300 }],
+    },
+  ],
+  comments: [
+    {
+      id: 'sample-comment',
+      sheetId: 'calculations',
+      range: 'B3',
+      resolved: false,
+      posts: [
+        {
+          id: 'sample-post',
+          author: { id: 'morgan', name: 'Morgan' },
+          text: 'Keep this value distinct from 1 when changing the display precision.',
+          createdAt: '2026-11-10T12:00:00.000Z',
+        },
+      ],
+    },
+  ],
+  suggestions: [
+    {
+      id: 'sample-suggestion',
+      author: { id: 'morgan', name: 'Morgan' },
+      createdAt: '2026-11-10T12:00:00.000Z',
+      status: 'pending',
+      summary: 'Try another input value',
+      changes: [{ sheetId: 'inputs', address: 'A1', before: '3', after: '4' }],
     },
   ],
 };
@@ -63,6 +92,9 @@ function TablePreview({ insertion }: { insertion: Extract<DocumentInsertion, { k
 
 function App() {
   const [workbook, setWorkbook] = useState(sample);
+  const [saved, setSaved] = useState<Workbook | null>(null);
+  const [actorId, setActorId] = useState('alex');
+  const [readOnly, setReadOnly] = useState(false);
   const [mode, setMode] = useState<'client' | 'server'>('client');
   const [digits, setDigits] = useState('32');
   const [insertion, setInsertion] = useState<DocumentInsertion | null>(null);
@@ -114,6 +146,21 @@ function App() {
             Calculate on server
           </Button>
           <TextField label="Display significant digits" value={digits} onChange={setDigits} />
+          <SelectField
+            label="Acting as"
+            value={actorId}
+            onChange={(value) => setActorId(String(value))}
+            options={[
+              { id: 'alex', label: 'Alex' },
+              { id: 'morgan', label: 'Morgan' },
+            ]}
+          />
+          <Button isSelected={readOnly} onPress={() => setReadOnly(!readOnly)}>
+            Read-only host
+          </Button>
+          <Button isDisabled={!saved} onPress={() => saved && setWorkbook(structuredClone(saved))}>
+            Reload saved workbook
+          </Button>
           <Button
             onPress={() => {
               setWorkbook(structuredClone(sample));
@@ -143,6 +190,11 @@ function App() {
           calculation={selectedMode}
           display={display}
           onInsert={setInsertion}
+          currentUser={{ id: actorId, name: actorId === 'alex' ? 'Alex' : 'Morgan' }}
+          onSave={async (snapshot) => {
+            setSaved(snapshot);
+          }}
+          readOnly={readOnly}
         />
         <p className="lab-hint">
           Select cells in the grid, edit a value in the formula bar or by double-clicking a cell,
