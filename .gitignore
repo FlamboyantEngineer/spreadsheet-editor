@@ -1,0 +1,8 @@
+node_modules/
+dist/
+labs/build/
+playwright-report/
+test-results/
+coverage/
+work/
+*.tsbuildinfo
