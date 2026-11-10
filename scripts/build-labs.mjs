@@ -1,11 +1,12 @@
-import { build } from 'esbuild';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadEsbuild, reportLabsError } from './lib/labs-setup.mjs';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const output = resolve(root, 'labs/build');
 export async function buildLabs() {
+  const { build } = await loadEsbuild();
   await mkdir(output, { recursive: true });
   await build({
     absWorkingDir: root,
@@ -35,4 +36,4 @@ export async function buildLabs() {
   );
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  await buildLabs();
+  await buildLabs().catch(reportLabsError);
