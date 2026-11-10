@@ -183,6 +183,44 @@ export function createArithmetic(options: NumericOptions = {}) {
         return approximate(input.acos());
       case 'ATAN':
         return approximate(input.atan());
+      case 'SINH':
+        return approximate(input.sinh());
+      case 'COSH':
+        return approximate(input.cosh());
+      case 'TANH':
+        return approximate(input.tanh());
+      case 'ASINH':
+        return approximate(input.asinh());
+      case 'ACOSH':
+        return approximate(input.acosh());
+      case 'ATANH':
+        return approximate(input.atanh());
+      case 'EXPM1': {
+        if (input.abs().gte('0.1')) return approximate(input.exp().minus(1));
+        let term = input,
+          sum = input;
+        for (let k = 2; k <= 20000; k++) {
+          term = term.mul(input).div(k);
+          const next = sum.plus(term);
+          if (next.eq(sum)) return approximate(next);
+          sum = next;
+        }
+        throw new CalculationError('#LIMIT!');
+      }
+      case 'LOG1P': {
+        if (input.abs().gte('0.1')) return approximate(input.plus(1).ln());
+        const u = input.div(input.plus(2)),
+          squared = u.mul(u);
+        let power = u,
+          sum = u;
+        for (let k = 3; k <= 40001; k += 2) {
+          power = power.mul(squared);
+          const next = sum.plus(power.div(k));
+          if (next.eq(sum)) return approximate(next.mul(2));
+          sum = next;
+        }
+        throw new CalculationError('#LIMIT!');
+      }
       case 'EXP':
         return approximate(input.exp());
       case 'LN':

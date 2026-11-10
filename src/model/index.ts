@@ -5,3 +5,6 @@ export * from './formula-reference-parser.js';
 export * from './review.js';
 export * from './editing.js';
 export * from './structure.js';
+export * from './clipboard.js';
+export * from './provenance.js';
+export * from './presence.js';

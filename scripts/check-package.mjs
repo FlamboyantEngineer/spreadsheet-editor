@@ -17,3 +17,11 @@ const result = calculateWorkbook(workbook);
 assert.equal(result.worksheets[0].values[0][0].denominator, '10000000000000000000000000');
 assert.equal(createDocumentInsertion(workbook, result, { mode: 'table' }).kind, 'table');
 console.log('Built exports and headless Node imports passed.');
+
+const { importXlsx, exportXlsx } = await import('@flamboyantengineer/spreadsheet-editor/excel');
+const xlsx = await exportXlsx(workbook, result);
+const imported = await importXlsx(xlsx);
+assert.equal(imported.workbook.worksheets[0].data[0][0], '=1-(1-1E-25)');
+assert.equal(imported.report.formulas, 1);
+await assert.rejects(importXlsx(new Uint8Array([0, 1, 2, 3])));
+console.log('Isolated Excel import and stored-result export passed.');

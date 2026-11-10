@@ -16,6 +16,14 @@ describe('SE-MODEL-1: portable workbook and parser', () => {
     expect(() => assertWorkbook(duplicate)).toThrow('unique');
     expect(() => assertWorkbook(createWorkbook([['a', 'b']]), { maxCells: 1 })).toThrow('limit');
   });
+  it('rejects geometry that would exceed the bounded grid area', () => {
+    const workbook = createWorkbook();
+    workbook.worksheets[0].minDimensions = [16384, 1048576];
+    expect(() => assertWorkbook(workbook)).toThrow('dimensions');
+    delete workbook.worksheets[0].minDimensions;
+    workbook.worksheets[0].mergeCells = { A1: [250000, 250000] };
+    expect(() => assertWorkbook(workbook)).toThrow('merged');
+  });
   it('extracts scientific literals, absolute addresses, and quoted sheet ranges', () => {
     expect(parseFormula('1E-25')).toEqual({ kind: 'decimal', decimal: '1E-25' });
     expect(parseFormula("'Other sheet'!$A$1:B2")).toMatchObject({

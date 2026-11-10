@@ -118,7 +118,16 @@ export function formatCells(
     if (serialized) sheet.style[address] = serialized;
     else delete sheet.style[address];
     if (format === null) delete sheet.formats[address];
-    else if (format) sheet.formats[address] = { ...format };
+    else if (format)
+      sheet.formats[address] = {
+        ...format,
+        ...(format.kind === 'unit'
+          ? {
+              inputUnit:
+                sheet.formats[address]?.inputUnit ?? sheet.formats[address]?.unit ?? format.unit,
+            }
+          : {}),
+      };
   }
   return next;
 }
@@ -143,29 +152,40 @@ export function borderCells(
   workbook: Workbook,
   sheetId: string,
   range: CellSelection,
-  kind: 'all' | 'outside' | 'none' | 'bottom',
+  kind: 'all' | 'outside' | 'none' | 'top' | 'right' | 'bottom' | 'left',
 ): Workbook {
   const next = copyWorkbook(workbook),
     sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
   const r = normalizeSelection(range);
   sheet.style = { ...sheet.style };
-  for (const cell of selectionCells(r)) {
+  const cells = selectionCells(r);
+  const targeted = (cell: (typeof cells)[number], side: string) =>
+    kind === 'all' ||
+    kind === side ||
+    (kind === 'outside' &&
+      ((side === 'top' && cell.y === r.y1) ||
+        (side === 'bottom' && cell.y === r.y2) ||
+        (side === 'left' && cell.x === r.x1) ||
+        (side === 'right' && cell.x === r.x2)));
+  const sides = ['top', 'right', 'bottom', 'left'];
+  const remove = cells.every((cell) => {
+    const style = parseCellStyle(sheet.style![cell.address]);
+    return sides.filter((side) => targeted(cell, side)).every((side) => !!style[`border-${side}`]);
+  });
+  for (const cell of cells) {
     const style = parseCellStyle(sheet.style[cell.address]);
-    for (const side of ['top', 'right', 'bottom', 'left']) {
-      const present =
-        kind === 'all' ||
-        (kind === 'bottom' && side === 'bottom') ||
-        (kind === 'outside' &&
-          ((side === 'top' && cell.y === r.y1) ||
-            (side === 'bottom' && cell.y === r.y2) ||
-            (side === 'left' && cell.x === r.x1) ||
-            (side === 'right' && cell.x === r.x2)));
-      if (present) style[`border-${side}`] = '1px solid currentColor';
-      else delete style[`border-${side}`];
+    for (const side of sides) {
+      if (kind === 'none') {
+        delete style[`border-${side}`];
+        delete style.border;
+      } else if (targeted(cell, side)) {
+        if (remove) delete style[`border-${side}`];
+        else style[`border-${side}`] = '1px solid currentColor';
+      }
     }
     sheet.style[cell.address] = Object.entries(style)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join('; ');
+      .map(([key, value]) => `${key}:${value}`)
+      .join(';');
   }
   return next;
 }

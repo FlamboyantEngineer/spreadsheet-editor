@@ -1,0 +1,151 @@
+'use client';
+
+import {
+  useId,
+  useRef,
+  useState,
+  useLayoutEffect,
+  type CSSProperties,
+  type RefObject,
+  type KeyboardEvent,
+  type FormEvent,
+} from 'react';
+import { CompletionList } from '@flamboyantengineer/ui-components/completion-list';
+import {
+  parseFormulaReferenceHighlights,
+  buildFormulaReferenceTokenSegments,
+} from '../model/formula-reference-parser.js';
+import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+
+/** React completion UI attached to the exact native editor published by CE's edition tuple. */
+export function useNativeFormula(
+  onDraft: (value: string | null) => void,
+  root: RefObject<HTMLDivElement | null>,
+) {
+  const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const [value, setValue] = useState('');
+  const [mirror, setMirror] = useState<CSSProperties>({});
+  const [scroll, setScroll] = useState(0);
+  const references = value.startsWith('=') ? parseFormulaReferenceHighlights(value) : [];
+  const highlighted = references.length > 0;
+  useLayoutEffect(() => {
+    const control = input.current,
+      container = root.current;
+    if (!control || !container || !highlighted) return;
+    const style = getComputedStyle(control);
+    const box = control.getBoundingClientRect(),
+      base = container.getBoundingClientRect(),
+      scale = base.width / container.offsetWidth || 1;
+    const previous = { color: control.style.color, caretColor: control.style.caretColor };
+    setMirror({
+      left: (box.left - base.left) / scale,
+      top: (box.top - base.top) / scale,
+      width: box.width / scale,
+      height: box.height / scale,
+      font: style.font,
+      padding: style.padding,
+      lineHeight: style.lineHeight,
+      color: style.color,
+      boxSizing: 'border-box',
+    });
+    control.style.caretColor = style.color;
+    control.style.color = 'transparent';
+    const moved = () => setScroll(control.scrollLeft);
+    moved();
+    control.addEventListener('scroll', moved);
+    return () => {
+      control.removeEventListener('scroll', moved);
+      control.style.color = previous.color;
+      control.style.caretColor = previous.caretColor;
+    };
+  }, [highlighted, value, root]);
+  const [query, setQuery] = useState('');
+  const [index, setIndex] = useState(0);
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const options = query
+    ? SUPPORTED_FUNCTIONS.filter((name) => name.startsWith(query)).slice(0, 12)
+    : [];
+  function track() {
+    const current = input.current;
+    if (!current) return;
+    onDraft(current.value);
+    setValue(current.value);
+    const prefix = current.value.slice(0, current.selectionStart ?? current.value.length);
+    const word = current.value.startsWith('=')
+      ? (/(?:^|[=+*/^&<>,(;\s-])([A-Za-z][A-Za-z0-9.]*)$/.exec(prefix)?.[1] ?? '')
+      : '';
+    setQuery(word.toUpperCase());
+    setIndex(0);
+    setOpen(!!word);
+  }
+  function start(sheet: JSpreadsheetWorksheetInstance | null) {
+    queueMicrotask(() => {
+      const edition = (sheet as { edition?: [HTMLElement] } | null)?.edition;
+      const control = edition?.[0]?.firstElementChild;
+      if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
+        input.current = control;
+        track();
+      }
+    });
+  }
+  function end() {
+    input.current = null;
+    setValue('');
+    setOpen(false);
+    onDraft(null);
+  }
+  function insert(text: string, replaceWord = false) {
+    const current = input.current;
+    if (!current) return;
+    const end = current.selectionEnd ?? current.value.length;
+    const start = (current.selectionStart ?? end) - (replaceWord ? query.length : 0);
+    current.setRangeText(text, Math.max(0, start), end, 'end');
+    current.focus({ preventScroll: true });
+    onDraft(current.value);
+    setValue(current.value);
+    setOpen(false);
+  }
+  function onInput(event: FormEvent<HTMLElement>) {
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      input.current = event.target;
+      track();
+    }
+  }
+  function onKey(event: KeyboardEvent<HTMLElement>) {
+    if (!input.current || event.nativeEvent.isComposing || !open || !options.length) return;
+    if (event.key === 'ArrowDown') setIndex((index + 1) % options.length);
+    else if (event.key === 'ArrowUp') setIndex((index + options.length - 1) % options.length);
+    else if (event.key === 'Enter' || event.key === 'Tab') insert(options[index] + '(', true);
+    else if (event.key === 'Escape') setOpen(false);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const popup = (
+    <CompletionList
+      aria-label="Formula functions"
+      id={id}
+      anchorRef={input}
+      isOpen={open && options.length > 0}
+      onOpenChange={setOpen}
+      items={options.map((name) => ({ id: name, label: name }))}
+      activeKey={options[index] ?? null}
+      onActiveKeyChange={(key) => setIndex(options.indexOf(String(key)))}
+      onAction={(key) => insert(String(key) + '(', true)}
+    />
+  );
+  const overlay = highlighted && (
+    <div className="se-editor__native-formula" aria-hidden="true" style={mirror}>
+      <span style={{ display: 'block', transform: `translateX(${-scroll}px)` }}>
+        {buildFormulaReferenceTokenSegments(value, references).map((segment, index) => (
+          <span key={index} style={{ color: segment.color }}>
+            {segment.text}
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+  return { input, start, end, insert, onInput, onKey, popup, overlay };
+}

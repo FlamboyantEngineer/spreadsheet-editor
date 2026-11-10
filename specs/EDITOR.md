@@ -2,7 +2,7 @@
 
 ## SE-UI-1 — React editor and shared controls
 
-The editor renders the full reusable editor chrome using the base component library and a canonical React Jspreadsheet host. It supports controlled or local workbook state, the menu bar, formatting tools, raw-value formula bar, sheet actions, search/replace, right panels, save status, selection statistics, zoom and a bounded 50-step undo/redo history. Read-only mode locks content and review mutation in every input path. A host-controlled workbook replacement resets available history. [EDITOR-CHROME.md](EDITOR-CHROME.md) and [REVIEW.md](REVIEW.md) specify the controls, comments and tracked suggestions.
+The editor renders the full reusable editor chrome using the base component library and a canonical React Jspreadsheet host. It supports controlled or local workbook state, the menu bar, formatting tools, raw-value formula bar, sheet actions, search/replace, right panels, save status, accessible selection statistics, worksheet-strip zoom and a bounded 50-step undo/redo history. Read-only mode locks content and review mutation in every input path. A host-controlled workbook replacement resets available history. [EDITOR-CHROME.md](EDITOR-CHROME.md) and [REVIEW.md](REVIEW.md) specify the controls, comments and tracked suggestions.
 
 Implementation: `src/editor/spreadsheet-editor.tsx`, `src/editor/editor-toolbar.tsx`, `src/editor/use-editor.ts`, `src/engine/workbook-grid.tsx`, `src/engine/jspreadsheet-host.tsx`.
 
@@ -42,4 +42,10 @@ Verification: `src/tooling/labs-startup.test.ts`, existing browser labs tests.
 
 ## Extraction boundary
 
-This stage extracts reusable grid and parser modules and provides an independent rational calculation engine, complete editor chrome, comments, tracked suggestions and host-neutral integration APIs. Existing consumers are migrated separately. Storage, authorization, collaboration transports, durable history and application lifecycle services stay outside this package. Hosts may supply extra workflow/assistant panes. Built-in unit/quantity evaluation, application-specific external formulas and XLSX import/export are outside this contract. Row/column insertion/deletion rewrites references and moves review anchors within the package.
+This stage extracts reusable grid and parser modules and provides an independent rational calculation engine, complete editor chrome, comments, tracked suggestions and host-neutral integration APIs. Existing consumers are migrated separately. Storage, authorization, collaboration transports, durable history and application lifecycle services stay outside this package. Hosts may supply extra workflow/assistant panes. Curated rational unit/quantity evaluation and optional Node XLSX conversion are included; application-specific external formulas remain host-provided. [HOST-PARITY.md](HOST-PARITY.md) records the reviewed requirements and host boundaries. Row/column insertion/deletion rewrites references and moves review anchors within the package.
+
+## SE-LABS-3 — Independent configurations
+
+The labs index shall link to minimal, embedded and full editor pages. Each page shares ui-components-style Stylesheet (Reference/Unstyled) and Theme (System/Light/Dark) selectors; selections follow navigation. Minimal provides the editable grid and worksheet strip, embedded provides compact tools inside an application-owned workspace, and full provides all menus and review commands. Reference presentation must keep formula entry, address, Apply/Cancel and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
+
+Verification: `e2e/labs.spec.ts` at 1440, 768 and 390 pixels, plus `e2e/editor.spec.ts`.

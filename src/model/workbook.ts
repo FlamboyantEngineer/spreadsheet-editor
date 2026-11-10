@@ -7,17 +7,25 @@ import {
 
 export type CellInput = string | number | boolean | null;
 
+export interface CellProvenance {
+  actor: { id: string; name: string };
+  source: 'human' | 'ai' | 'system';
+  at?: string;
+}
+
 export interface Worksheet {
   id: string;
   name: string;
   /** Keep numeric literals as strings to preserve all authored digits. */
   data: CellInput[][];
+  minDimensions?: [number, number];
   columns?: { width?: number; title?: string }[];
   rows?: Record<string, { height: number }>;
   mergeCells?: Record<string, [number, number]>;
   style?: Record<string, string>;
   formats?: Record<string, CellFormat>;
   freezeColumns?: number;
+  cellProvenance?: Record<string, CellProvenance>;
 }
 
 export interface Workbook {
@@ -35,9 +43,9 @@ export interface WorkbookLimits {
 }
 
 export const DEFAULT_WORKBOOK_LIMITS = Object.freeze({
-  maxCells: 50_000,
+  maxCells: 250_000,
   maxCellLength: 10_000,
-  maxWorksheets: 100,
+  maxWorksheets: 200,
 });
 
 export function createWorkbook(data: CellInput[][] = [['']]): Workbook {
@@ -80,13 +88,23 @@ export function assertWorkbook(
       !sheet.name.trim() ||
       sheet.name.length > 256 ||
       ids.has(sheet.id) ||
-      names.has(sheet.name.toUpperCase()) ||
+      names.has(sheet.name.trim().replace(/\s+/g, ' ').toUpperCase()) ||
       !Array.isArray(sheet.data)
     ) {
       throw new TypeError('Worksheets need unique ids, unique names, and row data.');
     }
+    if (
+      sheet.minDimensions !== undefined &&
+      (!Array.isArray(sheet.minDimensions) ||
+        sheet.minDimensions.length !== 2 ||
+        sheet.minDimensions[0] * sheet.minDimensions[1] > bounds.maxCells ||
+        sheet.minDimensions.some(
+          (n, i) => !Number.isInteger(n) || n < 1 || n > (i === 0 ? 16384 : 1048576),
+        ))
+    )
+      throw new TypeError('Invalid worksheet dimensions.');
     ids.add(sheet.id);
-    names.add(sheet.name.toUpperCase());
+    names.add(sheet.name.trim().replace(/\s+/g, ' ').toUpperCase());
     rowCount += sheet.data.length;
     if (rowCount > bounds.maxCells || sheet.data.length > 1_048_576)
       throw new RangeError('Worksheet exceeds the row limit.');
@@ -115,6 +133,7 @@ export function assertWorkbook(
         !/^[A-Z]+[1-9]\d*$/.test(address) ||
         !Array.isArray(span) ||
         span.length !== 2 ||
+        span[0] * span[1] > bounds.maxCells ||
         span.some((value) => !Number.isSafeInteger(value) || value < 1 || value > bounds.maxCells)
       )
         throw new TypeError('Invalid merged cells.');
@@ -152,13 +171,56 @@ export function assertWorkbook(
       if (
         !/^[A-Z]+[1-9]\d*$/.test(address) ||
         !format ||
-        !['general', 'number', 'percent', 'currency', 'scientific', 'fraction'].includes(
-          format.kind,
-        ) ||
+        ![
+          'general',
+          'number',
+          'percent',
+          'currency',
+          'scientific',
+          'fraction',
+          'date',
+          'time',
+          'datetime',
+          'unit',
+        ].includes(format.kind) ||
+        (format.kind === 'unit' &&
+          (typeof format.unit !== 'string' ||
+            !format.unit ||
+            format.unit.length > 128 ||
+            (format.inputUnit !== undefined &&
+              (typeof format.inputUnit !== 'string' || format.inputUnit.length > 128)))) ||
+        (format.expectedDimension !== undefined &&
+          (typeof format.expectedDimension !== 'string' ||
+            format.expectedDimension.length > 128)) ||
+        (format.quantityKind !== undefined &&
+          (typeof format.quantityKind !== 'string' || format.quantityKind.length > 128)) ||
         (format.decimals !== undefined &&
           (!Number.isInteger(format.decimals) || format.decimals < 0 || format.decimals > 100))
       )
         throw new TypeError('Invalid cell format.');
+    }
+    if (sheet.cellProvenance !== undefined) {
+      if (
+        !sheet.cellProvenance ||
+        typeof sheet.cellProvenance !== 'object' ||
+        Array.isArray(sheet.cellProvenance)
+      )
+        throw new TypeError('Invalid cell provenance.');
+      for (const [address, entry] of Object.entries(sheet.cellProvenance))
+        if (
+          !/^[A-Z]+[1-9]\d*$/.test(address) ||
+          !entry ||
+          !entry.actor ||
+          typeof entry.actor.id !== 'string' ||
+          !entry.actor.id ||
+          entry.actor.id.length > 256 ||
+          typeof entry.actor.name !== 'string' ||
+          entry.actor.name.length > 512 ||
+          !['human', 'ai', 'system'].includes(entry.source) ||
+          (entry.at !== undefined &&
+            (typeof entry.at !== 'string' || !Number.isFinite(Date.parse(entry.at))))
+        )
+          throw new TypeError('Invalid cell provenance.');
     }
     for (const row of sheet.data) {
       if (!Array.isArray(row)) throw new TypeError('Expected a worksheet row.');
@@ -185,7 +247,9 @@ export function appendWorksheet(workbook: Workbook): Workbook {
   let index = next.worksheets.length + 1;
   while (
     next.worksheets.some(
-      (sheet) => sheet.id === `sheet-${index}` || sheet.name.toUpperCase() === `SHEET${index}`,
+      (sheet) =>
+        sheet.id === `sheet-${index}` ||
+        sheet.name.trim().replace(/\s+/g, ' ').toUpperCase() === `SHEET${index}`,
     )
   )
     index++;

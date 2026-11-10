@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test('SE-UI-1: exact examples render in the real grid without browser errors', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/full.html');
   const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   await expect(editor.getByRole('status', { name: 'Calculation status' })).toHaveText(
     'Calculated on client',
@@ -17,7 +17,7 @@ test('SE-UI-1: exact examples render in the real grid without browser errors', a
 });
 
 test('SE-UI-2: server mode posts edits and preserves exact values', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/full.html');
   await page.getByRole('button', { name: 'Calculate on server', exact: true }).click();
   const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   await expect(editor.getByRole('status', { name: 'Calculation status' })).toHaveText(
@@ -44,7 +44,7 @@ test('SE-UI-2: server mode posts edits and preserves exact values', async ({ pag
 });
 
 test('SE-UI-3: direct grid edits preserve literals and update dependents', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/full.html');
   const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   const cell = editor.locator('td[data-x="1"][data-y="1"]').first();
   await expect(cell).toHaveText('1e-25');
@@ -61,7 +61,7 @@ test('SE-UI-3: direct grid edits preserve literals and update dependents', async
 });
 
 test('SE-UI-7: toolbar edits support undo, redo, and new worksheets', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/full.html');
   const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('=1/3*3');
   await editor.getByRole('button', { name: 'Apply', exact: true }).click();
@@ -83,7 +83,7 @@ test('SE-UI-7: toolbar edits support undo, redo, and new worksheets', async ({ p
 });
 
 test('SE-DOC-2: inserts ordinary tables and isolated live spreadsheets', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/full.html');
   await page.getByRole('button', { name: 'Preview full table', exact: true }).click();
   const table = page.getByRole('table', { name: 'Inserted document table' });
   await expect(table).toContainText('0.9999999999999999999999999');
@@ -103,7 +103,7 @@ test('SE-DOC-2: inserts ordinary tables and isolated live spreadsheets', async (
 });
 
 test('SE-UI-4: display precision never changes exact comparison results', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/full.html');
   await page.getByRole('textbox', { name: 'Display significant digits', exact: true }).fill('3');
   const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   await expect(editor.locator('td[data-x="1"][data-y="2"]').first()).toHaveText('1');
@@ -113,7 +113,7 @@ test('SE-UI-4: display precision never changes exact comparison results', async 
 test('SE-UI-5: a failed server request is visible and never falls back locally', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/full.html');
   await page.route('**/api/calculate', (route) =>
     route.fulfill({ status: 503, body: 'Unavailable' }),
   );

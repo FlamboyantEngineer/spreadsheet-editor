@@ -1,3 +1,4 @@
+import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { parseFormula, FormulaSyntaxError, type FormulaNode } from '../model/formula-parser.js';
 import {
   assertWorkbook,
@@ -5,7 +6,19 @@ import {
   type Workbook,
   type WorkbookLimits,
 } from '../model/workbook.js';
-import { createArithmetic, type NumericOptions } from './rational.js';
+import { type NumericOptions } from './rational.js';
+import {
+  createQuantityArithmetic,
+  makeQuantity,
+  resolveUnit,
+  validateUnitDimension,
+} from './units.js';
+import {
+  EXTENDED_FUNCTIONS,
+  FUNCTION_ALIASES,
+  evaluateExtendedFunction,
+} from './extended-functions.js';
+import { calendarParts, calendarSerial } from './calendar.js';
 import { formatCellValue } from './format.js';
 import {
   CalculationError,
@@ -18,6 +31,7 @@ import {
 } from './values.js';
 
 export interface CalculationOptions extends NumericOptions, WorkbookLimits {
+  timeZone?: string;
   maxOperations?: number;
   maxDepth?: number;
 }
@@ -25,11 +39,29 @@ export interface CalculatedWorksheet {
   id: string;
   values: CellValue[][];
 }
+export interface ResolvedFormulaOperand {
+  formula: string;
+  name: string;
+  value: CellValue;
+}
+export interface CalculationContext {
+  operands: Record<string, ResolvedFormulaOperand>;
+}
+export const formulaOperandKey = (
+  sheetId: string,
+  x: number,
+  y: number,
+  start: number,
+  end: number,
+) => JSON.stringify([sheetId, x, y, start, end]);
 export interface CalculationResult {
   schemaVersion: 1;
   worksheets: CalculatedWorksheet[];
+  context?: CalculationContext;
 }
 export interface FormulaHost {
+  /** One captured clock value per pass for TODAY and NOW. */
+  now?(): Date;
   readName?(name: string): CellValue | undefined;
   /** Host functions are synchronous and share this calculation's execution budget. */
   callFunction?(
@@ -41,8 +73,35 @@ export interface FormulaHost {
 type Value = CellValue | CellValue[][];
 
 export const SUPPORTED_FUNCTIONS = Object.freeze([
+  ...EXTENDED_FUNCTIONS,
+  ...Object.keys(FUNCTION_ALIASES),
+  'SWITCH',
+  'ACOSH',
+  'ASINH',
+  'ATANH',
+  'COSH',
+  'SINH',
+  'TANH',
+  'EXPM1',
+  'LOG1P',
   'IF',
   'IFERROR',
+  'IFNA',
+  'ISNA',
+  'ISERR',
+  'IFS',
+  'CHOOSE',
+  'DATE',
+  'TIME',
+  'TODAY',
+  'NOW',
+  'YEAR',
+  'MONTH',
+  'DAY',
+  'HOUR',
+  'MINUTE',
+  'SECOND',
+  'DAYS',
   'AND',
   'OR',
   'NOT',
@@ -113,8 +172,8 @@ export function calculateWorkbook(
   host: FormulaHost = {},
 ): CalculationResult {
   assertWorkbook(workbook, options);
-  const arithmetic = createArithmetic(options);
-  const maxOperations = options.maxOperations ?? 200_000,
+  const arithmetic = createQuantityArithmetic(options);
+  const maxOperations = options.maxOperations ?? 2_000_000,
     maxDepth = options.maxDepth ?? 128;
   if (
     !Number.isInteger(maxOperations) ||
@@ -126,9 +185,71 @@ export function calculateWorkbook(
   )
     throw new RangeError('Invalid calculation limits.');
   let operations = 0;
+  let clock: Date | undefined;
+  const operands: CalculationContext['operands'] = {};
   const cache = new Map<string, CellValue>(),
     visiting = new Set<string>();
   const parsed = new Map<string, FormulaNode>();
+  class NeedCell extends Error {
+    constructor(
+      readonly sheet: number,
+      readonly x: number,
+      readonly y: number,
+    ) {
+      super('Dependency pending');
+    }
+  }
+  const cellMemos = new Map<string, WeakMap<FormulaNode, Value>>();
+  const rangeMemos = new Map<
+    string,
+    WeakMap<FormulaNode, { rows: CellValue[][]; index: number }>
+  >();
+  const readBudgets = new Map<
+    string,
+    { used: number; charged: WeakSet<FormulaNode>; exhausted: boolean }
+  >();
+  const keyFor = (sheet: number, x: number, y: number) => `${sheet}:${x}:${y}`;
+  function read(sheetIndex: number, x: number, y: number, depth: number): CellValue {
+    tick(depth);
+    if (
+      !Number.isSafeInteger(x) ||
+      !Number.isSafeInteger(y) ||
+      x < 0 ||
+      y < 0 ||
+      x > 16383 ||
+      y > 1048575
+    )
+      return errorValue('#REF!');
+    const key = keyFor(sheetIndex, x, y);
+    if (cache.has(key)) return cache.get(key)!;
+    if (visiting.has(key)) return errorValue('#CYCLE!');
+    throw new NeedCell(sheetIndex, x, y);
+  }
+  function ensureCell(sheetIndex: number, x: number, y: number): CellValue {
+    const initial = keyFor(sheetIndex, x, y);
+    const stack = [{ sheet: sheetIndex, x, y }];
+    visiting.add(initial);
+    while (stack.length) {
+      const cell = stack.at(-1)!,
+        key = keyFor(cell.sheet, cell.x, cell.y);
+      if (cache.has(key)) {
+        visiting.delete(key);
+        stack.pop();
+        continue;
+      }
+      try {
+        evaluateCell(cell.sheet, cell.x, cell.y, 0);
+        visiting.delete(key);
+        stack.pop();
+      } catch (error) {
+        if (!(error instanceof NeedCell)) throw error;
+        const childKey = keyFor(error.sheet, error.x, error.y);
+        visiting.add(childKey);
+        stack.push({ sheet: error.sheet, x: error.x, y: error.y });
+      }
+    }
+    return cache.get(initial)!;
+  }
   const zero = arithmetic.parse('0'),
     one = arithmetic.parse('1');
   const flattened = (values: readonly Value[]) =>
@@ -164,24 +285,29 @@ export function calculateWorkbook(
               ? false
               : numeric(item).numerator !== '0';
   }
+  function compareValues(a: CellValue, b: CellValue): number {
+    checked(a);
+    checked(b);
+    const rank = (value: CellValue) =>
+      typeof value === 'boolean' ? 2 : typeof value === 'string' ? 1 : 0;
+    const av =
+      a === null ? (typeof b === 'string' ? '' : typeof b === 'boolean' ? false : zero) : a;
+    const bv =
+      b === null ? (typeof a === 'string' ? '' : typeof a === 'boolean' ? false : zero) : b;
+    return rank(av) !== rank(bv)
+      ? rank(av) < rank(bv)
+        ? -1
+        : 1
+      : isNumeric(av) && isNumeric(bv)
+        ? arithmetic.compare(av, bv)
+        : String(av).toUpperCase().localeCompare(String(bv).toUpperCase());
+  }
   function text(value: Value): string {
     return formatCellValue(checked(scalar(value)), { approximationMarker: false });
   }
-  function read(sheetIndex: number, x: number, y: number, depth: number): CellValue {
+  function evaluateCell(sheetIndex: number, x: number, y: number, depth: number): CellValue {
     tick(depth);
-    if (
-      !Number.isSafeInteger(x) ||
-      !Number.isSafeInteger(y) ||
-      x < 0 ||
-      y < 0 ||
-      x > 16_383 ||
-      y > 1_048_575
-    )
-      return errorValue('#REF!');
-    const key = `${sheetIndex}:${x}:${y}`;
-    if (cache.has(key)) return cache.get(key)!;
-    if (visiting.has(key)) return errorValue('#CYCLE!');
-    visiting.add(key);
+    const key = keyFor(sheetIndex, x, y);
     let result: CellValue;
     try {
       const input: CellInput = workbook.worksheets[sheetIndex].data[y]?.[x] ?? null;
@@ -201,7 +327,43 @@ export function calculateWorkbook(
       )
         result = arithmetic.parse(input);
       else result = input === '' ? null : input;
+      const format = workbook.worksheets[sheetIndex].formats?.[formatSpreadsheetAddress(x, y)];
+      if (format?.kind === 'unit' && format.unit) {
+        validateUnitDimension(format.unit, format.expectedDimension);
+        if (typeof result === 'string') {
+          const match = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+(.+)$/.exec(
+            result.trim(),
+          );
+          if (match) {
+            try {
+              const candidate = makeQuantity(
+                arithmetic.parse(match[1]),
+                match[2],
+                options,
+                format.quantityKind,
+              );
+              const target = resolveUnit(format.unit);
+              if (JSON.stringify(candidate.dimension) === JSON.stringify(target.dimension))
+                result = candidate;
+            } catch {
+              /* Invalid explicit unit text remains text. */
+            }
+          }
+        } else if (isNumeric(result)) {
+          if (!result.dimension)
+            result = makeQuantity(
+              result,
+              format.inputUnit ?? format.unit,
+              options,
+              format.quantityKind,
+            );
+          const target = resolveUnit(format.unit);
+          if (JSON.stringify(result.dimension) !== JSON.stringify(target.dimension))
+            throw new CalculationError('#VALUE!');
+        }
+      }
     } catch (error) {
+      if (error instanceof NeedCell) throw error;
       result = errorValue(
         error instanceof CalculationError
           ? error.code
@@ -209,13 +371,48 @@ export function calculateWorkbook(
             ? '#ERROR!'
             : '#ERROR!',
       );
-    } finally {
-      visiting.delete(key);
     }
+    if (readBudgets.get(key)?.exhausted || operations > maxOperations)
+      result = errorValue('#LIMIT!');
     cache.set(key, result);
     return result;
   }
   function evaluate(
+    node: FormulaNode,
+    sheetIndex: number,
+    x: number,
+    y: number,
+    depth: number,
+  ): Value {
+    const key = keyFor(sheetIndex, x, y);
+    let memo = cellMemos.get(key);
+    if (!memo) {
+      memo = new WeakMap();
+      cellMemos.set(key, memo);
+    }
+    if (memo.has(node)) return memo.get(node)!;
+    const value = evaluateFresh(node, sheetIndex, x, y, depth);
+    memo.set(node, value);
+    return value;
+  }
+  function rememberOperand(
+    node: FormulaNode,
+    name: string,
+    value: CellValue,
+    sheetIndex: number,
+    x: number,
+    y: number,
+  ) {
+    if (!node.span) return;
+    operands[
+      formulaOperandKey(workbook.worksheets[sheetIndex].id, x, y, node.span.start, node.span.end)
+    ] = {
+      formula: String(workbook.worksheets[sheetIndex].data[y]?.[x] ?? '').trimStart(),
+      name,
+      value: structuredClone(value),
+    };
+  }
+  function evaluateFresh(
     node: FormulaNode,
     sheetIndex: number,
     x: number,
@@ -239,10 +436,11 @@ export function calculateWorkbook(
       case 'decimal':
         return arithmetic.parse(node.decimal);
       case 'quantity':
-        throw new CalculationError('#VALUE!');
+        return makeQuantity(arithmetic.parse(node.decimal), node.unit, options);
       case 'name': {
         const value = host.readName?.(node.name);
         if (value === undefined) throw new CalculationError('#NAME?');
+        rememberOperand(node, node.name, value, sheetIndex, x, y);
         return value;
       }
       case 'reference':
@@ -251,7 +449,9 @@ export function calculateWorkbook(
           node.sheetName === null
             ? sheetIndex
             : workbook.worksheets.findIndex(
-                (sheet) => sheet.name.toUpperCase() === node.sheetName!.toUpperCase(),
+                (sheet) =>
+                  sheet.name.trim().replace(/\s+/g, ' ').toUpperCase() ===
+                  node.sheetName!.trim().replace(/\s+/g, ' ').toUpperCase(),
               );
         if (target < 0) throw new CalculationError('#REF!');
         const sheet = workbook.worksheets[target];
@@ -269,6 +469,20 @@ export function calculateWorkbook(
             : node.axis === 'column'
               ? { x: Math.max(node.start, node.end), y: sheet.data.length - 1 }
               : { x: width - 1, y: Math.max(node.start, node.end) };
+        const cellKey = keyFor(sheetIndex, x, y);
+        let budget = readBudgets.get(cellKey);
+        if (!budget) {
+          budget = { used: 0, charged: new WeakSet(), exhausted: false };
+          readBudgets.set(cellKey, budget);
+        }
+        if (!budget.charged.has(node)) {
+          budget.charged.add(node);
+          budget.used += (Math.abs(end.x - start.x) + 1) * (Math.abs(end.y - start.y) + 1);
+          if (budget.used > 10000) {
+            budget.exhausted = true;
+            throw new CalculationError('#LIMIT!');
+          }
+        }
         if (node.kind === 'reference' && !node.end)
           return checked(read(target, start.x, start.y, depth + 1));
         const left = Math.min(start.x, end.x),
@@ -277,15 +491,35 @@ export function calculateWorkbook(
           bottom = Math.max(start.y, end.y);
         if ((right - left + 1) * (bottom - top + 1) > maxOperations - operations)
           throw new CalculationError('#LIMIT!');
-        const rows: CellValue[][] = [];
-        for (let row = top; row <= bottom; row++) {
-          const cells: CellValue[] = [];
-          for (let col = left; col <= right; col++) cells.push(read(target, col, row, depth + 1));
-          rows.push(cells);
+        let states = rangeMemos.get(cellKey);
+        if (!states) {
+          states = new WeakMap();
+          rangeMemos.set(cellKey, states);
         }
+        let state = states.get(node);
+        if (!state) {
+          state = { rows: [], index: 0 };
+          states.set(node, state);
+        }
+        const rangeWidth = right - left + 1,
+          total = rangeWidth * (bottom - top + 1);
+        while (state.index < total) {
+          const row = Math.floor(state.index / rangeWidth),
+            col = state.index % rangeWidth;
+          const value = read(target, left + col, top + row, depth + 1);
+          (state.rows[row] ??= []).push(value);
+          state.index++;
+        }
+        const rows = state.rows;
         return rows;
       }
       case 'unary': {
+        if (node.operator === '-' && node.operand.kind === 'quantity')
+          return makeQuantity(
+            arithmetic.parse('-' + node.operand.decimal),
+            node.operand.unit,
+            options,
+          );
         const value = numeric(run(node.operand));
         return node.operator === '-'
           ? arithmetic.negate(value)
@@ -300,14 +534,7 @@ export function calculateWorkbook(
         if (['=', '<>', '<', '<=', '>', '>='].includes(node.operator)) {
           const a = checked(scalar(left)),
             b = checked(scalar(right));
-          const comparison =
-            isNumeric(a) || isNumeric(b) || a === null || b === null
-              ? arithmetic.compare(numeric(a), numeric(b))
-              : String(a).toUpperCase() < String(b).toUpperCase()
-                ? -1
-                : String(a).toUpperCase() === String(b).toUpperCase()
-                  ? 0
-                  : 1;
+          const comparison = compareValues(a, b);
           switch (node.operator) {
             case '=':
               return comparison === 0;
@@ -345,7 +572,8 @@ export function calculateWorkbook(
         throw new CalculationError('#ERROR!');
       }
       case 'call': {
-        const name = node.name.toUpperCase();
+        const authoredName = node.name.toUpperCase();
+        const name = FUNCTION_ALIASES[authoredName] ?? authoredName;
         const count = node.args.length;
         function arity(min: number, max = min) {
           if (count < min || count > max) throw new CalculationError('#VALUE!');
@@ -358,25 +586,58 @@ export function calculateWorkbook(
               ? run(node.args[2])
               : false;
         }
-        if (name === 'IFERROR') {
+        if (name === 'IFERROR' || name === 'IFNA') {
           arity(2);
           try {
             const result = run(node.args[0]);
             checked(scalar(result));
             return result;
           } catch (error) {
-            if (error instanceof CalculationError) return run(node.args[1]);
+            if (error instanceof CalculationError && (name === 'IFERROR' || error.code === '#N/A'))
+              return run(node.args[1]);
             throw error;
           }
         }
-        if (name === 'ISERROR') {
+        if (['ISERROR', 'ISERR', 'ISNA'].includes(name)) {
           arity(1);
           try {
-            return isError(scalar(run(node.args[0])));
+            const result = scalar(run(node.args[0]));
+            return (
+              isError(result) &&
+              (name === 'ISERROR' ||
+                (name === 'ISNA' ? result.code === '#N/A' : result.code !== '#N/A'))
+            );
           } catch (error) {
-            if (error instanceof CalculationError) return true;
+            if (error instanceof CalculationError)
+              return (
+                name === 'ISERROR' ||
+                (name === 'ISNA' ? error.code === '#N/A' : error.code !== '#N/A')
+              );
             throw error;
           }
+        }
+        if (name === 'SWITCH') {
+          arity(3, 255);
+          const target = scalar(run(node.args[0]));
+          for (let i = 1; i + 1 < count; i += 2)
+            if (compareValues(target, scalar(run(node.args[i]))) === 0)
+              return run(node.args[i + 1]);
+          if (count % 2 === 0) return run(node.args[count - 1]);
+          throw new CalculationError('#N/A');
+        }
+        if (name === 'IFS') {
+          arity(2, 254);
+          if (count % 2) throw new CalculationError('#VALUE!');
+          for (let i = 0; i < count; i += 2)
+            if (truth(run(node.args[i]))) return run(node.args[i + 1]);
+          throw new CalculationError('#N/A');
+        }
+        if (name === 'CHOOSE') {
+          arity(2, 255);
+          const index = numeric(run(node.args[0]));
+          const choice = Number(BigInt(index.numerator) / BigInt(index.denominator));
+          if (choice < 1 || choice >= count) throw new CalculationError('#VALUE!');
+          return run(node.args[choice]);
         }
         if (name === 'ROW' || name === 'COLUMN') {
           arity(0, 1);
@@ -387,8 +648,120 @@ export function calculateWorkbook(
             String((name === 'ROW' ? reference.start.y : reference.start.x) + 1),
           );
         }
-        const args = node.args.map(run),
+        const args = node.args.map((node) => {
+            try {
+              return run(node);
+            } catch (error) {
+              if (
+                ['COUNT', 'COUNTA', 'COUNTBLANK'].includes(name) &&
+                error instanceof CalculationError
+              )
+                return errorValue(error.code);
+              throw error;
+            }
+          }),
           flat = flattened(args);
+        const extended = evaluateExtendedFunction(name, args, arithmetic, compareValues);
+        if (extended !== undefined) return extended;
+        if (
+          [
+            'DATE',
+            'TIME',
+            'TODAY',
+            'NOW',
+            'YEAR',
+            'MONTH',
+            'DAY',
+            'HOUR',
+            'MINUTE',
+            'SECOND',
+            'DAYS',
+          ].includes(name)
+        ) {
+          const integer = (value: Value) => {
+            const n = numeric(value);
+            if (n.dimension) throw new CalculationError('#VALUE!');
+            const result = Number(BigInt(n.numerator) / BigInt(n.denominator));
+            if (!Number.isSafeInteger(result)) throw new CalculationError('#NUM!');
+            return result;
+          };
+          if (name === 'DATE') {
+            arity(3);
+            return calendarSerial(integer(args[0]), integer(args[1]), integer(args[2]));
+          }
+          if (name === 'TIME') {
+            arity(3);
+            const seconds = integer(args[0]) * 3600 + integer(args[1]) * 60 + integer(args[2]);
+            if (seconds < 0 || !Number.isSafeInteger(seconds)) throw new CalculationError('#NUM!');
+            return arithmetic.divide(
+              arithmetic.parse(String(seconds % 86400)),
+              arithmetic.parse('86400'),
+            );
+          }
+          if (name === 'TODAY' || name === 'NOW') {
+            arity(0);
+            clock ??= host.now?.() ?? new Date();
+            const fields = Object.fromEntries(
+              new Intl.DateTimeFormat('en-US', {
+                timeZone: options.timeZone ?? 'UTC',
+                year: 'numeric',
+                month: 'numeric',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+                hourCycle: 'h23',
+              })
+                .formatToParts(clock)
+                .map((part) => [part.type, part.value]),
+            );
+            const date = calendarSerial(
+              Number(fields.year),
+              Number(fields.month),
+              Number(fields.day),
+            );
+            return name === 'TODAY'
+              ? date
+              : arithmetic.add(
+                  date,
+                  arithmetic.divide(
+                    arithmetic.parse(
+                      String(
+                        Number(fields.hour) * 3600 +
+                          Number(fields.minute) * 60 +
+                          Number(fields.second),
+                      ),
+                    ),
+                    arithmetic.parse('86400'),
+                  ),
+                );
+          }
+          if (name === 'DAYS') {
+            arity(2);
+            return arithmetic.subtract(
+              arithmetic.parse(String(integer(args[0]))),
+              arithmetic.parse(String(integer(args[1]))),
+            );
+          }
+          arity(1);
+          const parts = calendarParts(numeric(args[0]));
+          return arithmetic.parse(
+            String(
+              parts[
+                (
+                  {
+                    YEAR: 'year',
+                    MONTH: 'month',
+                    DAY: 'day',
+                    HOUR: 'hour',
+                    MINUTE: 'minute',
+                    SECOND: 'second',
+                  } as const
+                )[name as 'YEAR']
+              ],
+            ),
+          );
+        }
         if (name === 'TRUE' || name === 'FALSE') {
           arity(0);
           return name === 'TRUE';
@@ -423,8 +796,27 @@ export function calculateWorkbook(
           ].includes(name)
         ) {
           arity(name === 'SUM' ? 0 : 1, 255);
-          flat.forEach(checked);
-          const values = flat.filter(isNumeric);
+          if (!['COUNT', 'COUNTA', 'COUNTBLANK'].includes(name)) flat.forEach(checked);
+          const values: NumericValue[] = [];
+          args.forEach((arg, index) => {
+            const reference = ['reference', 'lines'].includes(node.args[index].kind);
+            for (const value of flattened([arg])) {
+              if (isNumeric(value)) values.push(value);
+              else if (
+                !['COUNTA', 'COUNTBLANK'].includes(name) &&
+                !reference &&
+                !Array.isArray(arg) &&
+                value !== null &&
+                !isError(value)
+              ) {
+                try {
+                  values.push(numeric(value));
+                } catch (error) {
+                  if (name !== 'COUNT') throw error;
+                }
+              }
+            }
+          });
           if (name === 'COUNT') return arithmetic.parse(String(values.length));
           if (name === 'COUNTA')
             return arithmetic.parse(String(flat.filter((value) => value !== null).length));
@@ -549,6 +941,14 @@ export function calculateWorkbook(
             'ASIN',
             'ACOS',
             'ATAN',
+            'ACOSH',
+            'ASINH',
+            'ATANH',
+            'COSH',
+            'SINH',
+            'TANH',
+            'EXPM1',
+            'LOG1P',
             'EXP',
             'LN',
             'LOG10',
@@ -567,18 +967,19 @@ export function calculateWorkbook(
           y,
         });
         if (external === undefined) throw new CalculationError('#NAME?');
+        rememberOperand(node, name, external, sheetIndex, x, y);
         return external;
       }
     }
   }
-  return {
+  const result: CalculationResult = {
     schemaVersion: 1,
     worksheets: workbook.worksheets.map((sheet, index) => ({
       id: sheet.id,
       values: sheet.data.map((row, y) =>
         row.map((_cell, x) => {
           try {
-            return read(index, x, y, 0);
+            return ensureCell(index, x, y);
           } catch (error) {
             return errorValue(error instanceof CalculationError ? error.code : '#ERROR!');
           }
@@ -586,4 +987,6 @@ export function calculateWorkbook(
       ),
     })),
   };
+  if (Object.keys(operands).length) result.context = { operands };
+  return result;
 }
