@@ -1,4 +1,6 @@
 export interface NumericValue {
+  readonly dimension?: import('./units.js').Dimension;
+  readonly quantityKind?: string;
   readonly kind: 'number';
   readonly numerator: string;
   readonly denominator: string;

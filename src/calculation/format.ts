@@ -1,4 +1,5 @@
 import { Decimal } from 'decimal.js';
+import { dimensionLabel } from './units.js';
 import { isError, isNumeric, type CellValue } from './values.js';
 
 export interface DisplayOptions {
@@ -24,5 +25,7 @@ export function formatCellValue(value: CellValue, options: DisplayOptions = {}):
       : options.notation === 'decimal'
         ? number.toFixed()
         : number.toString();
-  return value.approximate && options.approximationMarker !== false ? `≈${text}` : text;
+  const rendered = value.approximate && options.approximationMarker !== false ? `≈${text}` : text;
+  const unit = dimensionLabel(value);
+  return unit ? `${rendered} ${unit}` : rendered;
 }

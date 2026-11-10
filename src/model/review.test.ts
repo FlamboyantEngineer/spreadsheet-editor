@@ -3,6 +3,9 @@ import { createWorkbook, copyWorkbook } from './workbook.js';
 import { writeCells, formatCells } from './editing.js';
 import {
   addComment,
+  addWorkbookComment,
+  findOpenComment,
+  previewSuggestions,
   replyToComment,
   updateComment,
   editCommentPost,
@@ -138,5 +141,54 @@ describe('SE-REVIEW-2: tracked suggestions', () => {
     expect(accepted.worksheets[0].data[2][0]).toBe('=A2');
     expect(accepted.comments?.[0].range).toBe('A3');
     expect(accepted.suggestions?.[0].status).toBe('accepted');
+  });
+});
+
+describe('Host SE-CR-3.1/3.4/3.5: conversation and reviewer overlay contracts', () => {
+  it('prevents overlapping open threads, keeps workbook scope, and reopens a resolved range', () => {
+    let workbook = addComment(createWorkbook(), 'sheet-1', 'A1:B2', 'Range', stamp('range'));
+    expect(findOpenComment(workbook, 'sheet-1', 'B2:C3')?.id).toBe('range');
+    expect(() => addComment(workbook, 'sheet-1', 'B2', 'Duplicate', stamp('duplicate'))).toThrow(
+      'already',
+    );
+    workbook = updateComment(workbook, 'range', (thread) => {
+      thread.resolved = true;
+    });
+    workbook = addComment(workbook, 'sheet-1', 'B2', 'Another', stamp('next'));
+    workbook = addWorkbookComment(workbook, 'Whole workbook', stamp('whole'));
+    expect(workbook.comments!.at(-1)).toMatchObject({ scope: 'workbook' });
+    expect(workbook.comments!.at(-1)!.range).toBeUndefined();
+  });
+  it('coalesces exact targets by author and shares a discussion without touching canonical calculations', () => {
+    const original = createWorkbook([['1', '=A1*2']]);
+    let workbook = proposeWorkbookChange(
+      original,
+      writeCells(original, 'sheet-1', 0, 0, [['2']]),
+      'Edit',
+      stamp('first', morgan),
+    );
+    workbook = proposeWorkbookChange(
+      workbook,
+      writeCells(workbook, 'sheet-1', 0, 0, [['3']]),
+      'Edit again',
+      stamp('second', morgan),
+    );
+    expect(workbook.suggestions).toHaveLength(1);
+    expect(workbook.comments).toHaveLength(1);
+    expect(workbook.suggestions![0].changes[0]).toMatchObject({ before: '1', after: '3' });
+    expect(previewSuggestions(workbook, alex.id)).toBe(workbook);
+    const preview = previewSuggestions(workbook, morgan.id);
+    expect(calculateWorkbook(preview).worksheets[0].values[0][1]).toMatchObject({ numerator: '6' });
+    expect(calculateWorkbook(workbook).worksheets[0].values[0][1]).toMatchObject({
+      numerator: '2',
+    });
+    expect(findOpenComment(workbook, 'sheet-1', 'A1')).toBeUndefined();
+    const accepted = decideSuggestion(workbook, 'first', 'accepted', stamp('decision'));
+    expect(accepted.comments![0]).toMatchObject({
+      suggestionId: 'first',
+      resolved: true,
+      suggestionDecision: 'accepted',
+    });
+    expect(original.comments).toBeUndefined();
   });
 });

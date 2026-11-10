@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
+import { Spinner } from '@flamboyantengineer/ui-components/progress-bar';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import {
@@ -10,6 +11,8 @@ import {
 } from '@flamboyantengineer/ui-components/comment-thread';
 import { CommentComposer } from '@flamboyantengineer/ui-components/comment-composer';
 import { ReactionBar } from '@flamboyantengineer/ui-components/reaction-bar';
+import { ContextMenuTrigger } from '@flamboyantengineer/ui-components/context-menu';
+import { Menu } from '@flamboyantengineer/ui-components/menu';
 import { Attribution } from '@flamboyantengineer/ui-components/attribution';
 import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
 import { selectionAddress } from '../model/editing.js';
@@ -22,156 +25,304 @@ import {
 } from '../model/review.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
 
-export function CommentsPanel({ editor: e }: { editor: SpreadsheetEditorController }) {
+export function CommentsPanel({
+  editor: e,
+  threadId,
+}: {
+  editor: SpreadsheetEditorController;
+  threadId?: string;
+}) {
   const [filter, setFilter] = useState('open');
-  const threads = (e.workbook.comments ?? []).filter(
-    (thread) => filter === 'all' || thread.resolved === (filter === 'resolved'),
+  const threads = (e.workbook.comments ?? []).filter((thread) =>
+    threadId
+      ? thread.id === threadId
+      : !thread.suggestionId &&
+        (filter === 'mine'
+          ? thread.posts.some((post) => post.author.id === e.actor.id)
+          : filter === 'all' || thread.resolved === (filter === 'resolved')),
   );
+  if (!threadId) {
+    const conversations = (e.workbook.comments ?? [])
+      .filter((thread) =>
+        filter === 'mine'
+          ? thread.posts.some((post) => post.author.id === e.actor.id)
+          : filter === 'all' || thread.resolved === (filter === 'resolved'),
+      )
+      .sort((a, b) => b.posts.at(-1)!.createdAt.localeCompare(a.posts.at(-1)!.createdAt));
+    return (
+      <div className="se-comments" aria-label="Workbook comments">
+        <div className="se-comments__actions">
+          <SelectField
+            label="Comment filter"
+            value={filter}
+            onChange={(value) => setFilter(String(value))}
+            options={[
+              { id: 'open', label: 'Open comments' },
+              { id: 'resolved', label: 'Resolved comments' },
+              { id: 'all', label: 'All comments' },
+              { id: 'mine', label: 'My conversations' },
+            ]}
+          />
+          <Button onPress={e.beginWorkbookComment} isDisabled={!e.canComment}>
+            Add comment
+          </Button>
+        </div>
+        {e.commentComposer && e.commentScope === 'workbook' && (
+          <CommentComposer
+            label="Comment on workbook"
+            submitLabel="Post comment"
+            onSubmit={e.postComment}
+            onCancel={() => {
+              e.setCommentComposer(false);
+              e.setActiveCommentId(null);
+            }}
+            autoFocus
+            isDisabled={!e.canComment}
+          />
+        )}
+        {!conversations.length && <p>No {filter === 'all' ? '' : filter + ' '}comments.</p>}
+        {conversations.map((thread) => {
+          const proposal = e.workbook.suggestions?.find((item) => item.id === thread.suggestionId);
+          const sheet = e.workbook.worksheets.find((sheet) => sheet.id === thread.sheetId);
+          return (
+            <div key={thread.id} className="se-comments__conversation">
+              <Button variant="ghost" content="parts" onPress={() => e.openComment(thread.id)}>
+                <strong>
+                  {proposal
+                    ? `Suggestion · ${proposal.status}`
+                    : thread.scope === 'workbook'
+                      ? 'Workbook comment'
+                      : `${sheet?.name ?? 'Deleted worksheet'}!${thread.range}`}
+                </strong>
+                <span>{proposal?.summary ?? thread.posts[0].text}</span>
+                <Attribution
+                  person={{
+                    name:
+                      thread.posts[0].author.id === e.actor.id
+                        ? 'You'
+                        : thread.posts[0].author.name,
+                  }}
+                  time={thread.posts.at(-1)!.createdAt}
+                />
+                <span>
+                  {thread.posts.length - 1} replies{thread.resolved ? ' · Resolved' : ''}
+                </span>
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div className="se-comments" aria-label="Workbook comments">
-      <div className="se-comments__actions">
-        <SelectField
-          label="Comment filter"
-          value={filter}
-          onChange={(value) => setFilter(String(value))}
-          options={[
-            { id: 'open', label: 'Open comments' },
-            { id: 'resolved', label: 'Resolved comments' },
-            { id: 'all', label: 'All comments' },
-          ]}
-        />
-        <Button onPress={e.beginComment} isDisabled={!e.canComment}>
-          Add comment
-        </Button>
-      </div>
-      {e.commentComposer && (
+      {!threadId && (
+        <div className="se-comments__actions">
+          <SelectField
+            label="Comment filter"
+            value={filter}
+            onChange={(value) => setFilter(String(value))}
+            options={[
+              { id: 'open', label: 'Open comments' },
+              { id: 'resolved', label: 'Resolved comments' },
+              { id: 'all', label: 'All comments' },
+              { id: 'mine', label: 'My conversations' },
+            ]}
+          />
+          <Button onPress={e.beginWorkbookComment} isDisabled={!e.canComment}>
+            Add comment
+          </Button>
+        </div>
+      )}
+      {e.commentComposer && (threadId === 'draft' || e.commentScope === 'workbook') && (
         <CommentComposer
-          label={`Comment on ${e.sheet.name}!${selectionAddress(e.selection)}`}
+          label={
+            e.commentScope === 'workbook'
+              ? 'Comment on workbook'
+              : `Comment on ${e.sheet.name}!${selectionAddress(e.selection)}`
+          }
           submitLabel="Post comment"
           onSubmit={e.postComment}
-          onCancel={() => e.setCommentComposer(false)}
+          onCancel={() => {
+            e.setCommentComposer(false);
+            e.setActiveCommentId(null);
+          }}
           autoFocus
           isDisabled={!e.canComment}
         />
       )}
-      {!threads.length && <p>No {filter === 'all' ? '' : filter + ' '}comments.</p>}
+      {!threads.length && threadId !== 'draft' && (
+        <p>No {filter === 'all' ? '' : filter + ' '}comments.</p>
+      )}
       {threads.map((thread) => {
-        const sheet = e.workbook.worksheets.find((sheet) => sheet.id === thread.sheetId),
-          range = parseSpreadsheetRange(thread.range)!;
+        const sheet = e.workbook.worksheets.find((sheet) => sheet.id === thread.sheetId);
+        const proposal = e.workbook.suggestions?.find((item) => item.id === thread.suggestionId);
         return (
-          <CommentThread
-            key={thread.id}
-            aria-label={`Comment thread ${sheet?.name ?? 'Deleted worksheet'}!${thread.range}`}
-            quote={
-              thread.orphaned ? (
-                `Deleted cells · ${thread.range}`
-              ) : (
-                <Button
-                  onPress={() =>
-                    e.select(
-                      { x1: range.start.x, y1: range.start.y, x2: range.end.x, y2: range.end.y },
-                      thread.sheetId,
-                    )
+          <div key={thread.id}>
+            {e.props.getCommentLink && (
+              <Button
+                size="sm"
+                onPress={() =>
+                  e.attempt(async () => {
+                    const text = e.props.getCommentLink!(thread.id);
+                    await (e.props.clipboard?.writeText(text) ??
+                      navigator.clipboard.writeText(text));
+                  })
+                }
+              >
+                Copy comment link
+              </Button>
+            )}
+            {proposal && (
+              <article className="se-suggestion" aria-label={`Suggestion: ${proposal.summary}`}>
+                <h3>{proposal.summary}</h3>
+                <p>{proposal.status}</p>
+                {proposal.changes.map((change) => (
+                  <p key={change.sheetId + change.address}>
+                    {change.address}: <del>{String(change.before ?? '(empty)')}</del> →{' '}
+                    <ins>{String(change.after ?? '(empty)')}</ins>
+                  </p>
+                ))}
+                {proposal.status === 'pending' && (
+                  <div className="se-suggestion__actions">
+                    <Button
+                      isDisabled={!e.canDecide || proposal.outdated}
+                      onPress={() => e.attempt(() => e.decide(proposal.id, 'accepted'))}
+                    >
+                      Accept suggestion
+                    </Button>
+                    <Button
+                      isDisabled={!e.canDecide}
+                      onPress={() => e.attempt(() => e.decide(proposal.id, 'rejected'))}
+                    >
+                      Reject suggestion
+                    </Button>
+                  </div>
+                )}
+              </article>
+            )}
+            <CommentThread
+              key={thread.id}
+              aria-label={
+                thread.scope === 'workbook'
+                  ? 'Workbook comment thread'
+                  : `Comment thread ${sheet?.name ?? 'Deleted worksheet'}!${thread.range}`
+              }
+              quote={
+                thread.scope === 'workbook' ? undefined : thread.orphaned ? (
+                  `Deleted cells · ${thread.range}`
+                ) : (
+                  <Button onPress={() => e.openComment(thread.id)}>
+                    {sheet?.name}!{thread.range}
+                  </Button>
+                )
+              }
+              isResolved={thread.resolved}
+              isReadOnly={!e.canComment}
+              onResolvedChange={(resolved) =>
+                e.attempt(() =>
+                  e.commit(
+                    updateComment(e.workbook, thread.id, (thread) => {
+                      thread.resolved = resolved;
+                    }),
+                    resolved ? 'Resolve comment' : 'Reopen comment',
+                  ),
+                )
+              }
+              composer={
+                !thread.resolved && e.canComment ? (
+                  <CommentComposer
+                    autoFocus={!!threadId}
+                    value={e.replyDrafts[thread.id] ?? ''}
+                    onChange={(value) =>
+                      e.setReplyDrafts((drafts) => ({ ...drafts, [thread.id]: value }))
+                    }
+                    onCancel={() => {
+                      e.setReplyDrafts((drafts) => ({ ...drafts, [thread.id]: '' }));
+                      if (threadId) e.setActiveCommentId(null);
+                    }}
+                    label="Reply to comment"
+                    submitLabel="Post reply"
+                    onSubmit={(text) => {
+                      e.commit(
+                        replyToComment(e.workbook, thread.id, text, e.stamp()),
+                        'Reply to comment',
+                      );
+                      e.setReplyDrafts((drafts) => ({ ...drafts, [thread.id]: '' }));
+                    }}
+                  />
+                ) : null
+              }
+            >
+              {thread.posts.map((post) => (
+                <CommentThreadReply
+                  key={post.id}
+                  author={{ name: post.author.name, colorKey: post.author.id }}
+                  time={post.createdAt}
+                  text={post.text}
+                  isEdited={!!post.updatedAt}
+                  onEdit={
+                    e.canComment && post.author.id === e.actor.id
+                      ? (text) =>
+                          e.commit(
+                            editCommentPost(
+                              e.workbook,
+                              thread.id,
+                              post.id,
+                              text,
+                              e.actor.id,
+                              new Date().toISOString(),
+                            ),
+                            'Edit comment',
+                          )
+                      : undefined
                   }
-                >
-                  {sheet?.name}!{thread.range}
-                </Button>
-              )
-            }
-            isResolved={thread.resolved}
-            isReadOnly={!e.canComment}
-            onResolvedChange={(resolved) =>
-              e.attempt(() =>
-                e.commit(
-                  updateComment(e.workbook, thread.id, (thread) => {
-                    thread.resolved = resolved;
-                  }),
-                  resolved ? 'Resolve comment' : 'Reopen comment',
-                ),
-              )
-            }
-            composer={
-              !thread.resolved && e.canComment ? (
-                <CommentComposer
-                  label="Reply to comment"
-                  submitLabel="Post reply"
-                  onSubmit={(text) =>
-                    e.commit(
-                      replyToComment(e.workbook, thread.id, text, e.stamp()),
-                      'Reply to comment',
-                    )
+                  onDelete={
+                    e.canComment && post.author.id === e.actor.id
+                      ? () =>
+                          e.commit(
+                            deleteCommentPost(e.workbook, thread.id, post.id, e.actor.id),
+                            'Delete comment',
+                          )
+                      : undefined
+                  }
+                  reactions={
+                    <ReactionBar
+                      aria-label="Comment reactions"
+                      reactions={Object.entries(post.reactions ?? {}).map(([emoji, people]) => ({
+                        emoji,
+                        count: people.length,
+                        isReacted: people.includes(e.actor.id),
+                        people: people.map((id) =>
+                          id === e.actor.id
+                            ? e.actor.name
+                            : (thread.posts.find((post) => post.author.id === id)?.author.name ??
+                              id),
+                        ),
+                      }))}
+                      onToggle={
+                        e.canComment
+                          ? (emoji) =>
+                              e.attempt(() =>
+                                e.commit(
+                                  toggleCommentReaction(
+                                    e.workbook,
+                                    thread.id,
+                                    post.id,
+                                    emoji,
+                                    e.actor.id,
+                                  ),
+                                  'React to comment',
+                                ),
+                              )
+                          : undefined
+                      }
+                    />
                   }
                 />
-              ) : null
-            }
-          >
-            {thread.posts.map((post) => (
-              <CommentThreadReply
-                key={post.id}
-                author={{ name: post.author.name, colorKey: post.author.id }}
-                time={post.createdAt}
-                text={post.text}
-                isEdited={!!post.updatedAt}
-                onEdit={
-                  e.canComment && post.author.id === e.actor.id
-                    ? (text) =>
-                        e.commit(
-                          editCommentPost(
-                            e.workbook,
-                            thread.id,
-                            post.id,
-                            text,
-                            e.actor.id,
-                            new Date().toISOString(),
-                          ),
-                          'Edit comment',
-                        )
-                    : undefined
-                }
-                onDelete={
-                  e.canComment && post.author.id === e.actor.id
-                    ? () =>
-                        e.commit(
-                          deleteCommentPost(e.workbook, thread.id, post.id, e.actor.id),
-                          'Delete comment',
-                        )
-                    : undefined
-                }
-                reactions={
-                  <ReactionBar
-                    aria-label="Comment reactions"
-                    reactions={Object.entries(post.reactions ?? {}).map(([emoji, people]) => ({
-                      emoji,
-                      count: people.length,
-                      isReacted: people.includes(e.actor.id),
-                      people: people.map((id) =>
-                        id === e.actor.id
-                          ? e.actor.name
-                          : (thread.posts.find((post) => post.author.id === id)?.author.name ?? id),
-                      ),
-                    }))}
-                    onToggle={
-                      e.canComment
-                        ? (emoji) =>
-                            e.attempt(() =>
-                              e.commit(
-                                toggleCommentReaction(
-                                  e.workbook,
-                                  thread.id,
-                                  post.id,
-                                  emoji,
-                                  e.actor.id,
-                                ),
-                                'React to comment',
-                              ),
-                            )
-                        : undefined
-                    }
-                  />
-                }
-              />
-            ))}
-          </CommentThread>
+              ))}
+            </CommentThread>
+          </div>
         );
       })}
     </div>
@@ -241,6 +392,11 @@ export function SuggestionsPanel({ editor: e }: { editor: SpreadsheetEditorContr
               )}
             </div>
           ))}
+          {suggestion.commentThreadId && (
+            <Button size="sm" onPress={() => e.openSuggestion(suggestion.id)}>
+              Open discussion
+            </Button>
+          )}
           {suggestion.status === 'pending' && (
             <div className="se-suggestion__actions">
               <Button
@@ -299,6 +455,46 @@ export function PropertiesPanel({ editor: e }: { editor: SpreadsheetEditorContro
 }
 
 export function HistoryPanel({ editor: e }: { editor: SpreadsheetEditorController }) {
+  const stored = e.props.history;
+  if (stored)
+    return (
+      <div className="se-history" aria-label="Saved workbook history">
+        <h3>Version history</h3>
+        {stored.onRefresh && (
+          <Button size="sm" onPress={() => e.attempt(() => stored.onRefresh!())}>
+            Refresh history
+          </Button>
+        )}
+        {stored.loading && <Spinner label="Loading history" />}
+        {stored.error && <p role="alert">{stored.error}</p>}
+        {!stored.loading && !stored.entries.length && <p>No saved versions.</p>}
+        <ol>
+          {[...stored.entries]
+            .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
+            .map((entry) => (
+              <li key={entry.id}>
+                <ContextMenuTrigger>
+                  <Button variant="ghost" content="parts">
+                    <Attribution person={{ name: entry.author.name }} time={entry.timestamp} />
+                    {entry.state && <span>State: {entry.state}</span>}
+                    {entry.revision && <span>Revision: {entry.revision}</span>}
+                  </Button>
+                  <Menu
+                    aria-label="Snapshot actions"
+                    items={[
+                      {
+                        id: 'open',
+                        label: 'View historical version',
+                        onAction: () => e.attempt(() => e.openHistorical(entry)),
+                      },
+                    ]}
+                  />
+                </ContextMenuTrigger>
+              </li>
+            ))}
+        </ol>
+      </div>
+    );
   return (
     <div className="se-history">
       <h3>Editing history</h3>

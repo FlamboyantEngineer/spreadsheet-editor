@@ -26,8 +26,11 @@ export interface CommentPost {
 }
 export interface SpreadsheetComment {
   id: string;
-  sheetId: string;
-  range: string;
+  sheetId?: string;
+  range?: string;
+  scope?: 'range' | 'workbook';
+  suggestionId?: string;
+  suggestionDecision?: 'accepted' | 'rejected';
   resolved: boolean;
   orphaned?: boolean;
   posts: CommentPost[];
@@ -46,6 +49,8 @@ export interface SpreadsheetSuggestion {
   id: string;
   author: ReviewActor;
   createdAt: string;
+  updatedAt?: string;
+  commentThreadId?: string;
   status: 'pending' | 'accepted' | 'rejected';
   changes: SuggestedCellChange[];
   structure?: {
@@ -59,8 +64,22 @@ export interface SpreadsheetSuggestion {
   decidedAt?: string;
 }
 export interface CellFormat {
-  kind: 'general' | 'number' | 'percent' | 'currency' | 'scientific' | 'fraction';
+  kind:
+    | 'general'
+    | 'number'
+    | 'percent'
+    | 'currency'
+    | 'scientific'
+    | 'fraction'
+    | 'date'
+    | 'time'
+    | 'datetime'
+    | 'unit';
   decimals?: number;
+  unit?: string;
+  inputUnit?: string;
+  expectedDimension?: string;
+  quantityKind?: string;
 }
 export interface ReviewStamp {
   id: string;
@@ -77,6 +96,8 @@ export function addComment(
 ): Workbook {
   if (!workbook.worksheets.some((sheet) => sheet.id === sheetId) || !parseSpreadsheetRange(range))
     throw new RangeError('Invalid comment anchor.');
+  if (findOpenComment(workbook, sheetId, range))
+    throw new Error('An open comment already covers this selection.');
   const next = copyWorkbook(workbook);
   if (!text.trim()) throw new TypeError('A comment needs text.');
   next.comments = [
@@ -183,7 +204,9 @@ function structureOf(sheets: Worksheet[]) {
     const shape = { ...sheet };
     delete shape.style;
     delete shape.formats;
-    return { ...shape, data: shape.data.map((row) => row.length) };
+    delete shape.cellProvenance;
+    delete (shape as Partial<Worksheet>).data;
+    return shape;
   });
 }
 
@@ -198,8 +221,9 @@ export function proposeWorkbookChange(
   const next = copyWorkbook(workbook),
     candidate = copyWorkbook(proposed);
   const structural =
+    operation !== undefined ||
     JSON.stringify(structureOf(workbook.worksheets)) !==
-    JSON.stringify(structureOf(candidate.worksheets));
+      JSON.stringify(structureOf(candidate.worksheets));
   const changes: SuggestedCellChange[] = [];
   if (!structural)
     workbook.worksheets.forEach((sheet, sheetIndex) => {
@@ -210,6 +234,9 @@ export function proposeWorkbookChange(
         ...Object.keys(sheet.formats ?? {}),
         ...Object.keys(after.formats ?? {}),
       ]);
+      after.data.forEach((row, y) =>
+        row.forEach((_value, x) => addresses.add(formatSpreadsheetAddress(x, y))),
+      );
       sheet.data.forEach((row, y) =>
         row.forEach((_before, x) => addresses.add(formatSpreadsheetAddress(x, y))),
       );
@@ -241,6 +268,41 @@ export function proposeWorkbookChange(
       }
     });
   if (!structural && !changes.length) return workbook;
+  const keys = (entries: SuggestedCellChange[]) =>
+    entries
+      .map((change) => `${change.sheetId}:${change.address}`)
+      .sort()
+      .join('|');
+  const existing = !structural
+    ? next.suggestions?.find(
+        (item) =>
+          item.status === 'pending' &&
+          !item.outdated &&
+          !item.structure &&
+          item.author.id === stamp.actor.id &&
+          keys(item.changes) === keys(changes),
+      )
+    : undefined;
+  if (existing) {
+    existing.updatedAt = stamp.time;
+    existing.summary = summary;
+    existing.changes = changes.map((change) => {
+      const before = existing.changes.find(
+        (old) => old.sheetId === change.sheetId && old.address === change.address,
+      )!;
+      return {
+        ...before,
+        after: change.after !== change.before ? change.after : before.after,
+        afterStyle:
+          change.afterStyle !== change.beforeStyle ? change.afterStyle : before.afterStyle,
+        afterFormat:
+          JSON.stringify(change.afterFormat) !== JSON.stringify(change.beforeFormat)
+            ? change.afterFormat
+            : before.afterFormat,
+      };
+    });
+    return next;
+  }
   next.suggestions = [
     ...(next.suggestions ?? []),
     {
@@ -248,6 +310,7 @@ export function proposeWorkbookChange(
       author: { ...stamp.actor },
       createdAt: stamp.time,
       status: 'pending',
+      commentThreadId: stamp.id + '-thread',
       changes,
       summary,
       ...(structural
@@ -261,6 +324,34 @@ export function proposeWorkbookChange(
         : {}),
     },
   ];
+  const anchor = changes[0];
+  if (anchor) {
+    const positions = changes
+      .filter((change) => change.sheetId === anchor.sheetId)
+      .map((change) => parseSpreadsheetAddress(change.address)!);
+    const x1 = Math.min(...positions.map((p) => p.x)),
+      y1 = Math.min(...positions.map((p) => p.y)),
+      x2 = Math.max(...positions.map((p) => p.x)),
+      y2 = Math.max(...positions.map((p) => p.y));
+    const range =
+      formatSpreadsheetAddress(x1, y1) +
+      (x1 === x2 && y1 === y2 ? '' : ':' + formatSpreadsheetAddress(x2, y2));
+    (next.comments ??= []).push({
+      id: stamp.id + '-thread',
+      sheetId: anchor.sheetId,
+      range,
+      resolved: false,
+      suggestionId: stamp.id,
+      posts: [
+        {
+          id: stamp.id + '-post',
+          author: { ...stamp.actor },
+          text: summary,
+          createdAt: stamp.time,
+        },
+      ],
+    });
+  }
   return next;
 }
 
@@ -288,7 +379,7 @@ export function decideSuggestion(
         next.worksheets = structuredClone(suggestion.structure.after);
         const ids = new Set(next.worksheets.map((sheet) => sheet.id));
         next.comments?.forEach((thread) => {
-          if (!ids.has(thread.sheetId)) thread.orphaned = true;
+          if (thread.scope !== 'workbook' && !ids.has(thread.sheetId ?? '')) thread.orphaned = true;
         });
         next.suggestions?.forEach((item) => {
           if (item.changes.some((cell) => !ids.has(cell.sheetId))) item.outdated = true;
@@ -324,6 +415,22 @@ export function decideSuggestion(
       }
     }
   }
+  if (decision === 'accepted')
+    for (const change of suggestion.changes) {
+      if (change.before === change.after) continue;
+      const sheet = next.worksheets.find((sheet) => sheet.id === change.sheetId);
+      if (sheet)
+        (sheet.cellProvenance ??= {})[change.address] = {
+          actor: { ...suggestion.author },
+          source: 'human',
+          at: suggestion.updatedAt ?? suggestion.createdAt,
+        };
+    }
+  const linked = next.comments?.find((thread) => thread.id === suggestion!.commentThreadId);
+  if (linked) {
+    linked.resolved = true;
+    linked.suggestionDecision = decision;
+  }
   suggestion.status = decision;
   suggestion.decidedBy = { ...stamp.actor };
   suggestion.decidedAt = stamp.time;
@@ -353,8 +460,10 @@ export function assertReviewData(workbook: Workbook): void {
     if (
       !thread ||
       typeof thread.id !== 'string' ||
-      typeof thread.sheetId !== 'string' ||
-      !parseSpreadsheetRange(thread.range) ||
+      (thread.scope !== undefined && !['range', 'workbook'].includes(thread.scope)) ||
+      (thread.scope === 'workbook'
+        ? thread.sheetId !== undefined || thread.range !== undefined
+        : typeof thread.sheetId !== 'string' || !parseSpreadsheetRange(thread.range ?? '')) ||
       typeof thread.resolved !== 'boolean' ||
       !Array.isArray(thread.posts) ||
       !thread.posts.length ||
@@ -398,6 +507,9 @@ export function assertReviewData(workbook: Workbook): void {
       typeof suggestion.id !== 'string' ||
       !validActor(suggestion.author) ||
       !validTime(suggestion.createdAt) ||
+      (suggestion.updatedAt !== undefined && !validTime(suggestion.updatedAt)) ||
+      (suggestion.commentThreadId !== undefined &&
+        (typeof suggestion.commentThreadId !== 'string' || !suggestion.commentThreadId)) ||
       !['pending', 'accepted', 'rejected'].includes(suggestion.status) ||
       typeof suggestion.summary !== 'string' ||
       !Array.isArray(suggestion.changes) ||
@@ -433,4 +545,60 @@ export function assertReviewData(workbook: Workbook): void {
         throw new TypeError('Invalid suggested structure operation.');
     }
   }
+}
+
+export function findOpenComment(
+  workbook: Workbook,
+  sheetId: string,
+  range: string,
+): SpreadsheetComment | undefined {
+  const target = parseSpreadsheetRange(range);
+  if (!target) return;
+  return workbook.comments?.find((thread) => {
+    if (thread.resolved || thread.orphaned || thread.suggestionId || thread.sheetId !== sheetId)
+      return false;
+    const anchor = parseSpreadsheetRange(thread.range ?? '');
+    return (
+      !!anchor &&
+      anchor.start.x <= target.end.x &&
+      anchor.end.x >= target.start.x &&
+      anchor.start.y <= target.end.y &&
+      anchor.end.y >= target.start.y
+    );
+  });
+}
+export function addWorkbookComment(workbook: Workbook, text: string, stamp: ReviewStamp): Workbook {
+  if (!text.trim()) throw new TypeError('A comment needs text.');
+  const next = copyWorkbook(workbook);
+  (next.comments ??= []).push({
+    id: stamp.id,
+    scope: 'workbook',
+    resolved: false,
+    posts: [{ id: stamp.id, author: { ...stamp.actor }, text: text.trim(), createdAt: stamp.time }],
+  });
+  return next;
+}
+/** A reviewer's local display is independent of the canonical workbook and other reviewers. */
+export function previewSuggestions(workbook: Workbook, actorId: string): Workbook {
+  const own = workbook.suggestions?.filter(
+    (item) =>
+      item.status === 'pending' && !item.outdated && !item.structure && item.author.id === actorId,
+  );
+  if (!own?.length) return workbook;
+  const next = copyWorkbook(workbook);
+  for (const item of own)
+    for (const change of item.changes) {
+      const sheet = next.worksheets.find((sheet) => sheet.id === change.sheetId),
+        cell = parseSpreadsheetAddress(change.address);
+      if (!sheet || !cell) continue;
+      while (sheet.data.length <= cell.y) sheet.data.push([]);
+      while (sheet.data[cell.y].length <= cell.x) sheet.data[cell.y].push(null);
+      sheet.data[cell.y][cell.x] = change.after;
+      if (change.afterStyle !== undefined) (sheet.style ??= {})[change.address] = change.afterStyle;
+      else if (sheet.style) delete sheet.style[change.address];
+      if (change.afterFormat !== undefined)
+        (sheet.formats ??= {})[change.address] = structuredClone(change.afterFormat);
+      else if (sheet.formats) delete sheet.formats[change.address];
+    }
+  return next;
 }

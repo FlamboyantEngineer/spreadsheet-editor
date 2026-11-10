@@ -1,11 +1,14 @@
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
 import type { SpreadsheetEditorController } from './use-editor.js';
 import { changeWorkbookStructure } from '../model/structure.js';
+import { findOpenComment } from '../model/review.js';
+import { selectionAddress } from '../model/editing.js';
 import { copyWorkbook, createWorkbook } from '../model/workbook.js';
 
 export function editorMenus(editor: SpreadsheetEditorController) {
   const e = editor,
-    write = !e.canWrite;
+    write = !e.canWrite,
+    structureBlocked = !e.canEdit;
   const item = (
     id: string,
     label: string,
@@ -26,16 +29,26 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     item('find', 'Find and replace', () => e.setShowFind(true), false, 'Ctrl+F'),
   ];
   const insert: MenuEntry[] = [
-    item('row-above', 'Insert rows above', () => e.structure('row', 'insert'), write),
-    item('row-below', 'Insert rows below', () => e.structure('row', 'insert', true), write),
-    item('column-before', 'Insert columns before', () => e.structure('column', 'insert'), write),
+    item('row-above', 'Insert rows above', () => e.structure('row', 'insert'), structureBlocked),
+    item(
+      'row-below',
+      'Insert rows below',
+      () => e.structure('row', 'insert', true),
+      structureBlocked,
+    ),
+    item(
+      'column-before',
+      'Insert columns before',
+      () => e.structure('column', 'insert'),
+      structureBlocked,
+    ),
     item(
       'column-after',
       'Insert columns after',
       () => e.structure('column', 'insert', true),
-      write,
+      structureBlocked,
     ),
-    item('add-sheet', 'Add worksheet', () => e.sheetCommand('add'), write),
+    item('add-sheet', 'Add worksheet', () => e.sheetCommand('add'), structureBlocked),
     { id: 'comment-separator', type: 'separator' },
     item('comment', 'Add comment', e.beginComment, !e.canComment, 'Ctrl+Alt+M'),
   ];
@@ -49,7 +62,9 @@ export function editorMenus(editor: SpreadsheetEditorController) {
         e.attempt(() => e.format({ 'text-align': horizontal, 'vertical-align': vertical })),
     })),
   );
-  const borders: MenuEntry[] = (['all', 'outside', 'bottom', 'none'] as const).map((kind) =>
+  const borders: MenuEntry[] = (
+    ['top', 'left', 'all', 'right', 'bottom', 'none', 'outside'] as const
+  ).map((kind) =>
     item(
       `borders-${kind}`,
       kind === 'none' ? 'No borders' : `${kind[0].toUpperCase()}${kind.slice(1)} borders`,
@@ -68,30 +83,39 @@ export function editorMenus(editor: SpreadsheetEditorController) {
       'merge',
       'Merge cells',
       () => e.merge(),
-      write || (e.selection.x1 === e.selection.x2 && e.selection.y1 === e.selection.y2),
+      structureBlocked || (e.selection.x1 === e.selection.x2 && e.selection.y1 === e.selection.y2),
     ),
     item(
       'unmerge',
       'Unmerge cells',
       () => e.merge(true),
-      write || !Object.keys(e.sheet.mergeCells ?? {}).length,
+      structureBlocked || !Object.keys(e.sheet.mergeCells ?? {}).length,
     ),
-    item('column-width', 'Column width…', () => e.openDialog('column-width'), write),
-    item('row-height', 'Row height…', () => e.openDialog('row-height'), write),
+    item('column-width', 'Column width…', () => e.openDialog('column-width'), structureBlocked),
+    item('row-height', 'Row height…', () => e.openDialog('row-height'), structureBlocked),
   ];
   const file: MenuEntry[] = [
-    item('new', 'New workbook', () => e.mutate(createWorkbook(), 'New workbook'), write),
-    item('import', 'Import CSV or workbook JSON…', () => e.openDialog('import'), write),
+    item('new', 'New workbook', () => e.mutate(createWorkbook(), 'New workbook'), structureBlocked),
+    item('import', 'Import CSV or workbook JSON…', () => e.openDialog('import'), structureBlocked),
     item('export', 'Export workbook JSON…', () => e.openDialog('export')),
+    ...(e.props.onImportXlsx
+      ? [item('import-excel', 'Import Excel…', e.importExcel, structureBlocked)]
+      : []),
+    ...(e.props.onExportXlsx
+      ? [
+          item(
+            'export-excel',
+            'Export to Excel',
+            e.exportExcel,
+            e.draftDirty || e.calculation.pending || !!e.calculation.error,
+          ),
+        ]
+      : []),
     ...(e.props.onSave
-      ? [item('save', 'Save', e.save, e.props.readOnly || e.savePhase === 'saving', 'Ctrl+S')]
+      ? [item('save', 'Save', () => e.save(), !e.canEdit || e.savePhase === 'saving', 'Ctrl+S')]
       : []),
     ...(e.props.onRefresh
-      ? [
-          item('refresh', 'Refresh external data', async () => {
-            await e.props.onRefresh?.();
-          }),
-        ]
+      ? [item('refresh', 'Update all formula data', () => e.refresh(), structureBlocked)]
       : []),
     ...(e.props.onInsert
       ? [
@@ -124,7 +148,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
           e.selection.x1 + 1;
         e.mutate(next, 'Freeze columns');
       },
-      write,
+      structureBlocked,
     ),
     item(
       'unfreeze',
@@ -134,7 +158,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
         next.worksheets.find((sheet) => sheet.id === e.sheet.id)!.freezeColumns = 0;
         e.mutate(next, 'Unfreeze columns');
       },
-      write || !e.sheet.freezeColumns,
+      structureBlocked || !e.sheet.freezeColumns,
     ),
     { id: 'pane-separator', type: 'separator' },
     ...['properties', 'history', 'comments', 'suggestions'].map((id) =>
@@ -167,33 +191,99 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     ...edit.slice(2, 8),
     { id: 'context-insert', type: 'separator' },
     ...insert.slice(0, 4),
-    item('delete-rows', 'Delete selected rows', () => e.structure('row', 'delete'), write),
-    item('delete-columns', 'Delete selected columns', () => e.structure('column', 'delete'), write),
+    item(
+      'delete-rows',
+      'Delete selected rows',
+      () => e.structure('row', 'delete'),
+      structureBlocked,
+    ),
+    item(
+      'delete-columns',
+      'Delete selected columns',
+      () => e.structure('column', 'delete'),
+      structureBlocked,
+    ),
     { id: 'context-format', type: 'separator' },
     { id: 'format', label: 'Format cells', items: format },
-    item('context-comment', 'Add comment', e.beginComment, !e.canComment),
+    item(
+      'context-comment',
+      findOpenComment(e.workbook, e.sheet.id, selectionAddress(e.selection))
+        ? 'Open comment'
+        : 'Add comment',
+      e.beginComment,
+      !e.canComment,
+    ),
+    ...(e.props.onRefresh
+      ? [
+          item('refresh-selection', 'Update formula data', () => e.refresh(true), structureBlocked),
+          item('refresh-all', 'Update all formula data', () => e.refresh(), structureBlocked),
+        ]
+      : []),
     item('context-suggestions', 'Show suggestions', () => e.openPanel('suggestions')),
   ];
+  const rowContext: MenuEntry[] = [
+    item('row-above', 'Insert rows above', () => e.structure('row', 'insert'), structureBlocked),
+    item(
+      'row-below',
+      'Insert rows below',
+      () => e.structure('row', 'insert', true),
+      structureBlocked,
+    ),
+    item(
+      'row-delete',
+      'Delete selected rows',
+      () => e.structure('row', 'delete'),
+      structureBlocked,
+    ),
+    item('row-height', 'Row height…', () => e.openDialog('row-height'), structureBlocked),
+  ];
+  const columnContext: MenuEntry[] = [
+    item(
+      'col-before',
+      'Insert columns before',
+      () => e.structure('column', 'insert'),
+      structureBlocked,
+    ),
+    item(
+      'col-after',
+      'Insert columns after',
+      () => e.structure('column', 'insert', true),
+      structureBlocked,
+    ),
+    item(
+      'col-delete',
+      'Delete selected columns',
+      () => e.structure('column', 'delete'),
+      structureBlocked,
+    ),
+    item('column-width', 'Column width…', () => e.openDialog('column-width'), structureBlocked),
+  ];
   const sheets: MenuEntry[] = [
-    item('rename', 'Rename worksheet…', () => e.openDialog('rename-sheet'), write),
-    item('duplicate', 'Duplicate worksheet', () => e.sheetCommand('duplicate'), write),
+    item(
+      'insert-sheet',
+      'Insert worksheet before',
+      () => e.sheetCommand('insert'),
+      structureBlocked,
+    ),
+    item('rename', 'Rename worksheet…', () => e.openDialog('rename-sheet'), structureBlocked),
+    item('duplicate', 'Duplicate worksheet', () => e.sheetCommand('duplicate'), structureBlocked),
     item(
       'move-left',
       'Move worksheet left',
       () => e.sheetCommand('left'),
-      write || e.workbook.worksheets[0].id === e.sheet.id,
+      structureBlocked || e.workbook.worksheets.length === 1,
     ),
     item(
       'move-right',
       'Move worksheet right',
       () => e.sheetCommand('right'),
-      write || e.workbook.worksheets.at(-1)!.id === e.sheet.id,
+      structureBlocked || e.workbook.worksheets.length === 1,
     ),
     item(
       'delete',
       'Delete worksheet',
       () => e.sheetCommand('delete'),
-      write || e.workbook.worksheets.length === 1,
+      structureBlocked || e.workbook.worksheets.length === 1,
     ),
   ];
   return {
@@ -206,6 +296,8 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     align,
     borders,
     context,
+    rowContext,
+    columnContext,
     sheets,
     appendRow: () => {
       const change = { axis: 'row', kind: 'insert', index: e.sheet.data.length, count: 1 } as const;

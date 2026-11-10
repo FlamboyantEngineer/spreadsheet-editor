@@ -1,3 +1,5 @@
+import { formatCalendar } from './calendar.js';
+import { quantityInUnit } from './units.js';
 import { Decimal } from 'decimal.js';
 import { formatCellValue, type DisplayOptions } from './format.js';
 import { isNumeric, type CellValue } from './values.js';
@@ -10,6 +12,21 @@ export function formatWorksheetCell(
 ): string {
   if (!format || format.kind === 'general' || !isNumeric(value))
     return formatCellValue(value, options);
+  if (format.kind === 'date' || format.kind === 'time' || format.kind === 'datetime') {
+    try {
+      return formatCalendar(value, format.kind);
+    } catch {
+      return '#VALUE!';
+    }
+  }
+  if (format.kind === 'unit') {
+    try {
+      const displayed = quantityInUnit(value, format.unit!);
+      return `${format.decimals === undefined ? formatCellValue(displayed, options) : formatWorksheetCell(displayed, { kind: 'number', decimals: format.decimals }, options)} ${format.unit}`;
+    } catch {
+      return '#VALUE!';
+    }
+  }
   if (format.kind === 'fraction')
     return formatCellValue(value, { ...options, notation: 'fraction' });
   const decimals =

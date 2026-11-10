@@ -3,11 +3,13 @@ import { expect, test, type Page } from '@playwright/test';
 const source = (page: Page) =>
   page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
 async function openLab(page: Page) {
-  await page.goto('/');
+  await page.goto('/full.html');
   await expect(source(page).locator('td[data-x="1"][data-y="1"]').first()).toHaveText('1e-25');
 }
 async function selectMode(page: Page, label: string) {
-  await source(page).getByLabel('Editing mode', { exact: true }).click();
+  await source(page)
+    .getByRole('button', { name: /Editing mode$/ })
+    .click();
   await page.getByRole('option', { name: label, exact: true }).click();
 }
 async function contextOn(page: Page, x: number, y: number) {
@@ -28,7 +30,7 @@ test('SE-CHROME-1: full chrome formats cells without rounding canonical calculat
   await nearOne.click();
   await editor.getByRole('button', { name: 'Bold selection', exact: true }).click();
   await expect(nearOne).toHaveCSS('font-weight', '700');
-  await editor.getByLabel('Number format', { exact: true }).click();
+  await editor.getByRole('button', { name: /Number format$/ }).click();
   await page.getByRole('option', { name: 'Percent', exact: true }).click();
   await expect(nearOne).toHaveText('100%');
   await expect(editor.locator('td[data-x="2"][data-y="2"]').first()).toHaveText('FALSE');
@@ -40,7 +42,7 @@ test('SE-CHROME-1: full chrome formats cells without rounding canonical calculat
     .getByRole('button', { name: 'Zoom in', exact: true })
     .click();
   await expect(editor.getByRole('group', { name: 'Spreadsheet zoom', exact: true })).toContainText(
-    '110%',
+    '125%',
   );
 });
 
@@ -71,29 +73,33 @@ test('SE-REVIEW-3: comments support replies, resolve/reopen, and host persistenc
   page,
 }) => {
   await openLab(page);
-  const menu = await contextOn(page, 1, 2);
+  const menu = await contextOn(page, 1, 3);
   await menu.getByRole('menuitem', { name: 'Add comment', exact: true }).click();
   const editor = source(page);
-  const draft = editor.getByRole('textbox', { name: 'Comment on Calculations!B3', exact: true });
+  const draft = page.getByRole('textbox', { name: 'Comment on Calculations!B4', exact: true });
   await draft.fill('Please double-check this exact result.');
-  await editor.getByRole('button', { name: 'Post comment', exact: true }).click();
-  const thread = editor
-    .getByRole('group', { name: 'Comment thread Calculations!B3', exact: true })
-    .filter({ hasText: 'Please double-check' });
+  await page.getByRole('button', { name: 'Post comment', exact: true }).click();
+  const thread = page.getByRole('group', { name: 'Comment thread Calculations!B4', exact: true });
   await thread
     .getByRole('textbox', { name: 'Reply to comment', exact: true })
     .fill('Checked without rounding.');
   await thread.getByRole('button', { name: 'Post reply', exact: true }).click();
   await expect(thread).toContainText('Checked without rounding.');
-  await expect(editor.locator('td[data-x="1"][data-y="2"]').first()).toHaveAttribute(
+  await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveAttribute(
     'data-se-comments',
-    '2',
+    '1',
   );
   await thread.getByRole('button', { name: 'Resolve', exact: true }).click();
   await expect(thread).not.toBeVisible();
+  await editor.getByRole('button', { name: /^Comments \(/ }).click();
   await editor.getByLabel('Comment filter', { exact: true }).click();
   await page.getByRole('option', { name: 'Resolved comments', exact: true }).click();
+  await editor
+    .getByRole('button')
+    .filter({ hasText: 'Please double-check this exact result.' })
+    .click();
   await thread.getByRole('button', { name: 'Reopen', exact: true }).click();
+  await page.keyboard.press('Escape');
   await editor.getByLabel('Comment filter', { exact: true }).click();
   await page.getByRole('option', { name: 'Open comments', exact: true }).click();
   await editor.getByRole('button', { name: 'Save', exact: true }).click();
@@ -105,9 +111,7 @@ test('SE-REVIEW-3: comments support replies, resolve/reopen, and host persistenc
   await expect(
     editor.getByText('Please double-check this exact result.', { exact: true }),
   ).toBeVisible();
-  await expect(editor.locator('td[data-x="1"][data-y="2"]').first()).toHaveText(
-    '0.9999999999999999999999999',
-  );
+  await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveText('1e-25');
 });
 
 test('SE-REVIEW-4: native grid edits create suggestions and accept/reject preserves canonical data', async ({
@@ -120,15 +124,19 @@ test('SE-REVIEW-4: native grid edits create suggestions and accept/reject preser
   await cell.dblclick();
   await cell.getByRole('textbox').fill('2E-25');
   await cell.getByRole('textbox').press('Enter');
+  await expect(cell).toHaveText('2e-25');
+  await selectMode(page, 'Authoring');
   await expect(cell).toHaveText('1e-25');
   const suggestion = editor.getByRole('article', { name: 'Suggestion: Edit cells', exact: true });
   await expect(suggestion).toContainText('2E-25');
   await suggestion.getByRole('button', { name: 'Accept suggestion', exact: true }).click();
   await expect(cell).toHaveText('2e-25');
   await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveText('2e-25');
+  await selectMode(page, 'Reviewing');
   await cell.click();
   await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('3E-25');
   await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+  await selectMode(page, 'Authoring');
   const second = editor.getByRole('article', { name: 'Suggestion: Edit B2', exact: true });
   await second.getByRole('button', { name: 'Reject suggestion', exact: true }).click();
   await expect(cell).toHaveText('2e-25');
@@ -213,8 +221,10 @@ test('SE-REVIEW-6: bulk clipboard paste becomes one proposal and never edits can
   const editor = source(page);
   await editor.locator('td[data-x="1"][data-y="1"]').first().click();
   await page.keyboard.press('Control+V');
+  await expect(editor.locator('td[data-x="1"][data-y="1"]').first()).toHaveText('2e-25');
+  await selectMode(page, 'Authoring');
   await expect(editor.locator('td[data-x="1"][data-y="1"]').first()).toHaveText('1e-25');
-  const proposal = editor.getByRole('article', { name: 'Suggestion: Edit cells', exact: true });
+  const proposal = editor.getByRole('article', { name: 'Suggestion: Paste cells', exact: true });
   await expect(proposal).toHaveCount(1);
   await expect(proposal).toContainText('2E-25');
   await expect(proposal).toContainText('=1-B2');
@@ -238,15 +248,22 @@ test('SE-REVIEW-7: server calculations retain comments and accepted exact sugges
   const responsePromise = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/calculate') &&
-      response.request().postDataJSON().workbook.worksheets[0].data[1][1] === '2E-25',
+      response.request().postDataJSON().workbook.worksheets[0].data[1][1] === '2E-25' &&
+      response.request().postDataJSON().workbook.suggestions.at(-1).status === 'accepted',
   );
+  await selectMode(page, 'Authoring');
   await editor
     .getByRole('article', { name: 'Suggestion: Edit B2', exact: true })
     .getByRole('button', { name: 'Accept suggestion', exact: true })
     .click();
   const response = await responsePromise;
   expect(response.ok()).toBe(true);
-  expect(response.request().postDataJSON().workbook.comments).toHaveLength(1);
+  expect(response.request().postDataJSON().workbook.comments).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ range: 'B3' }),
+      expect.objectContaining({ suggestionDecision: 'accepted', resolved: true }),
+    ]),
+  );
   expect(response.request().postDataJSON().workbook.suggestions.at(-1).status).toBe('accepted');
   await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveText('2e-25');
 });

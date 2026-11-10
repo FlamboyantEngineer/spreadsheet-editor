@@ -211,6 +211,7 @@ export function changeWorkbookStructure(
     );
   sheet.style = remap(sheet.style);
   sheet.formats = remap(sheet.formats);
+  sheet.cellProvenance = remap(sheet.cellProvenance);
   const merges: NonNullable<Worksheet['mergeCells']> = {};
   for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
     const anchor = parseSpreadsheetAddress(address)!;
@@ -236,7 +237,7 @@ export function changeWorkbookStructure(
   );
   next.comments?.forEach((thread) => {
     if (thread.sheetId === sheetId && !thread.orphaned) {
-      const moved = moveRange(thread.range, change);
+      const moved = moveRange(thread.range ?? '', change);
       if (moved) thread.range = parseSpreadsheetRange(moved)!.address;
       else thread.orphaned = true;
     }
@@ -269,14 +270,16 @@ export function changeWorkbookStructure(
 export function renameWorksheet(workbook: Workbook, sheetId: string, name: string): Workbook {
   const next = copyWorkbook(workbook),
     sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
-  const normalized = name.trim();
+  const normalized = name.trim().replace(/\s+/g, ' ');
   if (
     !sheet ||
     !normalized ||
     normalized.length > 256 ||
     /[[\]:*?/\\!]/.test(normalized) ||
     next.worksheets.some(
-      (other) => other.id !== sheetId && other.name.toUpperCase() === normalized.toUpperCase(),
+      (other) =>
+        other.id !== sheetId &&
+        other.name.trim().replace(/\s+/g, ' ').toUpperCase() === normalized.toUpperCase(),
     )
   )
     throw new TypeError('Choose a unique worksheet name without reserved characters.');
@@ -287,7 +290,8 @@ export function renameWorksheet(workbook: Workbook, sheetId: string, name: strin
       row.forEach((value, index) => {
         if (typeof value === 'string')
           row[index] = mapReferences(value, (reference, target, prefix) =>
-            target?.toUpperCase() === previous.toUpperCase()
+            target?.trim().replace(/\s+/g, ' ').toUpperCase() ===
+            previous.trim().replace(/\s+/g, ' ').toUpperCase()
               ? `'${normalized.replace(/'/g, "''")}'!${reference}`
               : prefix + reference,
           );
@@ -319,4 +323,32 @@ export function deleteWorksheet(workbook: Workbook, sheetId: string): Workbook {
     if (item.changes.some((cell) => cell.sheetId === sheetId)) item.outdated = true;
   });
   return next;
+}
+
+/** Translate a copied formula without touching literals, sheet names or absolute axes. */
+export function translateFormulaReferences(formula: string, dx: number, dy: number): string {
+  return mapReferences(formula, (reference, _sheet, prefix) => {
+    const axis = (token: string, kind: 'column' | 'row'): string | null => {
+      const anchored = token.startsWith('$');
+      const bare = token.replace('$', '');
+      const before = kind === 'column' ? parseSpreadsheetColumnName(bare) : Number(bare) - 1;
+      if (before === null) return null;
+      const after = before + (anchored ? 0 : kind === 'column' ? dx : dy);
+      if (after < 0 || after > (kind === 'column' ? 16383 : 1048575)) return null;
+      return (
+        (anchored ? '$' : '') +
+        (kind === 'column' ? formatSpreadsheetColumnName(after) : String(after + 1))
+      );
+    };
+    const pieces = reference.split(':').map((token) => {
+      const cell = /^(\$?[A-Za-z]+)(\$?[1-9]\d*)$/.exec(token);
+      if (cell) {
+        const x = axis(cell[1], 'column'),
+          y = axis(cell[2], 'row');
+        return x === null || y === null ? null : x + y;
+      }
+      return axis(token, /[A-Za-z]/.test(token) ? 'column' : 'row');
+    });
+    return pieces.some((part) => part === null) ? '#REF!' : prefix + pieces.join(':');
+  });
 }

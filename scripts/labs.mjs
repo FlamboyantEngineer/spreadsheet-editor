@@ -20,6 +20,22 @@ async function main() {
   const { handleCalculationRequest } = await import(
     pathToFileURL(resolve(output, 'calculation-server.mjs')).href
   );
+  const { importXlsx, exportXlsx } = await import(
+    pathToFileURL(resolve(output, 'excel-server.mjs')).href
+  );
+  const { calculateWorkbook } = await import(
+    pathToFileURL(resolve(output, 'calculation-server.mjs')).href
+  );
+  async function readBody(request, maxBytes) {
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of request) {
+      size += chunk.length;
+      if (size > maxBytes) throw new RangeError('Request is too large.');
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
   const types = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
@@ -30,6 +46,38 @@ async function main() {
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? '/', 'http://localhost');
+      if (url.pathname === '/api/xlsx/import' || url.pathname === '/api/xlsx/export') {
+        if (request.method !== 'POST') {
+          response.writeHead(405).end();
+          return;
+        }
+        try {
+          const body = await readBody(request, 20 * 1024 * 1024);
+          if (url.pathname.endsWith('/import')) {
+            const imported = await importXlsx(body);
+            const result = calculateWorkbook(imported.workbook);
+            response
+              .writeHead(200, { 'content-type': 'application/json' })
+              .end(JSON.stringify({ ...imported, result }));
+          } else {
+            const { workbook, result } = JSON.parse(body.toString());
+            const bytes = await exportXlsx(workbook, result);
+            response
+              .writeHead(200, {
+                'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'content-disposition': 'attachment; filename="workbook.xlsx"',
+              })
+              .end(bytes);
+          }
+        } catch (error) {
+          response
+            .writeHead(error instanceof RangeError ? 413 : 400, {
+              'content-type': 'application/json',
+            })
+            .end(JSON.stringify({ error: error.message }));
+        }
+        return;
+      }
       if (url.pathname === '/api/calculate') {
         const webRequest = new Request(url, {
           method: request.method,
@@ -52,7 +100,11 @@ async function main() {
       const file = await realpath(
         resolve(output, `.${pathname === '/' ? '/index.html' : pathname}`),
       );
-      if (!file.startsWith(output + sep) || !types[extname(file)]) {
+      if (
+        !file.startsWith(output + sep) ||
+        !types[extname(file)] ||
+        file.startsWith(resolve(output, 'worker.'))
+      ) {
         response.writeHead(404).end('Not found');
         return;
       }

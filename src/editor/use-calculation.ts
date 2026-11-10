@@ -10,6 +10,7 @@ export function useCalculation(
   workbook: Workbook,
   provider: CalculationProvider,
   options?: CalculationOptions,
+  enabled = true,
 ) {
   const [settled, setSettled] = useState<{
     workbook: Workbook;
@@ -19,6 +20,7 @@ export function useCalculation(
     error: string | null;
   } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     Promise.resolve()
       .then(() => provider.calculate(workbook, options, controller.signal))
@@ -38,12 +40,12 @@ export function useCalculation(
           });
       });
     return () => controller.abort();
-  }, [workbook, provider, options]);
+  }, [workbook, provider, options, enabled]);
   const current =
     settled?.workbook === workbook && settled.provider === provider && settled.options === options;
   return {
     result: current ? settled.result : null,
     error: current ? settled.error : null,
-    pending: !current,
+    pending: enabled && !current,
   };
 }

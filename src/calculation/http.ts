@@ -84,6 +84,12 @@ export function assertCalculationResult(
           continue;
         if (
           cell.kind !== 'number' ||
+          (cell.dimension !== undefined &&
+            (!Array.isArray(cell.dimension) ||
+              cell.dimension.length !== 7 ||
+              cell.dimension.some((n) => !Number.isInteger(n) || Math.abs(n) > 32))) ||
+          (cell.quantityKind !== undefined &&
+            (typeof cell.quantityKind !== 'string' || cell.quantityKind.length > 128)) ||
           typeof cell.numerator !== 'string' ||
           typeof cell.denominator !== 'string' ||
           cell.numerator.length > 100_001 ||
@@ -162,16 +168,16 @@ function boundedOptions(requested: unknown, ceilings: CalculationOptions = {}): 
     throw new TypeError('Invalid calculation options.');
   const options = requested as Record<string, unknown> | undefined;
   const result: Record<string, number> = {};
-  const defaults: Required<CalculationOptions> = {
-    maxCells: 50_000,
+  const defaults: Required<Omit<CalculationOptions, 'timeZone'>> = {
+    maxCells: 250_000,
     maxCellLength: 10_000,
-    maxWorksheets: 100,
-    maxOperations: 200_000,
+    maxWorksheets: 200,
+    maxOperations: 2_000_000,
     maxDepth: 128,
     maxIntegerDigits: 10_000,
     precision: 80,
   };
-  for (const key of Object.keys(defaults) as (keyof CalculationOptions)[]) {
+  for (const key of Object.keys(defaults) as (keyof Omit<CalculationOptions, 'timeZone'>)[]) {
     const value = options?.[key];
     if (
       value !== undefined &&
@@ -182,7 +188,11 @@ function boundedOptions(requested: unknown, ceilings: CalculationOptions = {}): 
     const ceiling = ceilings[key] ?? (key === 'precision' ? 1000 : defaults[key]);
     result[key] = Math.min(typeof value === 'number' ? value : defaults[key], ceiling);
   }
-  return result;
+  const timeZone = ceilings.timeZone ?? options?.timeZone ?? 'UTC';
+  if (typeof timeZone !== 'string' || timeZone.length > 100)
+    throw new TypeError('Invalid calendar time zone.');
+  new Intl.DateTimeFormat('en-US', { timeZone });
+  return { ...result, timeZone };
 }
 
 /** Fetch-standard route handler: mount behind the host's own routing and authorization. */

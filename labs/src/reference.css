@@ -1,192 +1,152 @@
-:root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #182735;
-  background: #f6f8fa;
-}
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-}
-main {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 40px 28px;
-}
-header {
-  max-width: 850px;
-  margin-bottom: 24px;
-}
-h1 {
-  font-size: clamp(28px, 4vw, 44px);
-  letter-spacing: -0.04em;
-  margin: 10px 0 18px;
-}
-p {
-  line-height: 1.55;
-  color: #4d5d6b;
-}
-.lab-eyebrow {
-  color: #26736c;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-.lab-controls {
-  display: flex;
-  align-items: end;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 22px;
-}
-.lab-controls .ui-field {
-  max-width: 170px;
-}
-.lab-examples {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  margin-bottom: 24px;
-}
-.lab-examples > div {
-  padding: 16px;
-  border: 1px solid #d7e0e5;
-  background: white;
-  border-radius: 8px;
-  overflow: auto;
-}
-.lab-examples span {
-  display: block;
-  font-size: 12px;
-  color: #59707d;
-  margin-bottom: 10px;
-}
-.lab-examples output {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  white-space: nowrap;
-}
+@import '@flamboyantengineer/ui-components/reference.css';
+
 .se-editor {
-  border: 1px solid #cdd8de;
-  background: white;
-  border-radius: 8px;
+  border: 1px solid var(--ref-border);
+  background: var(--ref-surface);
+  color: var(--ref-text);
+  border-radius: 4px;
   overflow: hidden;
-  margin: 20px 0;
   font-size: 13px;
+  min-width: 0;
 }
 .se-editor__header {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 14px 16px;
-  background: #f5f9fa;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--ref-canvas);
 }
 .se-editor__title {
-  font-size: 17px;
-  letter-spacing: -0.02em;
+  font-size: 14px;
+  font-weight: 600;
   margin: 0 auto 0 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.se-editor__header .ui-field {
-  min-width: 140px;
+.se-editor__header .ui-select-field {
+  width: 120px;
+  flex: none;
 }
 .se-editor__header .ui-save-status {
-  font-size: 12px;
+  font-size: 11px;
 }
 .se-editor__menubar {
-  display: flex;
   border: 0;
   border-radius: 0;
-  padding: 4px 10px;
-  background: #f5f9fa;
+  padding: 0 6px 4px;
+  background: var(--ref-canvas);
 }
 .se-editor__toolbar {
-  padding: 8px 12px;
-  border-block: 1px solid #e0e7eb;
-  background: #fff;
+  padding: 3px 6px;
+  border-block: 1px solid var(--ref-border);
+  background: var(--ref-surface);
 }
 .se-editor__toolbar .ui-toolbar-scroller__strip {
-  gap: 8px;
+  gap: 0;
+  padding: 2px;
+}
+.se-editor__tool-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 6px;
+}
+.se-editor__tool-group + .se-editor__tool-group {
+  border-inline-start: 1px solid var(--ref-border);
 }
 .se-editor__toolbar .ui-field {
   flex: none;
-  min-width: 85px;
+}
+.se-editor__font-family {
+  width: 116px;
+}
+.se-editor__font-size {
+  width: 58px;
+}
+.se-editor__number-format {
+  width: 110px;
 }
 .se-editor__toolbar .ui-color-field {
-  min-width: 90px;
-}
-.se-editor__toolbar .ui-field__label {
-  font-size: 10px;
+  width: 100px;
 }
 .se-editor__toolbar .ui-button {
   flex: none;
 }
+/* Toolbar fields have accessible names, but no visible labels or reserved empty feedback rows. */
+.se-editor__chrome .ui-field__message:empty,
+.se-editor__formula-bar .ui-field__message:empty {
+  display: none;
+}
 .se-editor__actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
   align-items: center;
-  padding: 7px 12px;
-  background: #fbfcfd;
-}
-.se-editor__actions .ui-button {
-  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--ref-canvas);
 }
 .se-editor__formula-bar {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
-  border-block: 1px solid #e0e7eb;
-  background: #f8fbfc;
+  border-bottom: 1px solid var(--ref-border);
+  min-width: 0;
 }
 .se-editor__formula-bar .ui-formula-bar {
-  flex: 1;
-  min-width: 200px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
   border: 0;
   background: none;
-  padding: 0;
 }
 .se-editor__formula-controls {
   display: flex;
-  flex: 1;
-  gap: 8px;
+  align-items: center;
+  flex: 1 1 0;
+  gap: 4px;
   min-width: 0;
 }
 .se-editor__formula-controls .ui-field {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
 }
-.se-editor__formula-bar .ui-field__label {
-  position: absolute;
-  clip-path: inset(50%);
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-}
-.se-editor__formula-bar .se-editor__address {
+.se-editor__formula-controls > .ui-button {
   flex: none;
-  width: 90px;
+}
+.se-editor__address {
+  width: 96px;
   min-width: 0;
+}
+.se-editor__address input {
+  text-align: center;
+  font-family: var(--ref-mono);
+}
+.se-editor__formula-controls input {
+  font-family: var(--ref-mono);
 }
 .se-editor__formula-bar output {
-  flex: none;
-  width: 220px;
-  font:
-    11px ui-monospace,
-    monospace;
-  overflow-wrap: anywhere;
+  flex: 0 1 220px;
+  min-width: 0;
+  max-width: 24%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-inline-start: 1px solid var(--ref-border);
+  padding-inline-start: 10px;
+  font: 11px var(--ref-mono);
+  color: var(--ref-muted);
 }
 .se-editor__find {
   padding: 8px 12px;
-  border-bottom: 1px solid #e0e7eb;
+  border-bottom: 1px solid var(--ref-border);
 }
 .se-editor__workspace {
   display: flex;
   align-items: stretch;
-  min-height: 440px;
+  min-width: 0;
 }
 .se-editor__main {
   flex: 1;
@@ -203,14 +163,21 @@ p {
 .se-editor__sidebar {
   display: flex;
   flex: none;
-  max-height: 600px;
-  border-inline-start: 1px solid #e0e7eb;
+  max-width: 100%;
+  max-height: 460px;
+  border-inline-start: 1px solid var(--ref-border);
 }
 .se-editor__sidebar .ui-dock-panel__pane {
   padding: 14px;
 }
 .se-editor__sidebar .ui-dock-panel {
   border: 0;
+}
+.se-editor[data-chrome='minimal'] .se-editor__workspace {
+  min-height: 0;
+}
+.se-editor[data-chrome='embedded'] .se-editor__title {
+  font-size: 12px;
 }
 .se-editor__engine {
   width: 100%;
@@ -223,29 +190,22 @@ p {
   width: 100%;
   padding: 0;
 }
-.se-editor__engine .jss td {
-  font-size: 13px;
+.se-editor__engine .jss_worksheet td {
+  font-size: 12px;
 }
 .se-editor__engine td[data-approximate='true'] {
-  color: #8c5410;
+  color: var(--ref-warning);
 }
 .se-editor__engine td[data-se-comments] {
-  position: relative;
-}
-.se-editor__engine td[data-se-comments]::after {
-  content: '';
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 0;
-  height: 0;
-  border-top: 7px solid #ad690c;
-  border-left: 7px solid transparent;
+  background-image: linear-gradient(45deg, transparent 50%, #ad690c 50%);
+  background-position: top right;
+  background-size: 7px 7px;
+  background-repeat: no-repeat;
 }
 .se-editor__engine td[data-se-suggestions] {
   box-shadow: inset 0 0 0 2px #2a8c74;
 }
-.se-editor__grid[data-gridlines='false'] .jss tbody td {
+.se-editor__grid[data-gridlines='false'] .jss_worksheet tbody td {
   border-color: transparent;
 }
 .se-editor__sheets,
@@ -262,32 +222,6 @@ p {
 }
 .se-editor__sheets .ui-button {
   font-size: 12px;
-}
-.se-editor__statusbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 7px 12px;
-  border-top: 1px solid #e0e7eb;
-  background: #f5f9fa;
-}
-.se-editor__status {
-  font-size: 11px;
-  margin: 0 auto 0 0;
-}
-.se-editor__status[role='alert'] {
-  color: #a32323;
-}
-.se-editor__summary {
-  font-size: 11px;
-  color: #4d5d6b;
-}
-.se-editor__statusbar .ui-zoom-control {
-  gap: 7px;
-}
-.se-editor__statusbar .ui-zoom-control__slider {
-  width: 90px;
 }
 .se-editor__notice {
   display: flex;
@@ -363,75 +297,407 @@ p {
   flex-wrap: wrap;
   gap: 8px;
 }
-.lab-hint {
-  font-size: 12px;
+
+.se-editor__engine .jss_worksheet {
+  color: var(--ref-text);
 }
-.lab-document {
-  margin-top: 36px;
-  border-top: 1px solid #d2dce2;
-  padding-top: 18px;
+.se-editor__engine .jss_worksheet tbody td {
+  background-color: var(--ref-surface);
+  border-color: var(--ref-border);
 }
-.lab-document > .ui-button {
-  margin-right: 10px;
+.se-editor__engine .jss_worksheet thead td,
+.se-editor__engine .jss_worksheet tbody td.jss_row {
+  color: var(--ref-muted);
+  background-color: var(--ref-canvas) !important;
+  border-color: var(--ref-border);
 }
-.lab-document-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 24px 0;
-  background: white;
+.se-editor__sheets {
+  padding: 4px 8px;
+  gap: 4px;
+  background: var(--ref-canvas);
+  border-color: var(--ref-border);
 }
-.lab-document-table caption {
-  text-align: left;
-  font-size: 13px;
-  padding-bottom: 12px;
+.se-editor__insertion {
+  padding: 6px 10px;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-color: var(--ref-border);
 }
-.lab-document-table td {
-  border: 1px solid #cdd8de;
-  padding: 12px;
-  font-size: 13px;
+.se-editor__statusbar {
+  padding: 4px 10px;
+  gap: 12px;
+  background: var(--ref-canvas);
+  border-color: var(--ref-border);
 }
-details {
-  margin-top: 20px;
+.se-editor__status,
+.se-editor__summary {
+  color: var(--ref-muted);
 }
-summary {
-  cursor: pointer;
-  font-size: 13px;
+.se-editor__status[role='alert'] {
+  color: var(--ref-danger);
 }
-pre {
-  overflow: auto;
-  max-height: 400px;
-  font-size: 12px;
-  padding: 20px;
-  background: #eaf0f4;
-  border-radius: 6px;
+.se-properties dt,
+.se-suggestion .ui-attribution {
+  color: var(--ref-muted);
 }
-@media (max-width: 800px) {
-  main {
-    padding: 20px 12px;
-  }
-  .lab-examples {
-    grid-template-columns: 1fr;
+.se-suggestion {
+  border-color: var(--ref-border);
+}
+@media (max-width: 720px) {
+  .se-editor__header {
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .se-editor__formula-bar {
     flex-wrap: wrap;
+    gap: 4px;
   }
-  .se-editor__workspace {
-    overflow: auto;
-  }
-  .se-editor__sidebar .ui-dock-panel[data-expanded] {
-    min-width: 280px;
+  .se-editor__formula-bar .ui-formula-bar {
+    flex-basis: 100%;
   }
   .se-editor__formula-bar output {
-    width: auto;
+    flex-basis: 100%;
+    max-width: 100%;
+    padding: 0 0 0 78px;
+    border: 0;
+  }
+  .se-editor__workspace:has(.ui-dock-panel[data-expanded]) {
+    flex-wrap: wrap;
+  }
+  .se-editor__sidebar:has(.ui-dock-panel[data-expanded]) {
+    width: 100%;
+    border-inline-start: 0;
+    border-top: 1px solid var(--ref-border);
+  }
+  .se-editor__sidebar .ui-dock-panel[data-expanded] {
+    width: 100% !important;
+  }
+  .se-editor__statusbar .ui-zoom-control {
+    margin-inline-start: auto;
+  }
+  .se-editor__summary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
-.se-editor__toolbar .ui-select-field {
-  width: 128px;
-  min-width: 0;
-  max-width: 128px;
+
+.se-editor__chrome .ui-field,
+.se-editor__formula-bar .ui-field {
+  display: flex;
+  align-items: center;
 }
-.se-editor__toolbar .ui-color-field {
-  width: 112px;
+.se-editor__chrome .ui-field__control,
+.se-editor__formula-bar .ui-field__control {
+  flex: 1;
   min-width: 0;
-  max-width: 112px;
+}
+.se-editor__sheets {
+  flex-wrap: nowrap;
+  min-width: 0;
+  height: 34px;
+  padding: 0 6px;
+}
+.se-editor__sheet-tabs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: auto hidden;
+  gap: 4px;
+}
+.se-editor__sheets > .ui-button {
+  flex: none;
+}
+.se-editor__sheets .ui-zoom-control {
+  margin-inline-start: auto;
+  flex: none;
+}
+.se-editor__sheets .ui-zoom-control__slider {
+  width: 70px;
+}
+.se-editor[data-chrome='embedded'] .se-editor__chrome {
+  display: flex;
+}
+.se-editor[data-chrome='embedded'] .se-editor__toolbar {
+  flex: 1;
+  min-width: 0;
+}
+.se-editor[data-chrome='embedded'] .se-editor__header {
+  order: 1;
+  flex: none;
+  padding: 4px 8px;
+  border-block: 1px solid var(--ref-border);
+}
+@media (max-width: 520px) {
+  .se-editor__sheets .ui-zoom-control__slider {
+    display: none;
+  }
+  .se-editor[data-chrome='embedded'] .se-editor__header {
+    gap: 4px;
+  }
+  .se-editor[data-chrome='embedded'] .se-editor__header .ui-select-field {
+    width: 100px;
+  }
+}
+
+.se-editor__formula-input {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.se-editor__formula-overlay {
+  position: absolute;
+  inset: 1px 7px;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: pre;
+  font: 12px/22px var(--ref-mono);
+}
+.se-editor__formula-overlay > span {
+  display: inline-block;
+}
+.se-editor__formula-input[data-highlighted] input {
+  color: transparent;
+  caret-color: var(--ref-text);
+}
+.se-editor__formula-input input {
+  font-size: 12px;
+}
+.se-editor__grid-surface {
+  position: relative;
+  min-width: 0;
+}
+.se-editor__reference-frame {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+}
+.se-editor__reference-outline {
+  position: absolute;
+  border: 2px solid;
+  pointer-events: none;
+}
+.se-editor__engine .jss_worksheet > thead > tr > td,
+.se-editor__engine .jss_worksheet tbody > tr > .jss_row {
+  text-align: center !important;
+  vertical-align: middle;
+}
+
+.se-editor__format-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(76px, 1fr));
+  gap: 3px;
+}
+.se-editor__format-grid .ui-menu-item {
+  font-size: 11px;
+  padding: 6px;
+  justify-content: center;
+}
+.se-editor__historical {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--ref-surface);
+  border-bottom: 1px solid var(--ref-border);
+}
+.se-history ol {
+  padding-left: 20px;
+}
+.se-history li > .ui-button {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  text-align: left;
+  margin-block: 8px;
+}
+.se-editor__formula-bar {
+  min-height: 40px;
+}
+
+.se-editor__presence-outline {
+  position: absolute;
+  border: 2px solid var(--se-presence-color);
+  pointer-events: none;
+}
+.se-editor__presence-outline[data-kind='lock'] {
+  border-style: dashed;
+}
+.se-editor__presence-outline > span {
+  position: absolute;
+  bottom: 100%;
+  left: -2px;
+  padding: 1px 5px;
+  background: var(--se-presence-color);
+  color: white;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.se-editor__engine td[data-se-contributor] {
+  background-color: color-mix(in srgb, var(--se-presence-color) 18%, var(--ref-surface)) !important;
+}
+.se-editor__engine td[data-se-contributor='unknown'] {
+  --se-presence-color: var(--ref-muted);
+}
+.se-editor__engine td[data-se-ai] {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    color-mix(in srgb, var(--se-presence-color) 20%, transparent) 4px,
+    color-mix(in srgb, var(--se-presence-color) 20%, transparent) 8px
+  );
+}
+@media (max-width: 720px) {
+  .se-editor[data-chrome='embedded'] .se-editor__chrome {
+    flex-wrap: wrap;
+  }
+  .se-editor[data-chrome='embedded'] .se-editor__toolbar {
+    flex-basis: 100%;
+  }
+  .se-editor[data-chrome='embedded'] .se-editor__header {
+    width: 100%;
+    justify-content: end;
+  }
+}
+.se-editor__presence-outline[data-color='0'],
+.se-editor__engine td[data-se-contributor='0'] {
+  --se-presence-color: var(--ref-category-0-fill);
+}
+.se-editor__presence-outline[data-color='1'],
+.se-editor__engine td[data-se-contributor='1'] {
+  --se-presence-color: var(--ref-category-1-fill);
+}
+.se-editor__presence-outline[data-color='2'],
+.se-editor__engine td[data-se-contributor='2'] {
+  --se-presence-color: var(--ref-category-2-fill);
+}
+.se-editor__presence-outline[data-color='3'],
+.se-editor__engine td[data-se-contributor='3'] {
+  --se-presence-color: var(--ref-category-3-fill);
+}
+.se-editor__presence-outline[data-color='4'],
+.se-editor__engine td[data-se-contributor='4'] {
+  --se-presence-color: var(--ref-category-4-fill);
+}
+.se-editor__presence-outline[data-color='5'],
+.se-editor__engine td[data-se-contributor='5'] {
+  --se-presence-color: var(--ref-category-5-fill);
+}
+.se-editor__presence-outline[data-color='6'],
+.se-editor__engine td[data-se-contributor='6'] {
+  --se-presence-color: var(--ref-category-6-fill);
+}
+.se-editor__presence-outline[data-color='7'],
+.se-editor__engine td[data-se-contributor='7'] {
+  --se-presence-color: var(--ref-category-7-fill);
+}
+
+.se-comment-bubble {
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(620px, 80vh);
+  overflow: auto;
+}
+.se-comment-bubble .se-comments .ui-comment-thread {
+  margin-top: 0;
+}
+
+.se-editor__notice[data-tone='warning'] {
+  animation: se-warning 3s linear;
+}
+@keyframes se-warning {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.se-comments__conversation {
+  border-bottom: 1px solid var(--ref-border);
+}
+.se-comments__conversation > .ui-button {
+  width: 100%;
+  text-align: start;
+  padding: 10px 0;
+}
+.se-comments__conversation .ui-button__label {
+  display: grid;
+  gap: 5px;
+  white-space: normal;
+}
+.se-comments__conversation .ui-attribution {
+  color: var(--ref-muted);
+  font-size: 11px;
+}
+
+.se-editor__native-formula {
+  position: absolute;
+  z-index: 7;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre;
+}
+
+.se-editor__formula-input > .ui-field {
+  width: 100%;
+}
+.se-editor__engine .jss_worksheet {
+  background-color: var(--ref-canvas);
+}
+.se-editor__engine .jss_content {
+  box-shadow: none !important;
+  border-color: var(--ref-border);
+}
+.se-editor__engine .jss_worksheet td.highlight {
+  background-color: color-mix(in srgb, var(--ref-accent) 8%, var(--ref-surface));
+}
+
+.se-editor__border-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(3, 36px);
+  gap: 3px;
+  min-width: 0;
+}
+.se-editor__border-grid .ui-menu-item {
+  display: flex;
+  justify-content: center;
+  padding: 6px;
+}
+.se-editor__border-grid .ui-menu-item__label {
+  position: absolute;
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.se-editor__border-grid .ui-menu-item:nth-child(1) {
+  grid-column: 2;
+  grid-row: 1;
+}
+.se-editor__border-grid .ui-menu-item:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+.se-editor__border-grid .ui-menu-item:nth-child(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+.se-editor__border-grid .ui-menu-item:nth-child(4) {
+  grid-column: 3;
+  grid-row: 2;
+}
+.se-editor__border-grid .ui-menu-item:nth-child(5) {
+  grid-column: 2;
+  grid-row: 3;
+}
+.se-editor__border-grid .ui-menu-item:nth-child(6) {
+  grid-column: 3;
+  grid-row: 3;
 }

@@ -1,7 +1,9 @@
 import type { CellValue } from '../calculation/values.js';
 import type { DisplayOptions } from '../calculation/format.js';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
-import type { CellInput } from '../model/workbook.js';
+import { collaboratorColorIndex } from '../model/presence.js';
+import type { CellSelection } from '../model/editing.js';
+import type { CellInput, Worksheet } from '../model/workbook.js';
 import type { CellFormat, SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
 import {
   formatSpreadsheetAddress,
@@ -75,13 +77,23 @@ export function renderReviewMarkers(
       cell.removeAttribute('title');
     });
   for (const thread of comments) {
-    if (thread.sheetId !== sheetId || thread.resolved || thread.orphaned) continue;
-    const range = parseSpreadsheetRange(thread.range);
+    if (thread.sheetId !== sheetId || thread.resolved || thread.orphaned || thread.suggestionId)
+      continue;
+    const range = parseSpreadsheetRange(thread.range ?? '');
     if (!range) continue;
-    const cell = worksheet.getCellFromCoords(range.start.x, range.start.y);
-    if (cell) {
-      cell.dataset.seComments = String(Number(cell.dataset.seComments ?? 0) + 1);
-      cell.title = `${cell.dataset.seComments} open comment(s)`;
+    for (
+      let y = range.start.y;
+      y <= Math.min(range.end.y, (worksheet.records?.length ?? 0) - 1);
+      y++
+    ) {
+      const width = worksheet.records?.[y]?.length ?? 0;
+      for (let x = range.start.x; x <= Math.min(range.end.x, width - 1); x++) {
+        const cell = worksheet.getCellFromCoords(x, y);
+        if (cell) {
+          cell.dataset.seComments = String(Number(cell.dataset.seComments ?? 0) + 1);
+          cell.title = `${cell.dataset.seComments} open comment(s)`;
+        }
+      }
     }
   }
   for (const suggestion of suggestions) {
@@ -97,6 +109,38 @@ export function renderReviewMarkers(
         cell.dataset.seSuggestions = String(Number(cell.dataset.seSuggestions ?? 0) + 1);
         cell.title = [cell.title, `Suggestion: ${suggestion.summary}`].filter(Boolean).join('; ');
       }
+    }
+  }
+}
+
+/** Contributor colours are presentation attributes, never authored cell styles. */
+export function renderContributors(
+  handle: JSpreadsheetHostHandle,
+  sheet: Worksheet,
+  visible: boolean,
+  editing?: CellSelection,
+): void {
+  const worksheet = worksheetFrom(handle);
+  if (!worksheet?.records) return;
+  for (let y = 0; y < worksheet.records.length; y++) {
+    const row = worksheet.records[y];
+    if (!row) continue;
+    for (let x = 0; x < row.length; x++) {
+      const cell = row[x]?.element;
+      if (!(cell instanceof HTMLElement)) continue;
+      delete cell.dataset.seContributor;
+      delete cell.dataset.seAi;
+      if (
+        !visible ||
+        cell.classList.contains('editor') ||
+        (editing && x === editing.x1 && y === editing.y1)
+      )
+        continue;
+      const entry = sheet.cellProvenance?.[formatSpreadsheetAddress(x, y)];
+      cell.dataset.seContributor = entry
+        ? String(collaboratorColorIndex(entry.actor.id))
+        : 'unknown';
+      if (entry?.source === 'ai') cell.dataset.seAi = 'true';
     }
   }
 }
