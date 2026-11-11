@@ -17,11 +17,10 @@ This private `0.x` package is the standalone extraction stage. Consumer migratio
 Use Node 22 or newer and Git. The base component library comes from the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository:
 
 ```sh
-npm ci --include=dev
 npm run labs
 ```
 
-Open **http://127.0.0.1:4173/**. The command builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, and Full editor labs, with the same Stylesheet and Theme selectors as the ui-components labs. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
+Open **http://127.0.0.1:4173/**. On a fresh checkout, the command installs the locked dependencies, including development tools and the public UI library, then builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, and Full editor labs, with the same Stylesheet and Theme selectors as the ui-components labs. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
 
 ```sh
 npm run labs -- --port 4200 --host 0.0.0.0
@@ -29,7 +28,9 @@ npm run labs -- --port 4200 --host 0.0.0.0
 
 The included server is a local development harness. Mount `handleCalculationRequest` behind your application's routing and authorization for a deployed server.
 
-If startup reports that `esbuild` is missing, the checkout has no complete development install. Run `npm ci --include=dev` from the repository root and check that it finishes successfully before rerunning labs. This also includes development tools when `NODE_ENV=production` or an npm omit setting would otherwise leave them out. Git must be able to fetch the public `FlamboyantEngineer/ui-components` dependency; resolve any installation error before starting labs. No private-library token is required. Use Node 22 or newer. These commands work in PowerShell and other supported shells.
+No separate `npm install` or `npm ci` step is needed. The launcher checks the installed packages against the lockfile and tests esbuild's native binary and the prepared UI assets. It automatically installs or repairs missing, stale or unusable dependencies with development/optional dependencies and lifecycle scripts enabled, even when your npm defaults omit them. Healthy installations are reused, so subsequent starts need no network installation. `npm run build:labs` uses the same setup.
+
+Node 22 or newer, npm, and Git must already be installed. First setup needs access to npm and the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository; no private-library token is required. If installation fails, the command preserves npm's diagnostics and stops. Fix the reported connection or installation problem and rerun `npm run labs`. The launcher works in PowerShell and other supported shells, including paths containing spaces.
 
 ## Embed the editor
 

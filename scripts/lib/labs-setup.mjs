@@ -3,7 +3,7 @@ export class LabsSetupError extends Error {}
 export function assertLabsNodeVersion(version = process.versions.node) {
   if (Number(version.split('.')[0]) < 22) {
     throw new LabsSetupError(
-      `Spreadsheet labs require Node.js 22 or newer; found ${version}. Switch Node versions, then run npm ci --include=dev.`,
+      `Spreadsheet labs require Node.js 22 or newer; found ${version}. Switch Node versions, then rerun npm run labs.`,
     );
   }
 }
@@ -15,11 +15,8 @@ export async function loadEsbuild() {
   } catch (error) {
     if (error.code === 'ERR_MODULE_NOT_FOUND' && error.message.includes("package 'esbuild'")) {
       throw new LabsSetupError(
-        'Spreadsheet labs need development dependencies (esbuild is missing).\n' +
-          'From the repository root, run:\n\n' +
-          '  npm ci --include=dev\n' +
-          '  npm run labs\n\n' +
-          'If installation fails while fetching https://github.com/FlamboyantEngineer/ui-components, resolve the installation error and rerun npm ci --include=dev. This dependency is public; no private-library token is required.',
+        'The labs bundler became unavailable. Rerun npm run labs to install or repair dependencies automatically.\n' +
+          'The ui-components dependency is public: https://github.com/FlamboyantEngineer/ui-components. No private-library token is required.',
       );
     }
     throw error;
@@ -28,5 +25,5 @@ export async function loadEsbuild() {
 
 export function reportLabsError(error) {
   console.error(error instanceof LabsSetupError ? error.message : error);
-  process.exitCode = 1;
+  process.exitCode = error instanceof LabsSetupError ? (error.exitCode ?? 1) : 1;
 }
