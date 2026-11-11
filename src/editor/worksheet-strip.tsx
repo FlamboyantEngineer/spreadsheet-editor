@@ -93,6 +93,18 @@ export function WorksheetStrip({
         validateName={(key, name) => validateName(String(key), name)}
         onDuplicate={canEdit ? (key) => onCommand('duplicate', String(key)) : undefined}
         getMenuItems={menuItems}
+        renderAfterTab={(key) =>
+          String(key) === sheets.at(-1)?.id ? (
+            <Button
+              size="sm"
+              icon={PlusGlyph}
+              aria-label="Add worksheet"
+              tooltip="Add worksheet"
+              isDisabled={!canEdit}
+              onPress={() => onCommand('add', selectedId)}
+            />
+          ) : null
+        }
       >
         {sheets.map((sheet) => (
           <Tab key={sheet.id} id={sheet.id} textValue={sheet.name}>
@@ -100,14 +112,6 @@ export function WorksheetStrip({
           </Tab>
         ))}
       </TabList>
-      <Button
-        size="sm"
-        icon={PlusGlyph}
-        aria-label="Add worksheet"
-        tooltip="Add worksheet"
-        isDisabled={!canEdit}
-        onPress={() => onCommand('add', selectedId)}
-      />
       {children}
     </div>
   );

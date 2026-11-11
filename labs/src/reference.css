@@ -11,7 +11,7 @@
   --se-reference-7: var(--ref-category-7);
 
   border: 1px solid var(--ref-border);
-  background: var(--ref-surface);
+  background: var(--ref-canvas);
   color: var(--ref-text);
   border-radius: 4px;
   overflow: hidden;
@@ -39,13 +39,30 @@
   flex: none;
 }
 .se-editor__menubar,
-.se-editor__toolbar,
-.se-editor__actions {
+.se-editor__toolbar {
   min-width: 0;
   max-width: 100%;
 }
 .se-editor__menubar {
+  display: flex;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: var(--ref-canvas);
   overflow-x: auto;
+}
+.se-editor__toolbar {
+  padding: 3px 6px;
+  background: var(--ref-canvas);
+}
+.se-editor__font-family {
+  width: 116px;
+}
+.se-editor__font-size {
+  width: 58px;
+}
+.se-editor__number-format {
+  width: 110px;
 }
 .se-editor__formula-bar {
   display: flex;
@@ -59,6 +76,10 @@
 .se-editor__formula-bar .ui-formula-bar {
   flex: 1 1 0;
   min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
 }
 .se-editor__address {
   width: 96px;
@@ -93,7 +114,7 @@
   flex-direction: column;
 }
 .se-editor__worksheet-tabs {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   min-height: 0;
 }
@@ -103,6 +124,7 @@
   padding: 0;
 }
 .se-editor__grid {
+  isolation: isolate;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -121,6 +143,10 @@
 .se-editor__sidebar .ui-dock-panel {
   border: 0;
 }
+/* Keep the panel's resize hit area off the adjacent grid scrollbar. */
+.se-editor__sidebar .ui-dock-panel[data-position='end'] > .ui-tabs > .ui-dock-panel__handle {
+  inset-inline-start: 0;
+}
 .se-editor[data-chrome='minimal'] .se-editor__workspace {
   min-height: 0;
 }
@@ -129,13 +155,16 @@
 }
 .se-editor__engine {
   width: 100%;
+  max-width: 100%;
 }
 .se-editor__engine .jtabs-headers,
 .se-editor__engine .jtabs-border {
   display: none;
 }
 .se-editor__engine .jss_container {
+  display: block;
   width: 100%;
+  max-width: 100%;
   padding: 0;
 }
 .se-editor__engine td[data-approximate='true'] {
@@ -242,12 +271,12 @@
   border-bottom-color: transparent;
 }
 .se-editor__engine .jss_worksheet tbody td {
-  background-color: var(--ref-surface);
+  background-color: var(--ref-canvas);
 }
 .se-editor__engine .jss_worksheet thead td,
 .se-editor__engine .jss_worksheet tbody td.jss_row {
   color: var(--ref-muted);
-  background-color: var(--ref-canvas);
+  background-color: var(--ref-surface);
 }
 .se-editor__engine .jss_worksheet thead td.selected,
 .se-editor__engine .jss_worksheet tbody td.jss_row.selected,
@@ -415,7 +444,7 @@
 @media (max-width: 520px) {
   .se-editor__sheets {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     row-gap: 0;
   }
   .se-editor__sheets > .ui-zoom-control {
@@ -608,17 +637,22 @@
   background-color: var(--ref-canvas);
 }
 .se-editor__engine .jss_content {
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 0;
+  scrollbar-gutter: stable;
   box-shadow: none;
-  scrollbar-color: var(--ref-muted) var(--ref-surface);
+  scrollbar-color: var(--ref-muted) var(--ref-canvas);
 }
 .se-editor__engine .jss_content::-webkit-scrollbar-track {
-  background: var(--ref-surface);
+  background: var(--ref-canvas);
 }
 .se-editor__engine .jss_content::-webkit-scrollbar-thumb {
   background: var(--ref-muted);
 }
 .se-editor__engine .jss_worksheet td.highlight {
-  background-color: color-mix(in srgb, var(--ref-accent) 8%, var(--ref-surface));
+  background-color: color-mix(in srgb, var(--ref-accent) 8%, var(--ref-canvas));
 }
 
 .se-editor__formula-input .ui-code-editor__token[data-token='reference-0'] {
