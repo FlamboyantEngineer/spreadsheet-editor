@@ -5,7 +5,7 @@ import { calculateWorkbook } from './evaluator.js';
 import { formatWorksheetCell } from './cell-format.js';
 import { formatCellValue } from './format.js';
 
-describe('Host SE-NUM-1: exact engineering quantities', () => {
+describe('SE-NUM-1: exact engineering quantities', () => {
   it('converts tiny authored inputs to SI exactly and preserves their input unit when display changes', () => {
     const workbook = createWorkbook([['1E-25', '=A1*2', '=A1+A2'], ['3 mm']]);
     workbook.worksheets[0].formats = {
@@ -51,7 +51,7 @@ describe('Host SE-NUM-1: exact engineering quantities', () => {
   });
 });
 
-describe('Host SE-CR-2.5a: calendar serial formats', () => {
+describe('SE-CR-2.5a: calendar serial formats', () => {
   it('renders calendar formats in UTC and preserves Excel day 60', () => {
     const result = calculateWorkbook(
       createWorkbook([['46290', '60', '=DATE(2026,9,25)', '=TIME(12,30,0)']]),
@@ -65,7 +65,7 @@ describe('Host SE-CR-2.5a: calendar serial formats', () => {
   });
 });
 
-it('Host SE-CR-2.6f: captures a viewer-zone calendar clock once per pass', () => {
+it('SE-CR-2.6f: captures a viewer-zone calendar clock once per pass', () => {
   let calls = 0;
   const workbook = createWorkbook([['=TODAY()', '=NOW()', '=TODAY()']]);
   const host = {

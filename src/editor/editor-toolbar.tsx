@@ -261,7 +261,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             label="Undo"
             variant="ghost"
             onPress={e.undo}
-            isDisabled={disabled || !e.history.past.length}
+            isDisabled={disabled || !e.canUndo}
             tooltip="Undo"
             shortcut="Ctrl+Z"
           />
@@ -271,7 +271,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             label="Redo"
             variant="ghost"
             onPress={e.redo}
-            isDisabled={disabled || !e.history.future.length}
+            isDisabled={disabled || !e.canRedo}
             tooltip="Redo"
             shortcut="Ctrl+Y"
           />

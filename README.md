@@ -11,7 +11,7 @@ A standalone React spreadsheet editor built on [`@flamboyantengineer/ui-componen
 - Uses dedicated public ui-components glyphs for formatting, borders, alignment, comments and file commands. [Glyph coverage](docs/UI-COMPONENTS-ICON-REQUEST.md) records the public exports.
 - Unstyled React chrome using the base library's menus, controls, panels, comment threads, composers, formula bar and zoom control. The grid uses the extracted Jspreadsheet React host. Hosts own presentation; labs provide a reference stylesheet.
 
-This private `0.x` package is the standalone extraction stage. Consumer migrations are separate: neither the existing application nor `document-editor` is changed here. Storage, authentication, collaboration transports, durable history and application workflow services remain host responsibilities.
+This private `0.x` package provides the generic editor and host integration contracts. Storage, authentication, collaboration transports, durable history and application workflow services remain host responsibilities.
 
 ## Run the labs
 
@@ -21,7 +21,7 @@ Use Node 24 (recommended), or Node 22.13 or newer within Node 22, and Git. The c
 npm run labs
 ```
 
-Open **http://127.0.0.1:4173/**. On a fresh checkout, the command installs the locked dependencies, including development tools and the public UI library, then builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, and Full editor labs, with the same Stylesheet and Theme selectors as the ui-components labs. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
+Open **http://127.0.0.1:4173/**. On a fresh checkout, the command installs the locked dependencies, including development tools and the public UI library, then builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, Full editor and Host integration labs, with the same Stylesheet and Theme selectors as the ui-components labs. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
 
 ```sh
 npm run labs -- --port 4200 --host 0.0.0.0
@@ -47,7 +47,9 @@ import { SpreadsheetEditor, createWorkbook } from '@flamboyantengineer/spreadshe
 />;
 ```
 
-`value` / `onChange` gives the host control of the workbook. `defaultValue` provides instance-local state. Use `chrome="minimal"`, `chrome="embedded"` or `chrome="full"` (the default) to choose visible editor controls. Optional props include `readOnly`, `initialSheetId`, `display`, `calculation`, `className` and `aria-label`. A read-only host locks editing, comment mutations and suggestion decisions across the grid, menus and panels while preserving reading, searching, copying and export.
+`value` / `onChange` gives the host control of the workbook. `onChange(next, context)` adds a unique transaction ID, detached immutable baseline and semantic cell/line/sheet/layout operations; existing one-argument callbacks remain valid. Synchronous rejection preserves accepted data and the draft. `defaultValue` provides instance-local state. Use `chrome="minimal"`, `chrome="embedded"` or `chrome="full"` (the default) to choose visible editor controls. Optional props include `readOnly`, `initialSheetId`, `display`, `calculation`, `className` and `aria-label`. A read-only host locks editing, comment mutations and suggestion decisions across the grid, menus and panels while preserving reading, searching, copying and export.
+
+Use `editorRef` for the session's public `SpreadsheetEditorHandle`: `commitDraft`, `cancelDraft`, detached `getSnapshot`, `select`, `getState`, `subscribe`, `save` and `flush`. `onFlush(snapshot, { signal, requestId })` supplies the host durability barrier; Flush commits active native/formula-bar input and drains scheduled saves without creating an extra manual snapshot. Failed barriers reject and retain dirty state. `undo` delegates every undo/redo surface to a host-owned history manager. `idFactory(kind)` makes new row, column, worksheet and transaction identities deterministic when needed. See the [public host example](examples/host-integration.tsx) and [host contract](specs/HOST-INTEGRATION.md).
 
 `mode` / `onModeChange` controls Authoring, Reviewing or Reading; `defaultMode` sets an uncontrolled instance's initial mode. `currentUser` supplies the comment/suggestion actor. Optional `permissions` independently controls `edit`, `comment`, `suggest` and `decideSuggestions` in the UI; the host enforces authorization at its persistence boundary.
 
@@ -119,6 +121,10 @@ Host-defined names and synchronous functions can be supplied to `createClientCal
 
 ## Exact values and display
 
+Hosts with authoritative or immutable stored results can use `calculation={{ mode: 'external', snapshot }}`. `ExternalCalculationSnapshot` carries `workbookCalculationKey(workbook)`, a monotonic session revision, global/per-cell readiness and optional validated results/context. A null or unavailable snapshot never falls back to client calculation. Ready values, presentation and export must match the current authored inputs. Host `formulaFunctions` descriptors extend both completion surfaces; execution stays with the authorized provider. Matching `cellPresentation` and `renderCellContent` can supply safe React content through engine-owned portals. Hosts sanitize any rich source content.
+
+`Worksheet.inputValues` optionally preserves exact canonical numeric/quantity inputs separately from primitive edit text. `rowIds` and `columnIds` retain stable identities through structural edits. These are additive version-one fields validated by JSON/provider ingress. Ordinary replacement clears a canonical override; formatting and internal copy preserve it.
+
 Store authored numbers as **strings**. A JavaScript number or JSON number may already have lost digits before this package receives it.
 
 ```ts
@@ -142,7 +148,7 @@ Arithmetic has no fixed rounding precision for exact values. Resource limits sti
 
 ## Units, calendar values and Excel
 
-Numeric results can carry a seven-axis SI `dimension` and optional `quantityKind`. `CellFormat` supports `unit`, `inputUnit` and `expectedDimension`. The curated registry covers common length, mass, time, force, pressure, energy, power, frequency and temperature units, including compound powers. Numeric strings in a unit-formatted cell acquire that cell's input unit; changing its display unit preserves the authored input unit. Explicit formula quantities such as `=10 mm+2 cm` convert exactly to SI; incompatible dimensions return `#VALUE!`. Unformatted labels such as `10 mm` remain text. This is a curated standalone registry, not the complete platform SDK constants catalog.
+Numeric results can carry a seven-axis SI `dimension` and optional `quantityKind`. `CellFormat` supports `unit`, `inputUnit` and `expectedDimension`. The registry covers length, mass, time, force, pressure, energy, power, frequency, electrical, angle, information and temperature units, including decimal/binary prefixes and compound powers. Numeric strings in a unit-formatted cell acquire that cell's input unit; changing its display unit preserves the authored input unit. Explicit formula quantities such as `=10 mm+2 cm` convert exactly to SI; incompatible dimensions return `#VALUE!`. Unformatted labels such as `10 mm` remain text. Pure temperatures carry absolute/difference tags; difference conversion applies scale only. Literal C/F are electrical aliases, while Excel CONVERT uses its separate temperature codes. Word units require an explicit wordSizeBits option.
 
 Calendar formats are `date`, `time` and `datetime`, preserving numeric serials and Excel's day 60. The editor passes the viewer's time zone in calculation options for TODAY/NOW; headless calculations default to UTC and accept `timeZone` and a captured host `now()` clock.
 
@@ -188,4 +194,4 @@ npm run check
 
 Checks include lint, formatting, types, unit tests, a clean package build, built-entry-point imports in plain Node, and Chromium browser tests. Browser tests use `CHROMIUM_PATH`, system Chromium when available, or Playwright's browser (`npx playwright install chromium`). CI installs the public base library without a private-repository token.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [source provenance](NOTICE.md). The pinned [Host requirements comparison](specs/HOST-PARITY.md) records implemented differences, deliberate numerical choices and application integration boundaries. Unknown functions return `#NAME?`; hosts supply authorized external formulas and constants through `FormulaHost`. CSV/JSON and clipboard operations are built in.
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [source provenance](NOTICE.md). The [host compatibility contract](specs/HOST-COMPATIBILITY.md) records implemented differences, deliberate numerical choices and application integration boundaries. Unknown functions return `#NAME?`; hosts supply authorized external formulas and constants through `FormulaHost`. CSV/JSON and clipboard operations are built in.

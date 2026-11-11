@@ -28,10 +28,20 @@ Implementation: `src/editor/contracts.ts`, `src/editor/use-editor.ts`, `src/engi
 
 Verification: `e2e/full-editor.spec.ts` (SE-REVIEW-5, SE-REVIEW-7), existing independent-embedding browser test.
 
-## SE-REVIEW-7 — Host conversations and capabilities
+## SE-REVIEW-7 — conversations and capabilities
 
 Ordinary comments support range or workbook scope; a new range thread must not duplicate an overlapping unresolved ordinary comment. The shared Popover renders cell discussions; the Comments pane provides compact newest-first comment/suggestion navigation with status and mine filters. `initialCommentId` and `getCommentLink` connect host deep links without fixed package URLs. Replies share drafts between views; cancel clears them. All cells in a comment range receive presentation markers; suggestion discussions do not count as ordinary comment corners.
 
 A proposal creates one linked discussion. Same-author pending proposals with identical changed targets coalesce, preserving the original baseline. Authoring displays canonical cells; Reviewing displays only the current actor’s pending overlay. Acceptance/rejection resolves the linked thread with a decision and retains original-author provenance for accepted values. Structural proposal serialization remains readable for earlier version-1 workbooks, but the UI requires Authoring for structure, resize, merge, Save and decisions. Review-only host permissions clamp the mode accordingly. Server authorization remains the host’s responsibility.
 
 Built-in posts are plain text. Host organizational mentions, group expansion, notifications, rich composers and centralized comment APIs remain integrations; hosts may replace the Comments pane. Verification: model review tests, editor lifecycle tests and browser review/permission checks.
+
+## SE-HOST-REVIEW-1 — Canonical input baselines
+
+Suggested cells optionally record `beforeInputValue` and `afterInputValue`. These use the same bounded numeric metadata validation as canonical authored inputs and cannot override formulas. A canonical-only change is a cell proposal rather than a structural proposal. Coalescing retains its original canonical baseline, local preview uses the proposed override, and acceptance rejects a changed canonical baseline before applying any proposed cell. Replacement removes an override when the proposal contains none; formatting-only suggestions retain it. Structural changes move available suggestion anchors and canonical metadata with their cells, including decided discussions, while deleted anchors become unavailable.
+
+Formats in authored cells and suggestion baselines share ingress validation, including supported locale/currency metadata.
+
+Implementation: `src/model/review.ts`, `src/model/cell-format.ts`, `src/model/structure.ts`.
+
+Verification: `src/model/host-model.test.ts` (SE-HOST-MODEL-3), existing `src/model/review.test.ts`.

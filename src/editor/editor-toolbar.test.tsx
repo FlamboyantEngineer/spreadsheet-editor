@@ -5,6 +5,7 @@ import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
 import { createWorkbook, type Workbook } from '../model/workbook.js';
+import type { WorkbookCommandResult } from '../model/operations.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { editorCommandMetadata } from './editor-commands.js';
@@ -17,8 +18,11 @@ function fixture(
 ) {
   const workbook = createWorkbook([['1', '2']]);
   let mutationBase = workbook;
-  const mutateWithDraft = vi.fn((transform: (base: Workbook) => Workbook) =>
-    transform(mutationBase),
+  const mutateWithDraft = vi.fn(
+    (transform: (base: Workbook) => Workbook | WorkbookCommandResult) => {
+      const result = transform(mutationBase);
+      return 'workbook' in result ? result.workbook : result;
+    },
   );
   const editor = {
     props,
@@ -173,14 +177,11 @@ describe('SE-CHROME-1 / SE-CONTEXT-1: shared command presentation', () => {
     setMutationBase(composed);
     const menus = editorMenus(editor);
     menus.appendRow();
-    expect(mutateWithDraft.mock.results[0].value.worksheets[0].data).toEqual([
-      ['1E-25', '=1-A1'],
-      [null, null],
-    ]);
+    expect(mutateWithDraft.mock.results[0].value.worksheets[0].data).toEqual([['1E-25', '=1-A1']]);
+    expect(mutateWithDraft.mock.results[0].value.worksheets[0].minDimensions).toEqual([26, 101]);
     menus.appendColumn();
-    expect(mutateWithDraft.mock.results[1].value.worksheets[0].data).toEqual([
-      ['1E-25', '=1-A1', null],
-    ]);
+    expect(mutateWithDraft.mock.results[1].value.worksheets[0].data).toEqual([['1E-25', '=1-A1']]);
+    expect(mutateWithDraft.mock.results[1].value.worksheets[0].minDimensions).toEqual([27, 100]);
     action(menus.view, 'freeze').onAction!();
     const frozen = mutateWithDraft.mock.results[2].value;
     expect(frozen.worksheets[0].data[0][0]).toBe('1E-25');

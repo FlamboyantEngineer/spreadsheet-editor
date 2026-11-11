@@ -1,3 +1,8 @@
+import type { NumericValue } from '../calculation/values.js';
+import { assertNumericValue } from '../calculation/values.js';
+import { assertCellFormat } from './cell-format.js';
+import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
+import { worksheetExtent, extendWorksheetIdentities } from './extent.js';
 import {
   assertReviewData,
   type CellFormat,
@@ -18,6 +23,9 @@ export interface Worksheet {
   name: string;
   /** Keep numeric literals as strings to preserve all authored digits. */
   data: CellInput[][];
+  inputValues?: Record<string, NumericValue>;
+  rowIds?: string[];
+  columnIds?: string[];
   minDimensions?: [number, number];
   columns?: { width?: number; title?: string }[];
   rows?: Record<string, { height: number }>;
@@ -103,6 +111,16 @@ export function assertWorkbook(
         ))
     )
       throw new TypeError('Invalid worksheet dimensions.');
+    for (const axis of ['rowIds', 'columnIds'] as const) {
+      const list = sheet[axis];
+      if (
+        list !== undefined &&
+        (!Array.isArray(list) ||
+          list.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
+          new Set(list).size !== list.length)
+      )
+        throw new TypeError('Invalid worksheet line identities.');
+    }
     ids.add(sheet.id);
     names.add(sheet.name.trim().replace(/\s+/g, ' ').toUpperCase());
     rowCount += sheet.data.length;
@@ -168,36 +186,8 @@ export function assertWorkbook(
     )
       throw new TypeError('Invalid cell formats.');
     for (const [address, format] of Object.entries(sheet.formats ?? {})) {
-      if (
-        !/^[A-Z]+[1-9]\d*$/.test(address) ||
-        !format ||
-        ![
-          'general',
-          'number',
-          'percent',
-          'currency',
-          'scientific',
-          'fraction',
-          'date',
-          'time',
-          'datetime',
-          'unit',
-        ].includes(format.kind) ||
-        (format.kind === 'unit' &&
-          (typeof format.unit !== 'string' ||
-            !format.unit ||
-            format.unit.length > 128 ||
-            (format.inputUnit !== undefined &&
-              (typeof format.inputUnit !== 'string' || format.inputUnit.length > 128)))) ||
-        (format.expectedDimension !== undefined &&
-          (typeof format.expectedDimension !== 'string' ||
-            format.expectedDimension.length > 128)) ||
-        (format.quantityKind !== undefined &&
-          (typeof format.quantityKind !== 'string' || format.quantityKind.length > 128)) ||
-        (format.decimals !== undefined &&
-          (!Number.isInteger(format.decimals) || format.decimals < 0 || format.decimals > 100))
-      )
-        throw new TypeError('Invalid cell format.');
+      if (!/^[A-Z]+[1-9]\d*$/.test(address)) throw new TypeError('Invalid cell format address.');
+      assertCellFormat(format);
     }
     if (sheet.cellProvenance !== undefined) {
       if (
@@ -222,6 +212,59 @@ export function assertWorkbook(
         )
           throw new TypeError('Invalid cell provenance.');
     }
+    if (
+      sheet.inputValues !== undefined &&
+      (!sheet.inputValues ||
+        typeof sheet.inputValues !== 'object' ||
+        Array.isArray(sheet.inputValues))
+    )
+      throw new TypeError('Invalid canonical input values.');
+    for (const [address, canonical] of Object.entries(sheet.inputValues ?? {})) {
+      const position = /^[A-Z]+[1-9]\d*$/.test(address) ? parseSpreadsheetAddress(address) : null;
+      const input = position && sheet.data[position.y]?.[position.x];
+      if (
+        !position ||
+        input === undefined ||
+        (typeof input === 'string' && input.trimStart().startsWith('='))
+      )
+        throw new TypeError('Canonical input requires a corresponding nonformula data entry.');
+      assertNumericValue(canonical, bounds.maxCellLength);
+    }
+    for (const map of [
+      sheet.style,
+      sheet.formats,
+      sheet.cellProvenance,
+      sheet.inputValues,
+      sheet.mergeCells,
+    ])
+      for (const address of Object.keys(map ?? {})) {
+        const position = /^[A-Z]+[1-9]\d*$/.test(address) ? parseSpreadsheetAddress(address) : null;
+        if (!position || position.x > 16383 || position.y > 1048575)
+          throw new TypeError('Invalid cell metadata address.');
+      }
+    const extent = worksheetExtent(sheet, workbook as Workbook);
+    if (
+      extent.columns > 16384 ||
+      extent.rows > 1048576 ||
+      extent.columns * extent.rows > bounds.maxCells
+    )
+      throw new RangeError('Worksheet extent exceeds the cell limit.');
+    if (
+      (sheet.rowIds && sheet.rowIds.length !== extent.rows) ||
+      (sheet.columnIds && sheet.columnIds.length !== extent.columns)
+    )
+      throw new TypeError('Worksheet line identities must cover the effective extent.');
+    for (const [address] of Object.entries(sheet.style ?? {})) {
+      const position = parseSpreadsheetAddress(address)!;
+      if (position.x >= (sheet.data[position.y]?.length ?? 0)) cells++;
+    }
+    const counted = new Set(Object.keys(sheet.style ?? {}));
+    for (const map of [sheet.formats, sheet.cellProvenance, sheet.inputValues])
+      for (const address of Object.keys(map ?? {})) {
+        const position = parseSpreadsheetAddress(address)!;
+        if (!counted.has(address) && position.x >= (sheet.data[position.y]?.length ?? 0)) cells++;
+        counted.add(address);
+      }
     for (const row of sheet.data) {
       if (!Array.isArray(row)) throw new TypeError('Expected a worksheet row.');
       if (row.length > 16_384) throw new RangeError('Worksheet exceeds the column limit.');
@@ -289,6 +332,8 @@ export function setWorkbookCell(
   while (sheet.data.length <= y) sheet.data.push([]);
   while (sheet.data[y].length <= x) sheet.data[y].push(null);
   sheet.data[y][x] = value;
+  if (sheet.inputValues) delete sheet.inputValues[formatSpreadsheetAddress(x, y)];
+  extendWorksheetIdentities(sheet);
   assertWorkbook(next);
   return next;
 }

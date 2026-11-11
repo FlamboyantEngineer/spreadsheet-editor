@@ -6,3 +6,4 @@ export * from './provider.js';
 export * from './http.js';
 export * from './cell-format.js';
 export * from './units.js';
+export * from './publication.js';

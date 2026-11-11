@@ -6,10 +6,10 @@ import { formatCellValue } from './format.js';
 
 const evaluate = (formula: string) =>
   calculateWorkbook(createWorkbook([[formula]])).worksheets[0].values[0][0];
-describe('Host SE-CR-2.6f: enabled function catalog', () => {
-  it('covers every supported worksheet name and alias at the reviewed Host commit', () => {
+describe('SE-CR-2.6f: enabled function catalog', () => {
+  it('covers every supported worksheet name and alias at the reviewed commit', () => {
     const { worksheetFunctions } = JSON.parse(
-      readFileSync(new URL('../../specs/HOST-FUNCTIONS.json', import.meta.url), 'utf8'),
+      readFileSync(new URL('../../specs/FUNCTION-CATALOG.json', import.meta.url), 'utf8'),
     ) as { worksheetFunctions: string[] };
     expect(worksheetFunctions.filter((name) => !SUPPORTED_FUNCTIONS.includes(name))).toEqual([]);
     expect(SUPPORTED_FUNCTIONS.includes('ACCRINT')).toBe(false);

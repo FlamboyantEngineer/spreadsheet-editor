@@ -1,5 +1,7 @@
 import type { Worksheet } from '../model/workbook.js';
+import type { WorksheetExtent } from '../model/extent.js';
 import { parseCellStyle } from '../model/editing.js';
+import { gridWorksheetExtent } from './worksheet-data.js';
 import { restoreSharedGridBorders, syncSharedGridBorders } from './shared-grid-borders.js';
 import {
   formatSpreadsheetAddress,
@@ -43,30 +45,20 @@ export function syncWorksheetPresentation(
   next: Worksheet,
   readOnly: boolean,
   zoom = 100,
+  logicalExtent?: WorksheetExtent,
 ) {
   const options = engine.options;
   if (!options) return;
   restoreSharedGridBorders(engine);
   options.editable = !readOnly;
   const scale = gridZoomScale(zoom);
-  const columns = Math.max(
-    engine.cols?.length ?? 0,
-    next.minDimensions?.[0] ?? 26,
-    previous?.columns?.length ?? 0,
-    next.columns?.length ?? 0,
-  );
+  const [columns, rows] = gridWorksheetExtent(next, logicalExtent);
   for (let x = 0; x < columns; x++) {
     const width = (next.columns?.[x]?.width ?? DEFAULT_COLUMN_WIDTH) * scale;
     options.columns ??= [];
     options.columns[x] = { ...options.columns[x], width, type: 'text' };
     applyJSpreadsheetColumnMeasure(engine, x, String(width));
   }
-  const rows = Math.max(
-    engine.rows?.length ?? 0,
-    next.minDimensions?.[1] ?? 100,
-    next.data.length,
-    ...Object.keys(next.rows ?? {}).map((key) => Number(key) + 1),
-  );
   for (let y = 0; y < rows; y++) {
     const height = (next.rows?.[String(y)]?.height ?? DEFAULT_ROW_HEIGHT) * scale;
     (options.rows ??= {})[y] = { height };

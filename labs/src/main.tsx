@@ -6,6 +6,7 @@ import { Button } from '@flamboyantengineer/ui-components/button';
 import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
 import type { Workbook } from '../../src/model/index.js';
 import { FullLab } from './full-lab.js';
+import { HostLab } from './host-lab.js';
 import { engineeringSample } from './sample.js';
 import 'jsuites/dist/jsuites.css';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
@@ -22,7 +23,7 @@ const labs = [
   {
     id: 'embedded',
     title: 'Embedded in an app',
-    description: 'A compact editor inside a project workspace, inspired by Host.',
+    description: 'A compact editor inside a project workspace.',
     detail:
       'The application owns navigation and context. The editor supplies compact tools, formulas, review panels and save callbacks.',
   },
@@ -32,6 +33,14 @@ const labs = [
     description: 'The complete workspace: menus, formatting, formulas, comments and suggestions.',
     detail:
       'Explore the complete editor, then use the sections below to try server calculation, exact values and both document insertion modes.',
+  },
+  {
+    id: 'host',
+    title: 'Host integration',
+    description:
+      'Public lifecycle handles, captured results, function descriptors and React cell content.',
+    detail:
+      'Explore a host-controlled workbook with protected drafts, publication revisions, explicit save and durability callbacks.',
   },
 ] as const;
 const current = labs.find((lab) => location.pathname === `/${lab.id}.html`);
@@ -60,7 +69,7 @@ function EmbeddedLab() {
   return (
     <section className="lab-app" aria-label="Example project workspace">
       <div className="lab-app__topbar">
-        <strong>Host</strong>
+        <strong>Engineering workspace</strong>
         <span>Example workspace</span>
         <span className="lab-app__user">AL</span>
       </div>
@@ -178,7 +187,7 @@ function App() {
           <h1>{current?.title ?? 'Spreadsheet editor labs'}</h1>
           <p>
             {current?.detail ??
-              'Three ways to use the same spreadsheet editor. Each example is interactive and uses the shared ui-components controls and reference stylesheet.'}
+              'Explore the same spreadsheet editor in standalone and host-controlled examples. Each lab is interactive and uses the shared ui-components controls and reference stylesheet.'}
           </p>
         </header>
         {current ? (
@@ -198,6 +207,8 @@ function App() {
               <MinimalLab />
             ) : current.id === 'embedded' ? (
               <EmbeddedLab />
+            ) : current.id === 'host' ? (
+              <HostLab />
             ) : (
               <FullLab />
             )}
@@ -210,7 +221,9 @@ function App() {
                 <li key={lab.id}>
                   <a href={href(lab.id)}>{lab.title}</a>
                   <p>{lab.description}</p>
-                  <code>chrome="{lab.id}"</code>
+                  <code>
+                    {lab.id === 'host' ? 'editorRef + external results' : `chrome="${lab.id}"`}
+                  </code>
                 </li>
               ))}
             </ul>

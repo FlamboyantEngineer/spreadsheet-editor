@@ -64,6 +64,7 @@ export async function buildLabs() {
     minimal: 'Minimal',
     embedded: 'Embedded in an app',
     full: 'Full editor',
+    host: 'Host integration',
   })) {
     await writeFile(
       resolve(output, `${page}.html`),

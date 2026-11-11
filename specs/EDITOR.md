@@ -44,10 +44,38 @@ Verification: `src/tooling/labs-startup.test.ts`, existing browser labs tests.
 
 ## Extraction boundary
 
-This stage extracts reusable grid and parser modules and provides an independent rational calculation engine, complete editor chrome, comments, tracked suggestions and host-neutral integration APIs. Existing consumers are migrated separately. Storage, authorization, collaboration transports, durable history and application lifecycle services stay outside this package. Hosts may supply extra workflow/assistant panes. Curated rational unit/quantity evaluation and optional Node XLSX conversion are included; application-specific external formulas remain host-provided. [HOST-PARITY.md](HOST-PARITY.md) records the reviewed requirements and host boundaries. Row/column insertion/deletion rewrites references and moves review anchors within the package.
+This stage extracts reusable grid and parser modules and provides an independent rational calculation engine, complete editor chrome, comments, tracked suggestions and host-neutral integration APIs. Existing consumers are migrated separately. Storage, authorization, collaboration transports, durable history and application lifecycle services stay outside this package. Hosts may supply extra workflow/assistant panes. Curated rational unit/quantity evaluation and optional Node XLSX conversion are included; application-specific external formulas remain host-provided. [HOST-COMPATIBILITY.md](HOST-COMPATIBILITY.md) records the reviewed requirements and host boundaries. Row/column insertion/deletion rewrites references and moves review anchors within the package.
 
 ## SE-LABS-3 — Independent configurations
 
 The labs index shall link to minimal, embedded and full editor pages. Each page shares ui-components-style Stylesheet (Reference/Unstyled) and Theme (System/Light/Dark) selectors; selections follow navigation. Minimal provides the editable grid and worksheet strip, embedded provides compact tools inside an application-owned workspace, and full provides all menus and review commands. Reference presentation must keep formula entry, address, Apply/Cancel and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
 
 Verification: `e2e/labs.spec.ts` at 1440, 768 and 390 pixels, plus `e2e/editor.spec.ts`.
+
+## SE-HOST-MODEL-1 — Canonical authored values and logical identities
+
+Version-1 worksheets optionally carry `inputValues`, `rowIds` and `columnIds`. Canonical inputs are validated rational/quantity values attached to existing nonformula authored cells. Their primitive `data` remains the edit representation, including text in a different input unit. Replacement and clearing discard the canonical override; formatting preserves it. JSON, internal clipboard, structure, review baselines, snapshots and live document insertion retain canonical values. Metadata addresses count once toward the cell budget.
+
+Line identity lists, when supplied, contain unique nonempty bounded strings and cover the effective logical extent. `worksheetExtent(sheet, workbook?)` includes data, explicit minimum dimensions, geometry, styles, formats, canonical inputs, provenance, merges and available review anchors. Structural changes update the saved extent even when the affected final line is blank. Insertions receive explicit generated IDs; deletion removes only affected IDs and retains at least one line. `materializeWorksheetExtent` gives editor commands their initial 26-by-100 viewport without forcing every headless model to allocate a blank matrix. Hosts supply `WorkbookIdFactory` for deterministic entity generation.
+
+Implementation: `src/model/workbook.ts`, `src/model/extent.ts`, `src/model/structure.ts`, `src/model/editing.ts`.
+
+Verification: `src/model/host-model.test.ts` (SE-HOST-MODEL-1), `src/model/structure.test.ts`.
+
+## SE-HOST-MODEL-2 — Semantic command records
+
+`WorkbookChangeContext` records a transaction ID, source, detached baseline and ordered `WorkbookOperation` list. Operations explicitly identify cells, lines, sheet addition/deletion/rename/order, geometry, merges, annotations and deliberate import/new/reset replacement. A line operation comes from its structural command, including when two blank matrices are identical; it is never inferred from cell differences. Insert/delete records carry line IDs and surviving neighbors. Cell records carry authored value, canonical input, style, format and contributor provenance, with stable line IDs when available. Rewritten cross-sheet references and annotation anchors belong to the same command result. Removed authored cells and sparse geometry remain available to `invertWorkbookOperations` for standalone undo.
+
+`collectCellOperations` visits authored or metadata coordinates, or a caller-supplied bounded target set. It does not construct an implicit grid of blank cells. `changeWorkbookStructureWithOperations` and `writeCellsWithOperations` return the workbook and its command records together. The editor owns publication and rollback, and the host owns collaboration preflight and durable storage.
+
+Implementation: `src/model/operations.ts`.
+
+Verification: `src/model/host-model.test.ts` (SE-HOST-MODEL-2, SE-HOST-MODEL-4).
+
+## SE-HOST-MODEL-3 — Authored clipboard blocks
+
+Internal copy snapshots primitive expressions and supported style, format, canonical input and contributor provenance. A copied block tiles a destination only when both destination dimensions are exact multiples of the source. Smaller and nonmultiple destinations receive one complete block from their top-left. Every copied formula translates against its original source coordinates, preserving absolute axes. A cut moves its block once, clears the source atomically and rejects a stale source before mutation. Foreign delimited text is bounded by transport, cell count, column count and field length limits before workbook mutation.
+
+Implementation: `src/model/clipboard.ts`, `src/model/editing.ts`.
+
+Verification: `src/model/host-model.test.ts` (SE-HOST-MODEL-3, SE-HOST-MODEL-4), `src/model/clipboard.test.ts`.

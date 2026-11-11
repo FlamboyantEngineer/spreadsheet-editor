@@ -1,6 +1,7 @@
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
 import type { SpreadsheetEditorController } from './use-editor.js';
-import { changeWorkbookStructure } from '../model/structure.js';
+import { changeWorkbookStructureWithOperations } from '../model/operations.js';
+import { materializeWorksheetExtent, worksheetExtent } from '../model/extent.js';
 import { findOpenComment } from '../model/review.js';
 import { selectionAddress } from '../model/editing.js';
 import { copyWorkbook, createWorkbook } from '../model/workbook.js';
@@ -24,8 +25,8 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     onAction: () => e.attempt(action),
   });
   const edit: MenuEntry[] = [
-    item('undo', 'Undo', e.undo, write || !e.history.past.length),
-    item('redo', 'Redo', e.redo, write || !e.history.future.length),
+    item('undo', 'Undo', e.undo, write || !e.canUndo),
+    item('redo', 'Redo', e.redo, write || !e.canRedo),
     { id: 'clipboard-separator', type: 'separator' },
     item('cut', 'Cut', () => e.copy(true), write),
     item('copy', 'Copy', () => e.copy(), false),
@@ -106,7 +107,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     item(
       'new',
       'New workbook',
-      () => e.replaceWorkbook(createWorkbook(), 'New workbook'),
+      () => e.replaceWorkbook(createWorkbook(), 'New workbook', 'new-workbook'),
       structureBlocked,
     ),
     item('import', 'Import CSV or workbook JSON…', () => e.openDialog('import'), structureBlocked),
@@ -288,23 +289,46 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     rowContext,
     columnContext,
     appendRow: () => {
-      const change = { axis: 'row', kind: 'insert', index: e.sheet.data.length, count: 1 } as const;
-      e.mutateWithDraft((base) => changeWorkbookStructure(base, e.sheet.id, change), 'Add row', {
-        sheetId: e.sheet.id,
-        change,
-      });
+      const change = {
+        axis: 'row',
+        kind: 'insert',
+        index: worksheetExtent(
+          materializeWorksheetExtent(e.workbook, e.sheet.id).worksheets.find(
+            (sheet) => sheet.id === e.sheet.id,
+          )!,
+        ).rows,
+        count: 1,
+      } as const;
+      e.mutateWithDraft(
+        (base) =>
+          changeWorkbookStructureWithOperations(base, e.sheet.id, change, e.props.idFactory),
+        'Add row',
+        {
+          sheetId: e.sheet.id,
+          change,
+        },
+      );
     },
     appendColumn: () => {
       const change = {
         axis: 'column',
         kind: 'insert',
-        index: Math.max(1, ...e.sheet.data.map((row) => row.length)),
+        index: worksheetExtent(
+          materializeWorksheetExtent(e.workbook, e.sheet.id).worksheets.find(
+            (sheet) => sheet.id === e.sheet.id,
+          )!,
+        ).columns,
         count: 1,
       } as const;
-      e.mutateWithDraft((base) => changeWorkbookStructure(base, e.sheet.id, change), 'Add column', {
-        sheetId: e.sheet.id,
-        change,
-      });
+      e.mutateWithDraft(
+        (base) =>
+          changeWorkbookStructureWithOperations(base, e.sheet.id, change, e.props.idFactory),
+        'Add column',
+        {
+          sheetId: e.sheet.id,
+          change,
+        },
+      );
     },
   };
 }

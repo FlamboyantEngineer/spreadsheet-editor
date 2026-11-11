@@ -22,7 +22,7 @@ Verification: `src/model/structure.test.ts`, `e2e/full-editor.spec.ts` (SE-CONTE
 
 ## SE-CHROME-3 — Search and keyboard ownership
 
-Find/replace shall search raw values/formulas across worksheets, navigate to matches and replace one/all through the normal author/review mutation path. Case-insensitive literal queries must not execute as regular expressions. Typed search/comment/dialog content must never reach the vendor grid's document keyboard handler. Each instance owns its selection, menus and panels. Clipboard text preserves numeric strings and quoting; a host may supply clipboard adapters.
+Find/replace shall search raw values/formulas and current formatted result text across worksheets, deduplicate cells, navigate to matches and replace authored matches one/all through the normal author/review mutation path. Result-only matches are navigable and never replace formulas. Pending or stale result text is excluded. Case-insensitive literal queries must not execute as regular expressions. Typed search/comment/dialog content must never reach the vendor grid's document keyboard handler. Each instance owns its selection, menus and panels. Clipboard text preserves numeric strings and quoting; a host may supply clipboard adapters.
 
 Implementation: `src/editor/use-editor.ts`, `src/engine/workbook-grid.tsx`, `src/model/editing.ts`.
 
@@ -36,7 +36,7 @@ Implementation: `src/editor/editor-menus.ts`, `src/editor/spreadsheet-editor.tsx
 
 Verification: `e2e/full-editor.spec.ts` (SE-CONTEXT-1, SE-CHROME-2, SE-REVIEW-5).
 
-## SE-CHROME-4 — Host interaction parity
+## SE-CHROME-4 — interaction parity
 
 `chrome` selects minimal, embedded or full controls. The full preset remains the default. Feature flags and host panels support templates and application embedding without platform services. The formula row composes the public FormulaBar with a fixed-width accessible address field, a flexible CodeEditor surface, and a constrained calculated result. It has no Cancel, Apply or Restore buttons; Enter commits, Escape cancels, and leaving the editor commits. Completion acceptance and IME composition take priority over commit/navigation. Pending edits are preserved while using editor controls and applied atomically with formatting or worksheet changes. Formula entry supports Escape cancellation, Enter commit/navigation, partial references and genuine pointer reference picking. Native entry uses the same completion vocabulary. Menus and panels release vendor keyboard ownership; dialogs show inline validation and block grid input.
 
@@ -44,7 +44,7 @@ The engine root remains mounted through cell/style/geometry changes. Protected e
 
 `onSave` receives a cancellation signal, stable request id and manual/autosave kind. `autosaveMs` opts in. Saving never starts merely from viewing or selecting. Manual saves coalesce and queue after autosave; later edits remain dirty. Only autosave 503 errors retry quietly with bounded backoff. Historical views force Reading and keep the host-controlled banner until the host restores the current version. The full preset keeps an additional dedicated Suggestions pane; hosts may replace built-in panels.
 
-Verification: `src/editor/use-editor.test.ts`, `e2e/flight-parity.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-PARITY.md).
+Verification: `src/editor/use-editor.test.ts`, `e2e/interaction-parity.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-COMPATIBILITY.md).
 
 ## SE-CHROME-5 — Grid zoom and visual integration
 

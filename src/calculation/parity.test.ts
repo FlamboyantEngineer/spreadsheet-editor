@@ -5,7 +5,7 @@ import { formatCellValue } from './format.js';
 
 const value = (formula: string) =>
   calculateWorkbook(createWorkbook([[formula]])).worksheets[0].values[0][0];
-describe('Host SE-CR-2.6f: bounded worksheet evaluation', () => {
+describe('SE-CR-2.6f: bounded worksheet evaluation', () => {
   it('resumes a 1,200-cell chain and evaluates shared host calls once', () => {
     const data = Array.from({ length: 1200 }, (_, i) => [i === 1199 ? '=TICK()' : `=A${i + 2}+1`]);
     data[0].push('=A1+A2');

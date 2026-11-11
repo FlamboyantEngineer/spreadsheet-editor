@@ -1,4 +1,14 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
+import type { WorkbookChangeContext } from '../model/operations.js';
+import type { WorkbookIdFactory } from '../model/extent.js';
+import type { ExternalCalculationSnapshot } from '../calculation/publication.js';
+import type {
+  CellPresentationSnapshot,
+  FormulaFunctionDescriptor,
+  RenderCellContent,
+  SpreadsheetEditorHandle,
+} from './public-host.js';
+export * from './public-host.js';
 import type { CalculationProvider } from '../calculation/provider.js';
 import type { DisplayOptions } from '../calculation/format.js';
 import type {
@@ -16,7 +26,8 @@ export type SpreadsheetChrome = 'minimal' | 'embedded' | 'full';
 export type SpreadsheetMode = 'author' | 'review' | 'read';
 export type CalculationMode =
   | { mode: 'client'; host?: FormulaHost; options?: CalculationOptions }
-  | { mode: 'server'; provider: CalculationProvider; options?: CalculationOptions };
+  | { mode: 'server'; provider: CalculationProvider; options?: CalculationOptions }
+  | { mode: 'external'; snapshot: ExternalCalculationSnapshot | null };
 export interface SpreadsheetClipboard {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
@@ -63,6 +74,21 @@ export interface SpreadsheetHistoricalView {
   onReturnCurrent(): void | Promise<void>;
 }
 export interface SpreadsheetEditorProps {
+  editorRef?: Ref<SpreadsheetEditorHandle>;
+  idFactory?: WorkbookIdFactory;
+  undo?: {
+    canUndo: boolean;
+    canRedo: boolean;
+    undo(): void | Promise<void>;
+    redo(): void | Promise<void>;
+  };
+  formulaFunctions?: readonly FormulaFunctionDescriptor[];
+  cellPresentation?: CellPresentationSnapshot;
+  renderCellContent?: RenderCellContent;
+  onFlush?(
+    workbook: Workbook,
+    context: { signal: AbortSignal; requestId: string },
+  ): void | Promise<void>;
   /** Visible editor controls; full is the default. Context menus and permissions work in every preset. */
   chrome?: SpreadsheetChrome;
   sessionKey?: string;
@@ -77,7 +103,7 @@ export interface SpreadsheetEditorProps {
   historical?: SpreadsheetHistoricalView;
   value?: Workbook;
   defaultValue?: Workbook;
-  onChange?(workbook: Workbook): void;
+  onChange?(workbook: Workbook, context: WorkbookChangeContext): void;
   calculation?: CalculationMode;
   display?: DisplayOptions;
   readOnly?: boolean;
@@ -100,6 +126,10 @@ export interface SpreadsheetEditorProps {
   initialSheetId?: string;
 }
 export interface GridController {
+  commitDraft?(): void;
+  cancelDraft?(): void;
+  getViewport?(): { left: number; top: number };
+  restoreViewport?(viewport: { left: number; top: number }): void;
   select(range: CellSelection): void;
   getAnchor(
     range: CellSelection,

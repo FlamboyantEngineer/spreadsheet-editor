@@ -1,31 +1,106 @@
 import { excelColor } from './colors.js';
 import type ExcelJS from 'exceljs';
 import type { CellFormat } from '../model/review.js';
-import { UNIT_PRESETS } from '../calculation/units.js';
+import { resolveUnit } from '../calculation/units.js';
 
+const LOCALE_IDS: Record<string, string> = {
+  'en-US': '409',
+  'de-DE': '407',
+  'en-GB': '809',
+  'fr-FR': '40C',
+  'es-ES': 'C0A',
+  'it-IT': '410',
+  'ja-JP': '411',
+  'ko-KR': '412',
+  'zh-CN': '804',
+  'zh-TW': '404',
+  'pt-BR': '416',
+  'nl-NL': '413',
+  'sv-SE': '41D',
+  'da-DK': '406',
+  'fi-FI': '40B',
+  'nb-NO': '414',
+};
+type LocalizedFormat = CellFormat & { locale?: string; currency?: string };
 export function importNumberFormat(code: string): CellFormat | null {
   if (!code || code === 'General' || code === '@') return { kind: 'general' };
-  const suffix = /"([^"\n]+)"\s*$/.exec(code)?.[1].trim();
-  const decimals = /\.([0#]+)/.exec(code)?.[1].length ?? 0;
-  if (suffix && UNIT_PRESETS.includes(suffix))
-    return { kind: 'unit', unit: suffix, inputUnit: suffix, decimals };
-  if (/[dy]/i.test(code)) return { kind: /[hs]/i.test(code) ? 'datetime' : 'date' };
-  if (/[hs]/i.test(code)) return { kind: 'time' };
-  if (code.includes('%')) return { kind: 'percent', decimals };
-  if (code.includes('$') || /\[\$USD/.test(code)) return { kind: 'currency', decimals };
-  if (/[eE][+-]/.test(code)) return { kind: 'scientific', decimals };
-  if (/^[#0.,;()\-+\s]+$/.test(code)) return { kind: 'number', decimals };
+  const tag = /\[\$([A-Z]{3}|[$€£¥]?)-([0-9a-f]+)\]/i.exec(code);
+  const locale =
+    tag &&
+    Object.keys(LOCALE_IDS).find(
+      (key) => LOCALE_IDS[key] === tag[2].replace(/^0+/, '').toUpperCase(),
+    );
+  if (tag && !locale) return null;
+  const currency =
+    tag && tag[1]
+      ? ({ $: 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY' }[tag[1]] ?? tag[1].toUpperCase())
+      : undefined;
+  const body = code.replace(/\[\$[^\]]*\]/g, '');
+  const metadata = { ...(locale ? { locale } : {}), ...(currency ? { currency } : {}) };
+  const result = (value: CellFormat): CellFormat => ({ ...value, ...metadata });
+  if (body === 'General' || body === '@') return result({ kind: 'general' });
+  if (body === '# ?/?') return result({ kind: 'fraction' });
+  const suffix = /"([^"\n]+)"\s*$/.exec(body)?.[1].trim();
+  const decimals = /\.([0#]+)/.exec(body)?.[1].length ?? 0;
+  if (suffix) {
+    try {
+      resolveUnit(suffix);
+      return result({ kind: 'unit', unit: suffix, inputUnit: suffix, decimals });
+    } catch {
+      /* A quoted suffix is only a unit when the registry recognizes it. */
+    }
+  }
+  if (/[dy]/i.test(body)) return result({ kind: /[hs]/i.test(body) ? 'datetime' : 'date' });
+  if (/[hs]/i.test(body)) return result({ kind: 'time' });
+  if (body.includes('%')) return result({ kind: 'percent', decimals });
+  if (currency || /[$€£¥]/.test(body))
+    return result({
+      kind: 'currency',
+      decimals,
+      ...(!currency
+        ? {
+            currency: body.includes('€')
+              ? 'EUR'
+              : body.includes('£')
+                ? 'GBP'
+                : body.includes('¥')
+                  ? 'JPY'
+                  : 'USD',
+          }
+        : {}),
+    } as LocalizedFormat);
+  if (/[eE][+-]/.test(body)) return result({ kind: 'scientific', decimals });
+  if (/^[#0.,;()\-+\s]+$/.test(body)) return result({ kind: 'number', decimals });
   return null;
 }
-export function exportNumberFormat(format?: CellFormat): string {
-  if (!format || format.kind === 'general' || format.kind === 'fraction') return 'General';
-  if (format.kind === 'date') return 'mmm d, yyyy';
-  if (format.kind === 'time') return 'hh:mm:ss';
-  if (format.kind === 'datetime') return 'mmm d, yyyy hh:mm:ss';
+/** Excel only has a finite locale-ID vocabulary; unsupported locale metadata is reported, not invented. */
+export function numberFormatLoss(format?: LocalizedFormat): string | null {
+  if (format?.locale && !Object.hasOwn(LOCALE_IDS, format.locale))
+    return `XLSX cannot retain locale ${format.locale}; its default number-format locale is used.`;
+  if (format?.currency && format.kind !== 'currency')
+    return 'XLSX only retains currency metadata on a currency number format.';
+  if (format && (format.inputUnit || format.expectedDimension || format.quantityKind))
+    return 'XLSX does not retain input-unit, expected-dimension or quantity-kind metadata.';
+  return null;
+}
+export function exportNumberFormat(format?: LocalizedFormat): string {
+  if (!format) return 'General';
+  const locale = LOCALE_IDS[format.locale ?? 'en-US'];
+  const prefix =
+    format.kind === 'currency'
+      ? `[$${format.currency ?? 'USD'}-${locale ?? '409'}]`
+      : format.locale && locale
+        ? `[$-${locale}]`
+        : '';
+  if (format.kind === 'general') return prefix + 'General';
+  if (format.kind === 'fraction') return prefix + '# ?/?';
+  if (format.kind === 'date') return prefix + 'mmm d, yyyy';
+  if (format.kind === 'time') return prefix + 'hh:mm:ss';
+  if (format.kind === 'datetime') return prefix + 'mmm d, yyyy hh:mm:ss';
   const places =
       format.decimals ?? (format.kind === 'number' || format.kind === 'currency' ? 2 : 0),
     decimal = places ? '.' + '0'.repeat(places) : '';
-  return `${format.kind === 'currency' ? '$' : ''}0${decimal}${format.kind === 'percent' ? '%' : format.kind === 'scientific' ? 'E+00' : format.kind === 'unit' ? ` "${format.unit}"` : ''}`;
+  return `${prefix}${format.kind === 'number' || format.kind === 'currency' ? '#,##' : ''}0${decimal}${format.kind === 'percent' ? '%' : format.kind === 'scientific' ? 'E+00' : format.kind === 'unit' ? ` "${format.unit}"` : ''}`;
 }
 export function importCellStyle(
   style: Partial<ExcelJS.Style>,

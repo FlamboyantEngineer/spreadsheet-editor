@@ -8,7 +8,7 @@ import { useSpreadsheetEditor } from './use-editor.js';
 
 const actor = { id: 'alex', name: 'Alex' };
 afterEach(() => vi.useRealTimers());
-describe('Host SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
+describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   it('clamps reviewers, previews only their proposals, and blocks structural/save/decision commands', async () => {
     const onSave = vi.fn();
     const { result, rerender } = renderHook(
@@ -69,7 +69,7 @@ describe('Host SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   });
 });
 
-describe('Host SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
+describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
   it('coalesces saves, preserves changes made in flight, and aborts on permission loss', async () => {
     const requests: { context: SpreadsheetSaveContext; finish(): void }[] = [];
     const onSave = vi.fn(
@@ -99,14 +99,17 @@ describe('Host SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
       await first;
     });
     expect(result.current.savePhase).toBe('dirty');
+    let cancelled!: Promise<void>;
     act(() => {
-      void result.current.save();
+      cancelled = result.current.save();
+      void cancelled.catch(() => {});
     });
     await waitFor(() => expect(requests).toHaveLength(2));
     rerender({ onSave, readOnly: true });
     expect(requests[1].context.signal.aborted).toBe(true);
     unmount();
     requests[1].finish();
+    await expect(cancelled).rejects.toThrow('cancelled');
   });
   it('retries a transient autosave with the same request id and saves before opening history', async () => {
     vi.useFakeTimers();
@@ -261,7 +264,7 @@ describe('Host SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
   });
 });
 
-it('Host SE-CR-2.5: preserves a protected draft across a controlled update until apply or cancel', () => {
+it('SE-CR-2.5: preserves a protected draft across a controlled update until apply or cancel', () => {
   const first = createWorkbook([['1']]);
   const { result, rerender } = renderHook(({ value }) => useSpreadsheetEditor({ value }), {
     initialProps: { value: first },

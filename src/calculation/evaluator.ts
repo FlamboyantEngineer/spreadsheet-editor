@@ -1,3 +1,4 @@
+import { worksheetCalculationExtent } from '../model/extent.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { parseFormula, FormulaSyntaxError, type FormulaNode } from '../model/formula-parser.js';
 import {
@@ -28,6 +29,10 @@ import {
   type CellValue,
   type ErrorValue,
   type NumericValue,
+  type JsonValue,
+  assertJsonValue,
+  assertNumericValue,
+  normalizeNumericValue,
 } from './values.js';
 
 export interface CalculationOptions extends NumericOptions, WorkbookLimits {
@@ -43,9 +48,11 @@ export interface ResolvedFormulaOperand {
   formula: string;
   name: string;
   value: CellValue;
+  hostContext?: JsonValue;
 }
 export interface CalculationContext {
   operands: Record<string, ResolvedFormulaOperand>;
+  hostContext?: JsonValue;
 }
 export const formulaOperandKey = (
   sheetId: string,
@@ -54,20 +61,32 @@ export const formulaOperandKey = (
   start: number,
   end: number,
 ) => JSON.stringify([sheetId, x, y, start, end]);
+export interface CalculationDependencies {
+  cells: Record<string, string[]>;
+  extents?: Record<string, string[]>;
+}
+export interface FormulaCellContext {
+  sheetId: string;
+  x: number;
+  y: number;
+  formula: string;
+}
 export interface CalculationResult {
   schemaVersion: 1;
   worksheets: CalculatedWorksheet[];
   context?: CalculationContext;
+  dependencies?: CalculationDependencies;
 }
 export interface FormulaHost {
   /** One captured clock value per pass for TODAY and NOW. */
   now?(): Date;
-  readName?(name: string): CellValue | undefined;
+  hostContext?: JsonValue;
+  readName?(name: string, context?: FormulaCellContext): CellValue | undefined;
   /** Host functions are synchronous and share this calculation's execution budget. */
   callFunction?(
     name: string,
     args: readonly CellValue[],
-    context: { sheetId: string; x: number; y: number },
+    context: FormulaCellContext,
   ): CellValue | undefined;
 }
 type Value = CellValue | CellValue[][];
@@ -186,7 +205,35 @@ export function calculateWorkbook(
     throw new RangeError('Invalid calculation limits.');
   let operations = 0;
   let clock: Date | undefined;
+  if (host.hostContext !== undefined) assertJsonValue(host.hostContext);
+  if (
+    options.wordSizeBits !== undefined &&
+    (typeof options.wordSizeBits !== 'string' ||
+      !/^[1-9]\d{0,5}$/.test(options.wordSizeBits) ||
+      BigInt(options.wordSizeBits) > 100000n)
+  )
+    throw new RangeError('Invalid wordSizeBits context.');
   const operands: CalculationContext['operands'] = {};
+  const cellDependencies = new Map<string, Set<string>>(),
+    extentDependencies = new Map<string, Set<string>>();
+  const publicKey = (sheet: number, x: number, y: number) =>
+    JSON.stringify([workbook.worksheets[sheet].id, x, y]);
+  function rememberRead(
+    sheet: number,
+    x: number,
+    y: number,
+    target: number,
+    tx: number,
+    ty: number,
+  ) {
+    const key = publicKey(sheet, x, y);
+    let reads = cellDependencies.get(key);
+    if (!reads) {
+      reads = new Set();
+      cellDependencies.set(key, reads);
+    }
+    reads.add(publicKey(target, tx, ty));
+  }
   const cache = new Map<string, CellValue>(),
     visiting = new Set<string>();
   const parsed = new Map<string, FormulaNode>();
@@ -311,6 +358,16 @@ export function calculateWorkbook(
     let result: CellValue;
     try {
       const input: CellInput = workbook.worksheets[sheetIndex].data[y]?.[x] ?? null;
+      const address = formatSpreadsheetAddress(x, y);
+      const canonical = (
+        workbook.worksheets[sheetIndex] as (typeof workbook.worksheets)[number] & {
+          inputValues?: Record<string, NumericValue>;
+        }
+      ).inputValues?.[address];
+      cellDependencies.set(
+        publicKey(sheetIndex, x, y),
+        cellDependencies.get(publicKey(sheetIndex, x, y)) ?? new Set(),
+      );
       if (typeof input === 'string' && input.trimStart().startsWith('=')) {
         const formula = input.trimStart().slice(1);
         let tree = parsed.get(formula);
@@ -319,6 +376,9 @@ export function calculateWorkbook(
           parsed.set(formula, tree);
         }
         result = scalar(evaluate(tree, sheetIndex, x, y, depth + 1));
+      } else if (canonical) {
+        assertNumericValue(canonical, options.maxIntegerDigits);
+        result = normalizeNumericValue(canonical);
       } else if (typeof input === 'number') result = arithmetic.parse(String(input));
       else if (typeof input === 'string' && input.startsWith("'")) result = input.slice(1);
       else if (
@@ -329,7 +389,12 @@ export function calculateWorkbook(
       else result = input === '' ? null : input;
       const format = workbook.worksheets[sheetIndex].formats?.[formatSpreadsheetAddress(x, y)];
       if (format?.kind === 'unit' && format.unit) {
-        validateUnitDimension(format.unit, format.expectedDimension);
+        const configuredUnit = (unit: string) =>
+          ['C', 'F'].includes(unit) && format.expectedDimension?.toLowerCase() === 'temperature'
+            ? '°' + unit
+            : unit;
+        const displayUnit = configuredUnit(format.unit);
+        validateUnitDimension(displayUnit, format.expectedDimension, options);
         if (typeof result === 'string') {
           const match = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+(.+)$/.exec(
             result.trim(),
@@ -342,7 +407,7 @@ export function calculateWorkbook(
                 options,
                 format.quantityKind,
               );
-              const target = resolveUnit(format.unit);
+              const target = resolveUnit(displayUnit, options);
               if (JSON.stringify(candidate.dimension) === JSON.stringify(target.dimension))
                 result = candidate;
             } catch {
@@ -350,14 +415,22 @@ export function calculateWorkbook(
             }
           }
         } else if (isNumeric(result)) {
-          if (!result.dimension)
+          if (!result.dimension && !result.quantityKind && !canonical)
             result = makeQuantity(
               result,
-              format.inputUnit ?? format.unit,
+              configuredUnit(format.inputUnit ?? format.unit),
               options,
               format.quantityKind,
             );
-          const target = resolveUnit(format.unit);
+          if (
+            format.quantityKind &&
+            result.quantityKind &&
+            result.quantityKind !== format.quantityKind
+          )
+            throw new CalculationError('#VALUE!');
+          if (format.quantityKind && !result.quantityKind)
+            result = { ...result, quantityKind: format.quantityKind };
+          const target = resolveUnit(displayUnit, options);
           if (JSON.stringify(result.dimension) !== JSON.stringify(target.dimension))
             throw new CalculationError('#VALUE!');
         }
@@ -410,6 +483,7 @@ export function calculateWorkbook(
       formula: String(workbook.worksheets[sheetIndex].data[y]?.[x] ?? '').trimStart(),
       name,
       value: structuredClone(value),
+      ...(host.hostContext === undefined ? {} : { hostContext: structuredClone(host.hostContext) }),
     };
   }
   function evaluateFresh(
@@ -438,7 +512,16 @@ export function calculateWorkbook(
       case 'quantity':
         return makeQuantity(arithmetic.parse(node.decimal), node.unit, options);
       case 'name': {
-        const value = host.readName?.(node.name);
+        let value = host.readName?.(node.name, {
+          sheetId: workbook.worksheets[sheetIndex].id,
+          x,
+          y,
+          formula: String(workbook.worksheets[sheetIndex].data[y]?.[x] ?? ''),
+        });
+        if (isNumeric(value ?? null)) {
+          assertNumericValue(value);
+          value = normalizeNumericValue(value);
+        }
         if (value === undefined) throw new CalculationError('#NAME?');
         rememberOperand(node, node.name, value, sheetIndex, x, y);
         return value;
@@ -455,8 +538,16 @@ export function calculateWorkbook(
               );
         if (target < 0) throw new CalculationError('#REF!');
         const sheet = workbook.worksheets[target];
-        const width = sheet.data.reduce((max, row) => Math.max(max, row.length), 0);
-        if (node.kind === 'lines' && (!width || !sheet.data.length)) return [];
+        const extent = worksheetCalculationExtent(sheet),
+          width = extent.columns,
+          height = extent.rows;
+        if (node.kind === 'lines') {
+          const key = publicKey(sheetIndex, x, y),
+            extents = extentDependencies.get(key) ?? new Set<string>();
+          extents.add(sheet.id);
+          extentDependencies.set(key, extents);
+        }
+        if (node.kind === 'lines' && (!width || !height)) return [];
         const start =
           node.kind === 'reference'
             ? node.start
@@ -467,7 +558,7 @@ export function calculateWorkbook(
           node.kind === 'reference'
             ? (node.end ?? node.start)
             : node.axis === 'column'
-              ? { x: Math.max(node.start, node.end), y: sheet.data.length - 1 }
+              ? { x: Math.max(node.start, node.end), y: height - 1 }
               : { x: width - 1, y: Math.max(node.start, node.end) };
         const cellKey = keyFor(sheetIndex, x, y);
         let budget = readBudgets.get(cellKey);
@@ -483,8 +574,10 @@ export function calculateWorkbook(
             throw new CalculationError('#LIMIT!');
           }
         }
-        if (node.kind === 'reference' && !node.end)
+        if (node.kind === 'reference' && !node.end) {
+          rememberRead(sheetIndex, x, y, target, start.x, start.y);
           return checked(read(target, start.x, start.y, depth + 1));
+        }
         const left = Math.min(start.x, end.x),
           top = Math.min(start.y, end.y),
           right = Math.max(start.x, end.x),
@@ -506,6 +599,7 @@ export function calculateWorkbook(
         while (state.index < total) {
           const row = Math.floor(state.index / rangeWidth),
             col = state.index % rangeWidth;
+          rememberRead(sheetIndex, x, y, target, left + col, top + row);
           const value = read(target, left + col, top + row, depth + 1);
           (state.rows[row] ??= []).push(value);
           state.index++;
@@ -824,7 +918,8 @@ export function calculateWorkbook(
             return arithmetic.parse(
               String(flat.filter((value) => value === null || value === '').length),
             );
-          const sum = values.reduce(arithmetic.add, zero);
+          if (name === 'AVERAGE') return arithmetic.average(values);
+          const sum = name === 'SUM' ? values.reduce(arithmetic.add, zero) : zero;
           if (name === 'SUM') return sum;
           if (name === 'PRODUCT')
             return values.length ? values.reduce(arithmetic.multiply, one) : zero;
@@ -842,7 +937,7 @@ export function calculateWorkbook(
             );
           const denominator = values.length - (name.endsWith('.S') ? 1 : 0);
           if (denominator <= 0) throw new CalculationError('#DIV/0!');
-          const average = arithmetic.divide(sum, arithmetic.parse(String(values.length)));
+          const average = arithmetic.average(values);
           const squared = values.reduce((sum, value) => {
             const delta = arithmetic.subtract(value, average);
             return arithmetic.add(sum, arithmetic.multiply(delta, delta));
@@ -917,8 +1012,22 @@ export function calculateWorkbook(
           const a = numeric(args[0]),
             b = args[1] === undefined ? arithmetic.parse('10') : numeric(args[1]);
           if (name === 'POWER') return arithmetic.power(a, b);
-          if (name === 'LOG')
-            return arithmetic.divide(arithmetic.unary('LN', a), arithmetic.unary('LN', b));
+          if (name === 'LOG') {
+            const ratio = arithmetic.divide(arithmetic.unary('LN', a), arithmetic.unary('LN', b));
+            const candidate = arithmetic.round(ratio, 0);
+            // Verify integer powers rationally rather than trusting a rounded ln ratio.
+            try {
+              arithmetic.integer(candidate, -10000, 10000);
+              if (arithmetic.compare(arithmetic.power(b, candidate), a) === 0) {
+                const exact = { ...candidate, approximate: a.approximate || b.approximate };
+                if (!exact.approximate) delete exact.precision;
+                return exact;
+              }
+            } catch (error) {
+              if (!(error instanceof CalculationError)) throw error;
+            }
+            return ratio;
+          }
           const quotient = arithmetic.round(
             arithmetic.divide(a, b),
             0,
@@ -961,11 +1070,16 @@ export function calculateWorkbook(
           if (name === 'SIGN') return arithmetic.parse(String(arithmetic.compare(value, zero)));
           return name === 'SQRT' ? arithmetic.sqrt(value) : arithmetic.unary(name, value);
         }
-        const external = host.callFunction?.(name, flat.map(checked), {
+        let external = host.callFunction?.(name, flat.map(checked), {
           sheetId: workbook.worksheets[sheetIndex].id,
           x,
           y,
+          formula: String(workbook.worksheets[sheetIndex].data[y]?.[x] ?? ''),
         });
+        if (isNumeric(external ?? null)) {
+          assertNumericValue(external);
+          external = normalizeNumericValue(external);
+        }
         if (external === undefined) throw new CalculationError('#NAME?');
         rememberOperand(node, name, external, sheetIndex, x, y);
         return external;
@@ -987,6 +1101,20 @@ export function calculateWorkbook(
       ),
     })),
   };
-  if (Object.keys(operands).length) result.context = { operands };
+  result.dependencies = {
+    cells: Object.fromEntries([...cellDependencies].map(([key, reads]) => [key, [...reads]])),
+    ...(extentDependencies.size
+      ? {
+          extents: Object.fromEntries(
+            [...extentDependencies].map(([key, sheets]) => [key, [...sheets]]),
+          ),
+        }
+      : {}),
+  };
+  if (Object.keys(operands).length || host.hostContext !== undefined)
+    result.context = {
+      operands,
+      ...(host.hostContext === undefined ? {} : { hostContext: structuredClone(host.hostContext) }),
+    };
   return result;
 }

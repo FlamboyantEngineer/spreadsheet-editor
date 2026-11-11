@@ -15,13 +15,14 @@ import {
   parseFormulaReferenceHighlights,
   buildFormulaReferenceTokenSegments,
 } from '../model/formula-reference-parser.js';
-import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
+import { formulaFunctionCatalog, type FormulaFunctionDescriptor } from '../editor/public-host.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 /** React completion UI attached to the exact native editor published by CE's edition tuple. */
 export function useNativeFormula(
   onDraft: (value: string | null) => void,
   root: RefObject<HTMLDivElement | null>,
+  functions?: readonly FormulaFunctionDescriptor[],
 ) {
   const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const [value, setValue] = useState('');
@@ -68,9 +69,10 @@ export function useNativeFormula(
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
   const id = useId();
-  const options = query
-    ? SUPPORTED_FUNCTIONS.filter((name) => name.startsWith(query)).slice(0, 12)
-    : [];
+  const options = formulaFunctionCatalog(functions)
+    .filter((item) => [item.name, ...(item.aliases ?? [])].some((name) => name.startsWith(query)))
+    .sort((a, b) => Number(b.name === query) - Number(a.name === query))
+    .slice(0, 12);
   function track() {
     const current = input.current;
     if (!current) return;
@@ -82,7 +84,7 @@ export function useNativeFormula(
       : '';
     setQuery(word.toUpperCase());
     setIndex(0);
-    setOpen(!!word);
+    setOpen(!!word || prefix === '=');
   }
   function start(sheet: JSpreadsheetWorksheetInstance | null) {
     queueMicrotask(() => {
@@ -123,7 +125,8 @@ export function useNativeFormula(
     if (!input.current || event.nativeEvent.isComposing || !open || !options.length) return;
     if (event.key === 'ArrowDown') setIndex((index + 1) % options.length);
     else if (event.key === 'ArrowUp') setIndex((index + options.length - 1) % options.length);
-    else if (event.key === 'Enter' || event.key === 'Tab') insert(options[index] + '(', true);
+    else if (event.key === 'Enter' || event.key === 'Tab')
+      insert(options[index].insertText ?? options[index].name + '(', true);
     else if (event.key === 'Escape') setOpen(false);
     else return;
     event.preventDefault();
@@ -136,10 +139,17 @@ export function useNativeFormula(
       anchorRef={input}
       isOpen={open && options.length > 0}
       onOpenChange={setOpen}
-      items={options.map((name) => ({ id: name, label: name }))}
-      activeKey={options[index] ?? null}
-      onActiveKeyChange={(key) => setIndex(options.indexOf(String(key)))}
-      onAction={(key) => insert(String(key) + '(', true)}
+      items={options.map((item) => ({
+        id: item.name,
+        label: item.name,
+        description: item.signature,
+      }))}
+      activeKey={options[index]?.name ?? null}
+      onActiveKeyChange={(key) => setIndex(options.findIndex((item) => item.name === key))}
+      onAction={(key) => {
+        const item = options.find((item) => item.name === key);
+        if (item) insert(item.insertText ?? item.name + '(', true);
+      }}
     />
   );
   const overlay = highlighted && (
