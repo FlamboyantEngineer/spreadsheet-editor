@@ -26,7 +26,7 @@ Verification: `e2e/editor.spec.ts` (SE-UI-3, SE-DOC-2), `src/document/insertion.
 
 ## SE-LABS-1 — One-command labs
 
-After installing dependencies, `npm run labs` builds and serves labs plus a real server calculation endpoint. It requires no application server, database or consumer repository checkout. Host and port are configurable. The harness serves only browser assets and bounds request bodies. CI must exercise actual browser edits, HTTP calculation and both insertion modes.
+`npm run labs` installs any missing or stale locked dependencies, then builds and serves labs plus a real server calculation endpoint. It requires no application server, database or consumer repository checkout. Host and port are configurable. The harness serves only browser assets and bounds request bodies. CI must exercise actual browser edits, HTTP calculation and both insertion modes.
 
 Implementation: `scripts/labs.mjs`, `scripts/build-labs.mjs`, `labs/src/main.tsx`.
 
@@ -34,9 +34,11 @@ Verification: `e2e/editor.spec.ts`, launched by the Playwright web-server config
 
 ## SE-LABS-2 — Installation diagnostics and portable startup
 
-Labs require Node 22 or newer and a completed development dependency installation (`npm ci --include=dev`). The launcher and standalone labs build must report a missing esbuild package with the exact installation command and public-library installation guidance, without an uncaught module-resolution traceback. Actual build errors and missing transitive dependencies must retain their original diagnostics. Git package preparation launches the current Node executable directly, including from Windows paths with spaces, without relying on a shell or npm.cmd.
+A fresh source checkout shall start with `npm run labs`, without a preceding install command. Node 22+, npm and Git remain system prerequisites. The launcher and standalone labs build shall inspect mandatory installed packages and npm's installed lockfile against the committed lockfile, verify prepared UI assets and exercise esbuild's native binary in a separate process. Missing, stale, incomplete or wrong-platform installs shall trigger one `npm ci --include=dev --include=optional --ignore-scripts=false` before building; production/omit/ignore-scripts defaults must not prevent setup. Healthy installs shall be reused without network installation. The installer shall run the current Node executable with npm's JavaScript CLI path, including on Windows and in paths containing spaces, without a shell or npm.cmd.
 
-Implementation: `scripts/lib/labs-setup.mjs`, `scripts/labs.mjs`, `scripts/build-labs.mjs`, `scripts/prepare.mjs`.
+Installation errors retain npm's output and exit code and stop startup without retry loops. A successful install must pass readiness checks before build or serving. Actual source/build failures remain visible and do not trigger dependency reinstall. The public UI library requires no private token. Git package preparation continues to launch the current Node executable directly.
+
+Implementation: `scripts/lib/labs-dependencies.mjs`, `scripts/lib/labs-setup.mjs`, `scripts/labs.mjs`, `scripts/build-labs.mjs`, `scripts/prepare.mjs`.
 
 Verification: `src/tooling/labs-startup.test.ts`, existing browser labs tests.
 

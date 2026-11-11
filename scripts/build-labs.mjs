@@ -1,11 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureLabsDependencies } from './lib/labs-dependencies.mjs';
 import { loadEsbuild, reportLabsError } from './lib/labs-setup.mjs';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const output = resolve(root, 'labs/build');
 export async function buildLabs() {
+  await ensureLabsDependencies(root);
   const { build } = await loadEsbuild();
   await mkdir(output, { recursive: true });
   await build({
