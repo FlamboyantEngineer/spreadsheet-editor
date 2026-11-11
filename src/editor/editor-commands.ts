@@ -17,6 +17,7 @@ import {
   ArrowUpGlyph,
   BoldGlyph,
   CalendarGlyph,
+  ParagraphGlyph,
   ParagraphGlyph as CellAlignmentGlyph,
   ClipboardGlyph,
   ClockGlyph,
@@ -69,7 +70,7 @@ import type { MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
 
 /** The only public-library glyph adapter used by editor-owned command chrome. */
 export const editorGlyphs = {
-  actions: TableGlyph,
+  actions: ParagraphGlyph,
   author: EditGlyph,
   review: ReplyGlyph,
   read: EyeGlyph,

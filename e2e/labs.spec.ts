@@ -106,11 +106,11 @@ test('SE-LABS-3: dark grid uses the active theme and compact controls show their
   await page.goto('/full.html?theme=dark');
   const editor = page.locator('.se-editor').first();
   const cell = editor.locator('td[data-x="1"][data-y="1"]').first();
-  await expect(cell).toHaveCSS('background-color', 'rgb(21, 27, 35)');
+  await expect(cell).toHaveCSS('background-color', 'rgb(13, 17, 23)');
   await expect(cell).toHaveCSS('color', 'rgb(240, 246, 252)');
   await expect(editor.locator('thead td[data-x="1"]').first()).toHaveCSS(
     'background-color',
-    'rgb(13, 17, 23)',
+    'rgb(21, 27, 35)',
   );
   await expect(editor.getByRole('button', { name: '12 Font size', exact: true })).toBeVisible();
   expect(

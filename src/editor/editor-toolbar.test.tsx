@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
@@ -245,6 +245,35 @@ describe('SE-CHROME-4: embedded icon toolbar', () => {
     await user.click(screen.getByRole('button', { name: 'Number format' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Scientific' }));
     expect(editor.format).toHaveBeenCalledWith({}, { kind: 'scientific' });
+  });
+
+  it('keeps full editor actions in one icon toolbar and runs the moved workbook commands', async () => {
+    const user = userEvent.setup();
+    const { editor, mutateWithDraft } = fixture({ chrome: 'full', onRefresh: vi.fn() });
+    render(<EditorToolbar editor={editor} />);
+    const toolbar = within(screen.getByRole('toolbar', { name: 'Spreadsheet formatting' }));
+    expect(screen.getAllByRole('toolbar')).toHaveLength(1);
+    for (const name of [
+      'Add row',
+      'Add column',
+      'Find',
+      'Wrap text',
+      'Merge cells',
+      'Unmerge cells',
+      'Align cells',
+      'Borders',
+      'Refresh data',
+    ]) {
+      const button = toolbar.getByRole('button', { name });
+      expect(button.querySelector('svg'), name).toBeTruthy();
+      expect(button.textContent, name).toBe('');
+    }
+    await user.click(toolbar.getByRole('button', { name: 'Add row' }));
+    expect(mutateWithDraft).toHaveBeenCalledOnce();
+    await user.click(toolbar.getByRole('button', { name: 'Find' }));
+    expect(editor.setShowFind).toHaveBeenCalledWith(true);
+    await user.click(toolbar.getByRole('button', { name: 'Comments (0)' }));
+    expect(editor.openPanel).toHaveBeenCalledWith('comments');
   });
 
   it('keeps the full labelled menubar and field controls free of restore/apply/cancel actions after a value changes', () => {

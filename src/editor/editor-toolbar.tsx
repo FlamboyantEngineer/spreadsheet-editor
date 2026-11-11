@@ -28,6 +28,7 @@ function MenuButton({
   disabled,
   iconOnly = false,
   hint,
+  variant,
 }: {
   label: string;
   items: MenuEntry[];
@@ -35,6 +36,7 @@ function MenuButton({
   disabled?: boolean;
   iconOnly?: boolean;
   hint?: string;
+  variant?: 'secondary';
 }) {
   return (
     <Tooltip content={hint ?? label} isDisabled={disabled}>
@@ -42,6 +44,7 @@ function MenuButton({
         label={label}
         aria-label={label}
         size="sm"
+        variant={variant}
         icon={icon}
         iconOnly={iconOnly}
         isDisabled={disabled}
@@ -207,17 +210,14 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
         {e.props.onSave && (
           <Button
             size="sm"
-            icon={embedded ? editorGlyphs.save : undefined}
-            startIcon={embedded ? undefined : editorGlyphs.save}
+            icon={editorGlyphs.save}
             label="Save"
             tooltip={e.savePhase === 'error' ? 'Retry save' : 'Save'}
             shortcut="Ctrl+S"
             isDisabled={!e.canEdit || e.savePhase === 'saving'}
             isPending={e.savePhase === 'saving'}
             onPress={() => e.save()}
-          >
-            {embedded ? undefined : 'Save'}
-          </Button>
+          />
         )}
       </div>
       {!embedded && (
@@ -241,6 +241,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
           <>
             <MenuButton
               label="Spreadsheet actions"
+              variant="secondary"
               icon={editorGlyphs.actions}
               iconOnly
               items={(['file', 'edit', 'insert', 'view', 'review'] as const).map((id) => ({
@@ -442,96 +443,102 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             icon={editorGlyphs.align}
             items={menus.align}
             disabled={disabled}
-            iconOnly={embedded}
+            iconOnly
           />
           <MenuButton
             label="Borders"
             icon={editorGlyphs.borders}
             items={menus.borders}
             disabled={disabled}
-            iconOnly={embedded}
+            iconOnly
           />
           <Button
             size="sm"
-            icon={embedded ? editorGlyphs.wrap : undefined}
-            startIcon={embedded ? undefined : editorGlyphs.wrap}
+            icon={editorGlyphs.wrap}
             label="Wrap text"
             tooltip="Wrap text"
             isDisabled={disabled}
             isSelected={e.style['white-space'] === 'pre-wrap'}
             onPress={() => e.attempt(() => e.toggleFormat('white-space', 'pre-wrap'))}
-          >
-            {embedded ? undefined : 'Wrap text'}
-          </Button>
+          />
           <Button
             size="sm"
-            icon={embedded ? editorGlyphs.merge : undefined}
-            startIcon={embedded ? undefined : editorGlyphs.merge}
+            icon={editorGlyphs.merge}
             label="Merge cells"
             tooltip="Merge cells"
             onPress={() => e.attempt(() => e.merge())}
             isDisabled={
               !e.canEdit || (e.selection.x1 === e.selection.x2 && e.selection.y1 === e.selection.y2)
             }
-          >
-            {embedded ? undefined : 'Merge cells'}
-          </Button>
+          />
           <Button
             size="sm"
-            icon={embedded ? editorGlyphs.unmerge : undefined}
-            startIcon={embedded ? undefined : editorGlyphs.unmerge}
+            icon={editorGlyphs.unmerge}
             label="Unmerge cells"
             tooltip="Unmerge cells"
             onPress={() => e.attempt(() => e.merge(true))}
             isDisabled={!e.canEdit || !Object.keys(e.sheet.mergeCells ?? {}).length}
-          >
-            {embedded ? undefined : 'Unmerge cells'}
-          </Button>
+          />
         </ToolbarRowGroup>
+        {!embedded && (
+          <>
+            <ToolbarRowSeparator />
+            <ToolbarRowGroup className="se-editor__tool-group" aria-label="Workbook commands">
+              <Button
+                size="sm"
+                icon={editorCommandMetadata('row-below').icon}
+                label="Add row"
+                tooltip="Add row"
+                onPress={() => e.attempt(menus.appendRow)}
+                isDisabled={!e.canEdit}
+              />
+              <Button
+                size="sm"
+                icon={editorCommandMetadata('column-after').icon}
+                label="Add column"
+                tooltip="Add column"
+                onPress={() => e.attempt(menus.appendColumn)}
+                isDisabled={!e.canEdit}
+              />
+              <Button
+                size="sm"
+                icon={editorCommandMetadata('find').icon}
+                label="Find"
+                tooltip="Find"
+                isDisabled={e.props.features?.search === false}
+                onPress={() => e.setShowFind(!e.showFind)}
+                isSelected={e.showFind}
+              />
+              <Button
+                size="sm"
+                icon={editorCommandMetadata('context-comment').icon}
+                label={`Comments (${e.workbook.comments?.filter((thread) => !thread.resolved).length ?? 0})`}
+                tooltip="Comments"
+                onPress={() => e.openPanel('comments')}
+                isSelected={e.panelOpen && e.panel === 'comments'}
+              />
+              <Button
+                size="sm"
+                icon={editorGlyphs.review}
+                label={`Suggestions (${e.workbook.suggestions?.filter((item) => item.status === 'pending').length ?? 0})`}
+                tooltip="Suggestions"
+                onPress={() => e.openPanel('suggestions')}
+                isSelected={e.panelOpen && e.panel === 'suggestions'}
+              />
+              {e.props.onRefresh && (
+                <Button
+                  size="sm"
+                  icon={editorCommandMetadata('refresh').icon}
+                  label="Refresh data"
+                  tooltip="Refresh data"
+                  isDisabled={!e.canEdit}
+                  onPress={() => e.attempt(() => e.refresh())}
+                />
+              )}
+            </ToolbarRowGroup>
+          </>
+        )}
       </ToolbarRow>
-      {!embedded && (
-        <ToolbarRow
-          role="group"
-          className="se-editor__actions"
-          aria-label="Spreadsheet commands"
-          justify="start"
-        >
-          <Button size="sm" onPress={() => e.attempt(menus.appendRow)} isDisabled={!e.canEdit}>
-            Add row
-          </Button>
-          <Button size="sm" onPress={() => e.attempt(menus.appendColumn)} isDisabled={!e.canEdit}>
-            Add column
-          </Button>
-          <Button
-            size="sm"
-            isDisabled={e.props.features?.search === false}
-            onPress={() => e.setShowFind(!e.showFind)}
-            isSelected={e.showFind}
-          >
-            Find
-          </Button>
-          <Button
-            size="sm"
-            onPress={() => e.openPanel('comments')}
-            isSelected={e.panelOpen && e.panel === 'comments'}
-          >
-            Comments ({e.workbook.comments?.filter((thread) => !thread.resolved).length ?? 0})
-          </Button>
-          <Button
-            size="sm"
-            onPress={() => e.openPanel('suggestions')}
-            isSelected={e.panelOpen && e.panel === 'suggestions'}
-          >
-            Suggestions (
-            {e.workbook.suggestions?.filter((item) => item.status === 'pending').length ?? 0})
-          </Button>
-          {e.props.onRefresh && (
-            <Button isDisabled={!e.canEdit} size="sm" onPress={() => e.attempt(() => e.refresh())}>
-              Refresh data
-            </Button>
-          )}
-        </ToolbarRow>
-      )}
     </div>
   );
 }

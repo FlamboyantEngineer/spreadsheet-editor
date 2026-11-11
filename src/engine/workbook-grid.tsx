@@ -535,13 +535,30 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       }}
       onContextMenuCapture={(event) => {
         const header = deliveredHeader(event, surface.current);
-        if (!header) return;
+        if (header) {
+          event.preventDefault();
+          event.stopPropagation();
+          latest.current.onContextMenu(
+            header.axis === 'row' ? { x: -1, y: header.index } : { x: header.index, y: -1 },
+            header.element.getBoundingClientRect(),
+          );
+          return;
+        }
+        // Own cell context menus before the vendor or browser handles the same event.
+        // An active native text editor retains its text-editing context menu.
+        if (
+          event.target instanceof Element &&
+          event.target.closest('input, textarea, [contenteditable="true"]')
+        ) {
+          event.stopPropagation();
+          return;
+        }
+        const coords = pickCell(event);
+        const cell = coords && worksheet()?.getCellFromCoords?.(coords.x, coords.y);
+        if (!coords || !cell) return;
         event.preventDefault();
         event.stopPropagation();
-        latest.current.onContextMenu(
-          header.axis === 'row' ? { x: -1, y: header.index } : { x: header.index, y: -1 },
-          header.element.getBoundingClientRect(),
-        );
+        latest.current.onContextMenu(coords, cell.getBoundingClientRect());
       }}
       onScrollCapture={scheduleReferences}
       onInputCapture={(event) => {

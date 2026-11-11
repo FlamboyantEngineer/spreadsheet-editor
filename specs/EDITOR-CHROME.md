@@ -50,8 +50,18 @@ Verification: `src/editor/use-editor.test.ts`, `e2e/flight-parity.spec.ts`, `e2e
 
 Zoom scales grid cell text, row heights, column widths and headers inside the fixed grid viewport. Editor width/height, toolbar, formula bar, worksheet tabs, sidebar and zoom controls do not scale. Default and authored grid borders and selection/reference/presence strokes remain one CSS pixel at every supported zoom level. Resizing headers converts pointer deltas back to canonical workbook dimensions; changing zoom never authors workbook geometry. Visible selection edges enclose all four sides in light and dark themes, including ranges clipped by frozen columns or scrolling.
 
-The embedded toolbar uses icon-only action triggers and the public ToolbarRow default appearance. All triggers have accessible names and tooltips. Full mode retains labelled application menus. Worksheet controls use public Tabs with a scrollable tab list and fixed external Add/Zoom controls, without an ellipsis menu, close marks or a zoom-reset control. Double-click, F2 and Rename open editing directly inside the worksheet tab. Enter/blur commits a valid unique normalized name, Escape cancels, and invalid Enter submissions remain editable with feedback (leaving an invalid field cancels). Rename and structural commands preserve pending formula edits and remap references.
+The embedded toolbar uses icon-only action triggers and the public ToolbarRow default appearance. All triggers have accessible names and tooltips. Full mode retains labelled application menus. Worksheet controls use public Tabs with a scrollable tab list with Add immediately after the final tab and a separate fixed zoom control, without an ellipsis menu, close marks or a zoom-reset control. Double-click, F2 and Rename open editing directly inside the worksheet tab. Enter/blur commits a valid unique normalized name, Escape cancels, and invalid Enter submissions remain editable with feedback (leaving an invalid field cancels). Rename and structural commands preserve pending formula edits and remap references.
 
 Implementation: `src/engine/workbook-grid.tsx`, `src/engine/worksheet-presentation.ts`, `src/engine/header-resize.ts`, `src/editor/editor-formula-bar.tsx`, `src/editor/worksheet-strip.tsx`, `src/editor/editor-toolbar.tsx`, `labs/src/reference.css`.
 
 Verification: engine/controller/component unit tests and browser editor suites cover geometry, selection, inline rename and formula ownership across the three lab presets.
+
+## SE-CHROME-6 — Chrome surfaces and grid boundaries
+
+Cell secondary clicks cancel the browser context menu before opening the shared application menu. Native text-editing fields retain their own text context menu. Header context actions and selection behavior remain available.
+
+Unstyled cells use the library canvas token (white in light mode); row and column headers use the slightly shaded surface token. Authored fills and selected-cell/header states retain their meaning. Toolbar rows use the canvas background and popup menus keep the library's default menu surface. The full menubar spans the editor width without a border. Full-mode action buttons share one scrolling icon toolbar; font, size, color, number-format and unit fields remain readable controls. The embedded action trigger uses the public three-line glyph and a standard bordered button variant, inset from the toolbar edge. FormulaBar has no extra surrounding box; the address and formula fields retain their normal borders.
+
+Add Worksheet sits immediately after the last worksheet inside the scrolling tab list, including when tabs overflow. Zoom remains separate at the trailing end or on a second mobile row. The grid reserves its own vertical scrollbar gutter and confines overlays to its viewport; a collapsed or expanded dock panel cannot cover the scrollbar.
+
+Verification: `e2e/chrome-layout.spec.ts`, `src/editor/editor-toolbar.test.tsx`, existing editor and lab browser suites.
