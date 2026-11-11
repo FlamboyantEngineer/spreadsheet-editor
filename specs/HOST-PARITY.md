@@ -35,3 +35,7 @@ The user's exact-number requirement takes precedence over Host's finite decimal 
 Engineering quantities use the standalone rational kernel and a documented curated SI conversion registry; this package does not embed the complete platform SDK constants/quantity catalog or its revision-pinning services. Hosts may resolve additional constants through `FormulaHost`. Non-terminating exact values that Excel cannot represent round-trip export as fraction text; terminating decimals retain their full decimal text when native Excel numbers would lose digits.
 
 Chrome is configurable: the full preset also retains a dedicated Suggestions pane and menu commands for pane access; minimal and embedded hosts need not expose that full desktop arrangement. The built-in plain-text composer and standalone conversation data are not Host's shared organizational comment service. Consumer-specific rich mentions, platform panel arrangement and transport behavior are integrated through host adapters rather than silently emulated.
+
+## Intentional visual updates
+
+The reusable editor now uses the public library ToolbarRow, FormulaBar/CodeEditor and Tabs. Embedded action triggers are icon-only. Inline worksheet rename replaces the legacy modal; worksheet ellipsis navigation and the formula field action buttons are removed. Grid zoom changes presentation geometry and text inside a fixed viewport, keeping borders at one CSS pixel. These changes supersede legacy visual descriptions while retaining the calculation, review, permissions and persistence contracts above.

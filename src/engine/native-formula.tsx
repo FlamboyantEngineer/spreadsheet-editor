@@ -35,14 +35,18 @@ export function useNativeFormula(
     if (!control || !container || !highlighted) return;
     const style = getComputedStyle(control);
     const box = control.getBoundingClientRect(),
-      base = container.getBoundingClientRect(),
-      scale = base.width / container.offsetWidth || 1;
+      base = container.getBoundingClientRect();
     const previous = { color: control.style.color, caretColor: control.style.caretColor };
     setMirror({
-      left: (box.left - base.left) / scale,
-      top: (box.top - base.top) / scale,
-      width: box.width / scale,
-      height: box.height / scale,
+      position: 'absolute',
+      pointerEvents: 'none',
+      zIndex: 6,
+      overflow: 'hidden',
+      whiteSpace: 'pre',
+      left: box.left - base.left - container.clientLeft,
+      top: box.top - base.top - container.clientTop,
+      width: box.width,
+      height: box.height,
       font: style.font,
       padding: style.padding,
       lineHeight: style.lineHeight,
@@ -85,6 +89,8 @@ export function useNativeFormula(
       const edition = (sheet as { edition?: [HTMLElement] } | null)?.edition;
       const control = edition?.[0]?.firstElementChild;
       if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
+        // Vendor inputs do not inherit the cell's font in every host stylesheet.
+        control.style.font = getComputedStyle(edition![0]).font;
         input.current = control;
         track();
       }
@@ -140,7 +146,15 @@ export function useNativeFormula(
     <div className="se-editor__native-formula" aria-hidden="true" style={mirror}>
       <span style={{ display: 'block', transform: `translateX(${-scroll}px)` }}>
         {buildFormulaReferenceTokenSegments(value, references).map((segment, index) => (
-          <span key={index} style={{ color: segment.color }}>
+          <span
+            key={index}
+            style={{
+              color:
+                segment.colorIndex === undefined
+                  ? undefined
+                  : `var(--se-reference-${segment.colorIndex}, ${segment.color})`,
+            }}
+          >
             {segment.text}
           </span>
         ))}

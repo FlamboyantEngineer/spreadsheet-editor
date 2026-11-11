@@ -113,7 +113,7 @@ test('Host SE-XL-1/2: import preview ignores caches, cancellation preserves the 
   await expect(editor.locator('td[data-x="1"][data-y="1"]').first()).toHaveText('1e-25');
   const second = await prepare();
   await second.getByRole('button', { name: 'Replace workbook', exact: true }).click();
-  await expect(editor.getByRole('button', { name: 'Imported', exact: true })).toBeVisible();
+  await expect(editor.getByRole('tab', { name: 'Imported', exact: true })).toBeVisible();
   await expect(editor.locator('td[data-x="1"][data-y="0"]').first()).toHaveText('1e-25');
   await editor.getByRole('menuitem', { name: 'File', exact: true }).click();
   const exported = page.waitForResponse((response) => response.url().endsWith('/api/xlsx/export'));
@@ -144,7 +144,7 @@ test('Host SE-CR-2.11/2.13/2.19: border grid and header dialogs retain selection
   await cell.click();
   await editor.getByRole('button', { name: 'Borders', exact: true }).click();
   const borders = page.getByRole('menu', { name: 'Borders', exact: true });
-  await expect(borders.getByRole('menuitem')).toHaveCount(6);
+  await expect(borders.getByRole('menuitem')).toHaveCount(7);
   await borders.getByRole('menuitem', { name: 'Top borders', exact: true }).click();
   await expect(cell).toHaveCSS('border-top-style', 'solid');
   const row = editor.locator('tbody td.jss_row[data-y="1"]').first();

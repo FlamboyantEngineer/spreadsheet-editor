@@ -186,6 +186,79 @@ describe('Host SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
     expect(onOpen).not.toHaveBeenCalled();
     expect(result.current.notice).toBe('Save failed');
   });
+  it('saves a pending formula before opening history even when the workbook was clean', async () => {
+    let finishSave!: () => void;
+    const onSave = vi.fn<NonNullable<SpreadsheetEditorProps['onSave']>>(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    const onOpen = vi.fn();
+    const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1']]),
+        onSave,
+        history: { entries: [entry], onOpen },
+      }),
+    );
+    act(() => result.current.setDraftValue('=1-1E-25'));
+    expect(result.current.savePhase).toBe('idle');
+    let opening!: Promise<void>;
+    act(() => {
+      opening = result.current.openHistorical(entry);
+    });
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].worksheets[0].data[0][0]).toBe('=1-1E-25');
+    expect(onOpen).not.toHaveBeenCalled();
+    await act(async () => {
+      finishSave();
+      await opening;
+    });
+    expect(onOpen).toHaveBeenCalledWith(entry);
+    expect(result.current.draftDirty).toBe(false);
+  });
+  it('keeps history closed when a pending formula cannot commit or its save fails', async () => {
+    const onOpen = vi.fn();
+    const onSave = vi.fn(async () => {
+      throw new Error('Save failed');
+    });
+    const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
+    const { result, rerender } = renderHook(
+      (props: SpreadsheetEditorProps) => useSpreadsheetEditor(props),
+      {
+        initialProps: {
+          defaultValue: createWorkbook([['1']]),
+          onSave,
+          history: { entries: [entry], onOpen },
+          collaborators: [
+            {
+              id: 'peer',
+              name: 'Morgan',
+              sheetId: 'sheet-1',
+              editLock: { x1: 0, x2: 0, y1: 0, y2: 0 },
+            },
+          ],
+        } as SpreadsheetEditorProps,
+      },
+    );
+    act(() => result.current.setDraftValue('1E-25'));
+    await act(async () => {
+      await result.current.openHistorical(entry);
+    });
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(result.current.draftValue).toBe('1E-25');
+    rerender({ onSave, history: { entries: [entry], onOpen } });
+    await act(async () => {
+      await result.current.openHistorical(entry);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.sheet.data[0][0]).toBe('1E-25');
+    expect(result.current.notice).toBe('Save failed');
+  });
 });
 
 it('Host SE-CR-2.5: preserves a protected draft across a controlled update until apply or cancel', () => {
@@ -199,4 +272,277 @@ it('Host SE-CR-2.5: preserves a protected draft across a controlled update until
   expect(result.current.draftDirty).toBe(true);
   act(() => result.current.cancelFormula());
   expect(result.current.draftValue).toBe('9');
+});
+
+describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', () => {
+  it('discards pending drafts for toolbar undo/redo without adding them to workbook history', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), onChange }),
+    );
+    act(() => result.current.proposeCells([['2']], 0, 0));
+    act(() => result.current.setDraftValue('pending undo draft'));
+    act(() => result.current.undo());
+    expect(result.current.sheet.data[0][0]).toBe('1');
+    expect(result.current.draftValue).toBe('1');
+    expect(result.current.draftDirty).toBe(false);
+    act(() => result.current.setDraftValue('pending redo draft'));
+    act(() => result.current.redo());
+    expect(result.current.sheet.data[0][0]).toBe('2');
+    expect(result.current.draftValue).toBe('2');
+    expect(result.current.draftDirty).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(result.current.history.past).toHaveLength(1);
+  });
+  it('combines a formula draft and formatting into one change and undo entry', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), currentUser: actor, onChange }),
+    );
+    act(() => result.current.setDraftValue('=1-1E-25'));
+    act(() => result.current.format({ 'font-weight': 'bold' }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(result.current.sheet.data[0][0]).toBe('=1-1E-25');
+    expect(result.current.sheet.style?.A1).toContain('font-weight: bold');
+    expect(result.current.draftDirty).toBe(false);
+    expect(result.current.history.past).toHaveLength(1);
+    act(() => result.current.undo());
+    expect(result.current.sheet.data[0][0]).toBe('1');
+    expect(result.current.sheet.style?.A1).toBeUndefined();
+  });
+  it('attributes the draft before structural changes move its cell and formula references', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1'], ['=A1']]),
+        currentUser: actor,
+        onChange,
+      }),
+    );
+    act(() => result.current.setDraftValue('1E-25'));
+    act(() => result.current.structure('row', 'insert'));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(result.current.sheet.data[1][0]).toBe('1E-25');
+    expect(result.current.sheet.data[2][0]).toBe('=A2');
+    expect(result.current.sheet.cellProvenance?.A2.actor).toEqual(actor);
+    expect(result.current.sheet.cellProvenance?.A1).toBeUndefined();
+  });
+  it('renames an inactive target and rewrites the draft without switching sheets', () => {
+    const workbook = createWorkbook([['1']]);
+    workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['2']] });
+    const onChange = vi.fn();
+    const { result } = renderHook(() => useSpreadsheetEditor({ defaultValue: workbook, onChange }));
+    act(() => result.current.setDraftValue('=Inputs!A1+1E-25'));
+    act(() => result.current.renameSheet('inputs', '  Input\n Data  '));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(result.current.sheet.id).toBe('sheet-1');
+    expect(result.current.sheet.data[0][0]).toBe("='Input Data'!A1+1E-25");
+    expect(result.current.workbook.worksheets[1].name).toBe('Input Data');
+    expect(result.current.validateSheetName('inputs', ' Sheet1 ')).toBeTruthy();
+    expect(result.current.validateSheetName('inputs', 'x'.repeat(257))).toBeTruthy();
+    expect(result.current.validateSheetName('inputs', ' input  data ')).toBeNull();
+    act(() => expect(result.current.renameSheet('missing', 'New')).toBe(false));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+  it('moves an inactive target with wraparound and activates a duplicate only after success', () => {
+    const workbook = createWorkbook([['1']]);
+    workbook.worksheets.push(
+      { id: 'inputs', name: 'Inputs', data: [['2']] },
+      { id: 'other', name: 'Other', data: [['3']] },
+    );
+    const { result } = renderHook(() => useSpreadsheetEditor({ defaultValue: workbook }));
+    act(() => result.current.sheetCommand('left', 'sheet-1'));
+    expect(result.current.workbook.worksheets.map((sheet) => sheet.id)).toEqual([
+      'other',
+      'inputs',
+      'sheet-1',
+    ]);
+    act(() => result.current.sheetCommand('right', 'inputs'));
+    expect(result.current.sheet.id).toBe('sheet-1');
+    act(() => result.current.sheetCommand('duplicate', 'inputs'));
+    expect(result.current.sheet.data).toEqual([['2']]);
+    expect(result.current.sheet.id).not.toBe('inputs');
+  });
+  it('refuses locked drafts without discarding them or moving selection or active worksheet', () => {
+    const workbook = createWorkbook([['1', '2']]);
+    workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['3']] });
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: workbook,
+        collaborators: [
+          {
+            id: 'peer',
+            name: 'Morgan',
+            sheetId: 'sheet-1',
+            editLock: { x1: 0, x2: 0, y1: 0, y2: 0 },
+          },
+        ],
+      }),
+    );
+    act(() => result.current.setDraftValue('1E-25'));
+    act(() => {
+      expect(result.current.applyFormula()).toBe(false);
+      expect(result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 })).toBe(false);
+      expect(result.current.activateSheet('inputs')).toBe(false);
+      expect(result.current.sheetCommand('add')).toBe(false);
+    });
+    expect(result.current.workbook.worksheets).toHaveLength(2);
+    expect(result.current.sheet.id).toBe('sheet-1');
+    expect(result.current.selection.x1).toBe(0);
+    expect(result.current.draftValue).toBe('1E-25');
+  });
+  it('flushes once before same-event navigation and does not reapply native committed drafts', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1', '2']]), onChange }),
+    );
+    act(() => result.current.setDraftValue('1E-25'));
+    act(() => {
+      expect(result.current.applyFormula()).toBe(true);
+      expect(result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 })).toBe(true);
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(result.current.selection.x1).toBe(1);
+    act(() => result.current.setDraftValue('native draft'));
+    act(() => {
+      result.current.updateSheet(
+        writeCells(result.current.workbook, 'sheet-1', 1, 0, [['native']]).worksheets[0],
+      );
+      result.current.onGridSelection({ x1: 0, x2: 0, y1: 0, y2: 0 });
+    });
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(result.current.sheet.data[0]).toEqual(['1E-25', 'native']);
+    expect(result.current.selection.x1).toBe(0);
+    expect(result.current.notice).toBeNull();
+  });
+  it('includes pending draft in a size dialog transaction and manual save snapshot', async () => {
+    const onChange = vi.fn(),
+      onSave = vi.fn<NonNullable<SpreadsheetEditorProps['onSave']>>(async () => {});
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), onChange, onSave }),
+    );
+    act(() => result.current.setDraftValue('1E-25'));
+    act(() => result.current.openDialog('column-width'));
+    act(() => result.current.setDialogValue('140'));
+    act(() => result.current.applyDialog());
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(result.current.sheet.data[0][0]).toBe('1E-25');
+    expect(result.current.sheet.columns?.[0].width).toBe(140);
+    act(() => result.current.setDraftValue('=1-1E-25'));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(onSave.mock.calls[0][0].worksheets[0].data[0][0]).toBe('=1-1E-25');
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+  it('records draft plus formatting as a review proposal while blocking worksheet changes', () => {
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), defaultMode: 'review' }),
+    );
+    act(() => result.current.setDraftValue('1E-25'));
+    act(() => result.current.format({ 'font-weight': 'bold' }));
+    expect(result.current.sheet.data[0][0]).toBe('1');
+    expect(result.current.previewSheet.data[0][0]).toBe('1E-25');
+    expect(result.current.previewSheet.style?.A1).toContain('font-weight: bold');
+    expect(result.current.workbook.suggestions).toHaveLength(1);
+    act(() => {
+      expect(result.current.renameSheet('sheet-1', 'Renamed')).toBe(false);
+      expect(result.current.sheetCommand('add')).toBe(false);
+    });
+    expect(result.current.sheet.name).toBe('Sheet1');
+  });
+});
+
+describe('SE-CHROME-3: asynchronous clipboard and protected drafts', () => {
+  it('keeps a later cell draft when an earlier paste resolves after selection changes', async () => {
+    let resolveRead!: (text: string) => void;
+    const onChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1', '2']]),
+        onChange,
+        clipboard: {
+          readText: () =>
+            new Promise<string>((resolve) => {
+              resolveRead = resolve;
+            }),
+          writeText: async () => {},
+        },
+      }),
+    );
+    let paste!: Promise<void>;
+    act(() => {
+      paste = result.current.paste();
+    });
+    act(() => result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 }));
+    act(() => result.current.setDraftValue('=1-1E-25'));
+    await act(async () => {
+      resolveRead('7');
+      await paste;
+    });
+    expect(result.current.sheet.data[0]).toEqual(['7', '2']);
+    expect(result.current.selection.x1).toBe(1);
+    expect(result.current.draftValue).toBe('=1-1E-25');
+    expect(result.current.draftDirty).toBe(true);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    act(() => {
+      expect(result.current.applyFormula()).toBe(true);
+    });
+    expect(result.current.sheet.data[0]).toEqual(['7', '=1-1E-25']);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(result.current.notice).toBeNull();
+  });
+  it('refuses a delayed cut when the same cell has a newer protected draft', async () => {
+    let resolveWrite!: () => void;
+    const onChange = vi.fn(),
+      writeText = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1']]),
+        onChange,
+        clipboard: { readText: async () => '2E-25', writeText },
+      }),
+    );
+    act(() => result.current.setDraftValue('2E-25'));
+    let cut!: Promise<void>;
+    act(() => {
+      cut = result.current.copy(true);
+    });
+    act(() => result.current.setDraftValue('3E-25'));
+    await act(async () => {
+      resolveWrite();
+      await cut;
+    });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('2E-25');
+    expect(result.current.sheet.data[0][0]).toBe('1');
+    expect(result.current.draftValue).toBe('3E-25');
+    expect(result.current.draftDirty).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(result.current.notice).toContain('Try Cut again');
+    // The completed clipboard write remains a copy; it cannot later delete the newer source.
+    act(() => result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 }));
+    await act(async () => {
+      await result.current.paste();
+    });
+    expect(result.current.sheet.data[0]).toEqual(['3E-25', '2E-25']);
+  });
+});
+
+describe('SE-CHROME-5: workbook replacement', () => {
+  it('clears an old formula draft when a replacement reuses the active sheet id', () => {
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]) }),
+    );
+    act(() => result.current.setDraftValue('=1-1E-25'));
+    act(() => result.current.replaceWorkbook(createWorkbook([['Replacement']]), 'New workbook'));
+    expect(result.current.draftValue).toBe('Replacement');
+    expect(result.current.draftDirty).toBe(false);
+    act(() => result.current.applyFormula());
+    expect(result.current.sheet.data[0][0]).toBe('Replacement');
+  });
 });

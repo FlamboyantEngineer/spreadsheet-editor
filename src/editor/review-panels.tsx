@@ -24,6 +24,7 @@ import {
   updateComment,
 } from '../model/review.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
+import { editorCommandMetadata } from './editor-commands.js';
 
 export function CommentsPanel({
   editor: e,
@@ -485,6 +486,7 @@ export function HistoryPanel({ editor: e }: { editor: SpreadsheetEditorControlle
                       {
                         id: 'open',
                         label: 'View historical version',
+                        ...editorCommandMetadata('open-history'),
                         onAction: () => e.attempt(() => e.openHistorical(entry)),
                       },
                     ]}

@@ -4,6 +4,7 @@ import { changeWorkbookStructure } from '../model/structure.js';
 import { findOpenComment } from '../model/review.js';
 import { selectionAddress } from '../model/editing.js';
 import { copyWorkbook, createWorkbook } from '../model/workbook.js';
+import { alignmentGlyphs, editorCommandMetadata } from './editor-commands.js';
 
 export function editorMenus(editor: SpreadsheetEditorController) {
   const e = editor,
@@ -12,21 +13,27 @@ export function editorMenus(editor: SpreadsheetEditorController) {
   const item = (
     id: string,
     label: string,
-    action: () => void | Promise<void>,
+    action: () => unknown,
     isDisabled = false,
-    shortcut?: string,
-  ): MenuItemEntry => ({ id, label, isDisabled, shortcut, onAction: () => e.attempt(action) });
+  ): MenuItemEntry => ({
+    id,
+    label,
+    'aria-label': label,
+    ...editorCommandMetadata(id),
+    isDisabled,
+    onAction: () => e.attempt(action),
+  });
   const edit: MenuEntry[] = [
-    item('undo', 'Undo', e.undo, write || !e.history.past.length, 'Ctrl+Z'),
-    item('redo', 'Redo', e.redo, write || !e.history.future.length, 'Ctrl+Y'),
+    item('undo', 'Undo', e.undo, write || !e.history.past.length),
+    item('redo', 'Redo', e.redo, write || !e.history.future.length),
     { id: 'clipboard-separator', type: 'separator' },
-    item('cut', 'Cut', () => e.copy(true), write, 'Ctrl+X'),
-    item('copy', 'Copy', () => e.copy(), false, 'Ctrl+C'),
-    item('paste', 'Paste', e.paste, write, 'Ctrl+V'),
+    item('cut', 'Cut', () => e.copy(true), write),
+    item('copy', 'Copy', () => e.copy(), false),
+    item('paste', 'Paste', e.paste, write),
     item('clear', 'Clear contents', () => e.clear(), write),
     item('clear-format', 'Clear formatting', () => e.clear(true), write),
     { id: 'search-separator', type: 'separator' },
-    item('find', 'Find and replace', () => e.setShowFind(true), false, 'Ctrl+F'),
+    item('find', 'Find and replace', () => e.setShowFind(true), e.props.features?.search === false),
   ];
   const insert: MenuEntry[] = [
     item('row-above', 'Insert rows above', () => e.structure('row', 'insert'), structureBlocked),
@@ -50,12 +57,13 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     ),
     item('add-sheet', 'Add worksheet', () => e.sheetCommand('add'), structureBlocked),
     { id: 'comment-separator', type: 'separator' },
-    item('comment', 'Add comment', e.beginComment, !e.canComment, 'Ctrl+Alt+M'),
+    item('comment', 'Add comment', e.beginComment, !e.canComment),
   ];
   const align: MenuEntry[] = (['top', 'middle', 'bottom'] as const).flatMap((vertical) =>
     (['left', 'center', 'right'] as const).map((horizontal) => ({
       id: `${vertical}-${horizontal}`,
       label: `${vertical[0].toUpperCase()}${vertical.slice(1)} ${horizontal}`,
+      icon: alignmentGlyphs[`${vertical}-${horizontal}`],
       isDisabled: write,
       isSelected: e.style['text-align'] === horizontal && e.style['vertical-align'] === vertical,
       onAction: () =>
@@ -73,11 +81,11 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     ),
   );
   const format: MenuEntry[] = [
-    item('bold', 'Bold', () => e.toggleFormat('font-weight', 'bold'), write, 'Ctrl+B'),
-    item('italic', 'Italic', () => e.toggleFormat('font-style', 'italic'), write, 'Ctrl+I'),
+    item('bold', 'Bold', () => e.toggleFormat('font-weight', 'bold'), write),
+    item('italic', 'Italic', () => e.toggleFormat('font-style', 'italic'), write),
     item('strike', 'Strikethrough', () => e.toggleFormat('text-decoration', 'line-through'), write),
-    { id: 'align', label: 'Alignment', items: align },
-    { id: 'borders', label: 'Borders', items: borders },
+    { id: 'align', label: 'Alignment', ...editorCommandMetadata('align'), items: align },
+    { id: 'borders', label: 'Borders', ...editorCommandMetadata('borders'), items: borders },
     item('wrap', 'Wrap text', () => e.toggleFormat('white-space', 'pre-wrap'), write),
     item(
       'merge',
@@ -95,7 +103,12 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     item('row-height', 'Row height…', () => e.openDialog('row-height'), structureBlocked),
   ];
   const file: MenuEntry[] = [
-    item('new', 'New workbook', () => e.mutate(createWorkbook(), 'New workbook'), structureBlocked),
+    item(
+      'new',
+      'New workbook',
+      () => e.replaceWorkbook(createWorkbook(), 'New workbook'),
+      structureBlocked,
+    ),
     item('import', 'Import CSV or workbook JSON…', () => e.openDialog('import'), structureBlocked),
     item('export', 'Export workbook JSON…', () => e.openDialog('export')),
     ...(e.props.onImportXlsx
@@ -112,7 +125,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
         ]
       : []),
     ...(e.props.onSave
-      ? [item('save', 'Save', () => e.save(), !e.canEdit || e.savePhase === 'saving', 'Ctrl+S')]
+      ? [item('save', 'Save', () => e.save(), !e.canEdit || e.savePhase === 'saving')]
       : []),
     ...(e.props.onRefresh
       ? [item('refresh', 'Update all formula data', () => e.refresh(), structureBlocked)]
@@ -142,22 +155,24 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     item(
       'freeze',
       'Freeze through selected column',
-      () => {
-        const next = copyWorkbook(e.workbook);
-        next.worksheets.find((sheet) => sheet.id === e.sheet.id)!.freezeColumns =
-          e.selection.x1 + 1;
-        e.mutate(next, 'Freeze columns');
-      },
+      () =>
+        e.mutateWithDraft((base) => {
+          const next = copyWorkbook(base);
+          next.worksheets.find((sheet) => sheet.id === e.sheet.id)!.freezeColumns =
+            e.selection.x1 + 1;
+          return next;
+        }, 'Freeze columns'),
       structureBlocked,
     ),
     item(
       'unfreeze',
       'Unfreeze columns',
-      () => {
-        const next = copyWorkbook(e.workbook);
-        next.worksheets.find((sheet) => sheet.id === e.sheet.id)!.freezeColumns = 0;
-        e.mutate(next, 'Unfreeze columns');
-      },
+      () =>
+        e.mutateWithDraft((base) => {
+          const next = copyWorkbook(base);
+          next.worksheets.find((sheet) => sheet.id === e.sheet.id)!.freezeColumns = 0;
+          return next;
+        }, 'Unfreeze columns'),
       structureBlocked || !e.sheet.freezeColumns,
     ),
     { id: 'pane-separator', type: 'separator' },
@@ -179,7 +194,9 @@ export function editorMenus(editor: SpreadsheetEditorController) {
       'review',
       'Reviewing mode',
       () => e.setMode('review'),
-      e.props.readOnly || e.props.permissions?.suggest === false,
+      e.props.readOnly ||
+        e.props.permissions?.suggest === false ||
+        e.props.features?.suggestions === false,
     ),
     item('read', 'Reading mode', () => e.setMode('read'), e.props.readOnly),
     { id: 'review-separator', type: 'separator' },
@@ -204,7 +221,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
       structureBlocked,
     ),
     { id: 'context-format', type: 'separator' },
-    { id: 'format', label: 'Format cells', items: format },
+    { id: 'format', label: 'Format cells', ...editorCommandMetadata('format'), items: format },
     item(
       'context-comment',
       findOpenComment(e.workbook, e.sheet.id, selectionAddress(e.selection))
@@ -258,34 +275,6 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     ),
     item('column-width', 'Column width…', () => e.openDialog('column-width'), structureBlocked),
   ];
-  const sheets: MenuEntry[] = [
-    item(
-      'insert-sheet',
-      'Insert worksheet before',
-      () => e.sheetCommand('insert'),
-      structureBlocked,
-    ),
-    item('rename', 'Rename worksheet…', () => e.openDialog('rename-sheet'), structureBlocked),
-    item('duplicate', 'Duplicate worksheet', () => e.sheetCommand('duplicate'), structureBlocked),
-    item(
-      'move-left',
-      'Move worksheet left',
-      () => e.sheetCommand('left'),
-      structureBlocked || e.workbook.worksheets.length === 1,
-    ),
-    item(
-      'move-right',
-      'Move worksheet right',
-      () => e.sheetCommand('right'),
-      structureBlocked || e.workbook.worksheets.length === 1,
-    ),
-    item(
-      'delete',
-      'Delete worksheet',
-      () => e.sheetCommand('delete'),
-      structureBlocked || e.workbook.worksheets.length === 1,
-    ),
-  ];
   return {
     file,
     edit,
@@ -298,10 +287,9 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     context,
     rowContext,
     columnContext,
-    sheets,
     appendRow: () => {
       const change = { axis: 'row', kind: 'insert', index: e.sheet.data.length, count: 1 } as const;
-      e.mutate(changeWorkbookStructure(e.workbook, e.sheet.id, change), 'Add row', {
+      e.mutateWithDraft((base) => changeWorkbookStructure(base, e.sheet.id, change), 'Add row', {
         sheetId: e.sheet.id,
         change,
       });
@@ -313,7 +301,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
         index: Math.max(1, ...e.sheet.data.map((row) => row.length)),
         count: 1,
       } as const;
-      e.mutate(changeWorkbookStructure(e.workbook, e.sheet.id, change), 'Add column', {
+      e.mutateWithDraft((base) => changeWorkbookStructure(base, e.sheet.id, change), 'Add column', {
         sheetId: e.sheet.id,
         change,
       });

@@ -30,7 +30,9 @@ test('SE-UI-2: server mode posts edits and preserves exact values', async ({ pag
     (response) =>
       response.url().endsWith('/api/calculate') && response.request().method() === 'POST',
   );
-  await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+  await editor
+    .getByRole('textbox', { name: 'Cell value or formula', exact: true })
+    .press('Control+Enter');
   const response = await posted;
   expect(response.ok()).toBe(true);
   const body = await response.json();
@@ -64,21 +66,25 @@ test('SE-UI-7: toolbar edits support undo, redo, and new worksheets', async ({ p
   await page.goto('/full.html');
   const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('=1/3*3');
-  await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+  await editor
+    .getByRole('textbox', { name: 'Cell value or formula', exact: true })
+    .press('Control+Enter');
   await expect(editor.getByLabel('Calculated cell value')).toHaveText('1');
   await editor.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(editor.getByLabel('Calculated cell value')).toHaveText('Example');
   await editor.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(editor.getByLabel('Calculated cell value')).toHaveText('1');
   await editor.getByRole('button', { name: 'Add worksheet', exact: true }).click();
-  await expect(editor.getByRole('button', { name: 'Sheet3', exact: true })).toHaveAttribute(
-    'aria-pressed',
+  await expect(editor.getByRole('tab', { name: 'Sheet3', exact: true })).toHaveAttribute(
+    'aria-selected',
     'true',
   );
   await editor
     .getByRole('textbox', { name: 'Cell value or formula', exact: true })
     .fill('=Calculations!B2*3');
-  await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+  await editor
+    .getByRole('textbox', { name: 'Cell value or formula', exact: true })
+    .press('Control+Enter');
   await expect(editor.getByLabel('Calculated cell value')).toHaveText('3e-25');
 });
 
@@ -96,7 +102,9 @@ test('SE-DOC-2: inserts ordinary tables and isolated live spreadsheets', async (
   await embedded
     .getByRole('textbox', { name: 'Cell value or formula', exact: true })
     .fill('=1/3*3');
-  await embedded.getByRole('button', { name: 'Apply', exact: true }).click();
+  await embedded
+    .getByRole('textbox', { name: 'Cell value or formula', exact: true })
+    .press('Control+Enter');
   await expect(embedded.getByLabel('Calculated cell value')).toHaveText('1');
   const source = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   await expect(source.locator('td[data-x="0"][data-y="0"]').first()).toHaveText('Example');

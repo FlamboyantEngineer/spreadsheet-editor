@@ -135,7 +135,9 @@ test('SE-REVIEW-4: native grid edits create suggestions and accept/reject preser
   await selectMode(page, 'Reviewing');
   await cell.click();
   await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('3E-25');
-  await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+  await editor
+    .getByRole('textbox', { name: 'Cell value or formula', exact: true })
+    .press('Control+Enter');
   await selectMode(page, 'Authoring');
   const second = editor.getByRole('article', { name: 'Suggestion: Edit B2', exact: true });
   await second.getByRole('button', { name: 'Reject suggestion', exact: true }).click();
@@ -147,17 +149,17 @@ test('SE-CHROME-2: worksheet context actions rename and preserve cross-sheet for
 }) => {
   await openLab(page);
   const editor = source(page);
-  await editor.getByRole('button', { name: 'Inputs', exact: true }).click({ button: 'right' });
-  await page
-    .getByRole('menu', { name: 'Worksheet actions', exact: true })
-    .getByRole('menuitem', { name: 'Rename worksheet…', exact: true })
-    .click();
-  const dialog = page.getByRole('dialog', { name: 'Rename worksheet', exact: true });
-  await dialog.getByRole('textbox', { name: 'Worksheet name', exact: true }).fill('Parameters');
-  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
-  await editor.getByRole('button', { name: 'Calculations', exact: true }).click();
+  await editor.getByRole('tab', { name: 'Inputs', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+  const name = editor.getByRole('textbox', { name: 'Rename Inputs', exact: true });
+  await name.fill('Parameters');
+  await name.press('Enter');
+  await expect(editor.getByRole('tab', { name: 'Calculations', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   await expect(editor.locator('td[data-x="1"][data-y="6"]').first()).toHaveText('3e-25');
-  await expect(editor.getByRole('button', { name: 'Parameters', exact: true })).toBeVisible();
+  await expect(editor.getByRole('tab', { name: 'Parameters', exact: true })).toBeVisible();
 });
 
 test('SE-REVIEW-5: host read-only mode locks edits, comments, decisions and context actions', async ({
@@ -244,7 +246,9 @@ test('SE-REVIEW-7: server calculations retain comments and accepted exact sugges
   await selectMode(page, 'Reviewing');
   await editor.locator('td[data-x="1"][data-y="1"]').first().click();
   await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('2E-25');
-  await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+  await editor
+    .getByRole('textbox', { name: 'Cell value or formula', exact: true })
+    .press('Control+Enter');
   const responsePromise = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/calculate') &&

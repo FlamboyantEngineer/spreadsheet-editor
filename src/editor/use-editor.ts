@@ -51,6 +51,7 @@ import {
   changeWorkbookStructure,
   deleteWorksheet,
   renameWorksheet,
+  validateWorksheetName,
   type StructureChange,
 } from '../model/structure.js';
 import {
@@ -68,7 +69,7 @@ import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './
 import { useCalculation } from './use-calculation.js';
 
 export type EditorDialog =
-  'rename-sheet' | 'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
+  'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
 export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const [local, setLocal] = useState(() => copyWorkbook(props.defaultValue ?? createWorkbook()));
   const workbook = props.value ?? local;
@@ -117,7 +118,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const sheet = workbook.worksheets.find((sheet) => sheet.id === sheetId) ?? workbook.worksheets[0];
   const [selection, setSelection] = useState<CellSelection>(INITIAL_SELECTION);
   const lockedSelection = selectionLock(workbook, sheet.id, selection, peers);
-  const [draft, setDraft] = useState<{ key: string; value: string } | null>(null);
+  const [draft, setDraftState] = useState<{ key: string; value: string } | null>(null);
+  const draftRef = useRef(draft);
+  function setDraft(next: typeof draft) {
+    draftRef.current = next;
+    setDraftState(next);
+  }
   const grid = useRef<GridController | null>(null);
   const copied = useRef<SpreadsheetCopy | null>(null);
   const [panel, setPanel] = useState<string | null>(props.historical ? 'history' : null),
@@ -278,19 +284,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     label: string,
     operation?: { sheetId: string; change: StructureChange },
   ) {
-    if (!alive.current) return;
+    if (!alive.current) return false;
     if (!canWrite) {
       warn('This workbook is read-only.');
-      return;
+      return false;
     }
     if (latestWorkbook.current !== workbook) {
       setNotice('The workbook changed before this action completed. Try again.');
-      return;
+      return false;
     }
     const locked = lockedChange(workbook, next, peers);
     if (locked) {
       warn(`${locked.name} is editing a cell in this selection. Try again after they finish.`);
-      return;
+      return false;
     }
     commit(
       canSuggest
@@ -308,14 +314,45 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       setPanel('suggestions');
       setPanelOpen(true);
     }
+    return true;
   }
-  function attempt(action: () => void | Promise<void>) {
+  /** Compose a protected formula draft and a chrome command into one history entry. */
+  function mutateWithDraft(
+    transform: (base: Workbook) => Workbook,
+    label: string,
+    operation?: { sheetId: string; change: StructureChange },
+  ): boolean {
+    const pending = draftRef.current;
+    let base = workbook;
+    if (pending?.key === draftKey && pending.value !== String(authored)) {
+      base = writeCells(base, sheet.id, selection.x1, selection.y1, [[pending.value]]);
+      const locked = lockedChange(workbook, base, peers);
+      if (locked) {
+        warn(`${locked.name} is editing a cell in this selection. Try again after they finish.`);
+        return false;
+      }
+      // Structural transforms move this attribution together with the authored cell.
+      if (canEdit)
+        base = attributeCellChanges(workbook, base, {
+          actor,
+          source: 'human',
+          at: new Date().toISOString(),
+        });
+    }
+    if (!mutate(transform(base), label, operation)) return false;
+    if (draftRef.current === pending && pending?.key === draftKey) setDraft(null);
+    return true;
+  }
+  function replaceWorkbook(next: Workbook, label: string): boolean {
+    if (!canEdit || !mutate(next, label)) return false;
+    setDraft(null);
+    return true;
+  }
+  function attempt(action: () => unknown) {
     try {
-      const result = action();
-      if (result)
-        result.catch((error) =>
-          setNotice(error instanceof Error ? error.message : 'The action failed.'),
-        );
+      void Promise.resolve(action()).catch((error) =>
+        setNotice(error instanceof Error ? error.message : 'The action failed.'),
+      );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The action failed.');
     }
@@ -327,6 +364,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         next !== (props.permissions.suggest === false ? 'read' : 'review'))
     )
       return;
+    if (!applyFormula()) return;
     setLocalMode(next);
     props.onModeChange?.(next);
     setDraft(null);
@@ -335,20 +373,37 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function select(range: CellSelection, targetSheetId = sheet.id) {
     const normalized = normalizeSelection(range);
     selectionCells(normalized);
+    if (!workbook.worksheets.some((value) => value.id === targetSheetId) || !applyFormula())
+      return false;
     setSheetId(targetSheetId);
     setSelection(normalized);
     setDraft(null);
     if (targetSheetId === sheet.id) grid.current?.select(normalized);
+    return true;
   }
   function activateSheet(id: string) {
+    if (id === sheet.id) return true;
+    if (!workbook.worksheets.some((value) => value.id === id) || !applyFormula()) return false;
     setSheetId(id);
     setSelection(INITIAL_SELECTION);
     setDraft(null);
+    return true;
   }
   function onGridSelection(range: CellSelection) {
     attempt(() => {
       const normalized = normalizeSelection(range);
       selectionCells(normalized);
+      if (
+        selection.x1 === normalized.x1 &&
+        selection.x2 === normalized.x2 &&
+        selection.y1 === normalized.y1 &&
+        selection.y2 === normalized.y2
+      )
+        return;
+      if (!applyFormula()) {
+        grid.current?.select(selection);
+        return;
+      }
       setSelection((previous) =>
         previous.x1 === normalized.x1 &&
         previous.x2 === normalized.x2 &&
@@ -361,16 +416,34 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     });
   }
   function updateSheet(next: Worksheet) {
-    mutate(
+    const previous = workbook.worksheets.find((value) => value.id === next.id);
+    if (!previous) return false;
+    if (JSON.stringify(next.data) === JSON.stringify(previous.data))
+      return mutateWithDraft(
+        (base) => ({
+          ...base,
+          worksheets: base.worksheets.map((value) =>
+            value.id === next.id
+              ? { ...next, data: value.data, cellProvenance: value.cellProvenance }
+              : value,
+          ),
+        }),
+        'Update worksheet layout',
+      );
+    // Native cell commits already contain the native editor's protected draft.
+    const changed = mutate(
       {
         ...workbook,
         worksheets: workbook.worksheets.map((sheet) => (sheet.id === next.id ? next : sheet)),
       },
       'Edit cells',
     );
+    if (changed) setDraft(null);
+    return changed;
   }
   function undo() {
     if (!canWrite) return;
+    setDraft(null);
     const previous = currentHistory.past.at(-1);
     if (!previous) return;
     setHistory({
@@ -387,6 +460,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (!canWrite) return;
     const next = currentHistory.future[0];
     if (!next) return;
+    setDraft(null);
     setHistory({
       head: next.workbook,
       past: [...currentHistory.past, { workbook: copyWorkbook(workbook), label: next.label }],
@@ -394,21 +468,26 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     });
     publish(next.workbook);
   }
-  function applyFormula() {
-    if (canWrite && draft?.key === draftKey && draft.value !== String(authored)) {
-      mutate(
-        writeCells(workbook, sheet.id, selection.x1, selection.y1, [[draft.value]]),
-        `Edit ${selectionAddress(selection)}`,
-      );
-      setDraft(null);
-    }
+  function applyFormula(): boolean {
+    const pending = draftRef.current;
+    if (pending?.key !== draftKey || pending.value === String(authored)) return true;
+    return mutateWithDraft((base) => base, `Edit ${selectionAddress(selection)}`);
   }
   function setDraftValue(value: string) {
     setDraft({ key: draftKey, value });
   }
+  function proposeCells(
+    values: import('../model/workbook.js').CellInput[][],
+    x: number,
+    y: number,
+  ) {
+    const changed = mutate(writeCells(workbook, sheet.id, x, y, values), 'Edit cells');
+    if (changed) setDraft(null);
+    return changed;
+  }
   function format(properties: Record<string, string | null>, format?: CellFormat | null) {
-    mutate(
-      formatCells(workbook, sheet.id, selection, properties, format),
+    mutateWithDraft(
+      (base) => formatCells(base, sheet.id, selection, properties, format),
       `Format ${selectionAddress(selection)}`,
     );
   }
@@ -416,7 +495,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     format({ [property]: style[property] === value ? null : value });
   }
   function border(kind: 'all' | 'outside' | 'none' | 'top' | 'right' | 'bottom' | 'left') {
-    mutate(borderCells(workbook, sheet.id, selection, kind), `Set ${kind} borders`);
+    mutateWithDraft((base) => borderCells(base, sheet.id, selection, kind), `Set ${kind} borders`);
   }
   function structure(axis: StructureChange['axis'], kind: StructureChange['kind'], after = false) {
     if (!canEdit) {
@@ -427,8 +506,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       last = axis === 'row' ? selection.y2 : selection.x2;
     const change = { axis, kind, index: after ? last + 1 : first, count: last - first + 1 };
     const apply = () =>
-      mutate(
-        changeWorkbookStructure(workbook, sheet.id, change),
+      mutateWithDraft(
+        (base) => changeWorkbookStructure(base, sheet.id, change),
         `${kind === 'insert' ? 'Insert' : 'Delete'} ${axis}${last > first ? 's' : ''}`,
         { sheetId: sheet.id, change },
       );
@@ -543,11 +622,17 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   };
   async function copy(cut = false) {
     if (cut && !canWrite) return;
-    const cells = readSelection(previewWorkbook, sheet.id, selection);
+    const pending = draftRef.current,
+      hasDraft = pending?.key === draftKey && pending.value !== String(authored),
+      source = hasDraft
+        ? writeCells(previewWorkbook, sheet.id, selection.x1, selection.y1, [[pending.value]])
+        : previewWorkbook;
+    const cells = readSelection(source, sheet.id, selection);
     const displayed = cells.map((row, dy) =>
       row.map((_cell, dx) => {
         const x = selection.x1 + dx,
           y = selection.y1 + dy;
+        if (hasDraft && x === selection.x1 && y === selection.y1) return pending.value;
         return formatWorksheetCell(
           visibleCalculation.result?.worksheets.find((item) => item.id === sheet.id)?.values[y]?.[
             x
@@ -559,8 +644,13 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     );
     const text = serializeDelimited(displayed);
     await clipboard.writeText(text);
-    copied.current = createSpreadsheetCopy(previewWorkbook, sheet.id, selection, text, cut);
-    if (cut) mutate(clearSelection(workbook, sheet.id, selection), 'Cut cells');
+    if (cut && draftRef.current !== pending) {
+      copied.current = createSpreadsheetCopy(source, sheet.id, selection, text, false);
+      warn('The cell edit changed while copying. Nothing was cut. Try Cut again.');
+      return;
+    }
+    copied.current = createSpreadsheetCopy(source, sheet.id, selection, text, cut);
+    if (cut) mutateWithDraft((base) => clearSelection(base, sheet.id, selection), 'Cut cells');
   }
   function pasteCells(
     values: import('../model/workbook.js').CellInput[][],
@@ -572,13 +662,14 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const text = originalText ?? serializeDelimited(values);
     const cached = copied.current,
       matching = cached && cached.text.replace(/\r\n/g, '\n') === text.replace(/\r\n/g, '\n');
-    mutate(
-      matching
-        ? pasteSpreadsheetCopy(workbook, sheet.id, x, y, cached)
-        : writeCells(workbook, sheet.id, x, y, values),
+    const changed = mutateWithDraft(
+      (base) =>
+        matching
+          ? pasteSpreadsheetCopy(base, sheet.id, x, y, cached)
+          : writeCells(base, sheet.id, x, y, values),
       'Paste cells',
     );
-    if (cached?.cut && matching) copied.current = null;
+    if (changed && cached?.cut && matching) copied.current = null;
   }
   async function paste() {
     if (canWrite) {
@@ -602,7 +693,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (latestWorkbook.current !== snapshot)
       throw new Error('The workbook changed while importing. Try again.');
     assertWorkbook(imported);
-    mutate(imported, 'Import Excel workbook');
+    replaceWorkbook(imported, 'Import Excel workbook');
   }
   async function exportExcel() {
     if (
@@ -621,6 +712,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       warn('Saving is available only in Authoring mode.');
       return;
     }
+    if (kind === 'manual' && !applyFormula()) return;
     if (activeSave.current) {
       if (kind === 'manual' && activeSave.current.kind === 'autosave') {
         await activeSave.current.promise;
@@ -688,85 +780,100 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     return () => clearTimeout(timer);
   }, [workbook, savePhase, canEdit, props.autosaveMs]);
   async function openHistorical(entry: import('./contracts.js').SpreadsheetHistoryEntry) {
-    if (savePhase === 'dirty' || activeSave.current) {
+    const pending = draftRef.current,
+      hadDraft = pending?.key === draftKey && pending.value !== String(authored);
+    if (hadDraft && !applyFormula()) return;
+    if (hadDraft || savePhase === 'dirty' || activeSave.current) {
       await save();
       if (lastSaveError.current) return;
     }
     if (alive.current) await props.history?.onOpen(entry);
   }
-  function sheetCommand(command: 'add' | 'insert' | 'duplicate' | 'delete' | 'left' | 'right') {
-    if (!canEdit) return;
-    let next = copyWorkbook(workbook);
-    if (command === 'add' || command === 'insert') {
-      next = appendWorksheet(workbook);
-      const added = next.worksheets.at(-1)!;
-      if (command === 'insert') {
-        next.worksheets.pop();
-        next.worksheets.splice(
-          next.worksheets.findIndex((value) => value.id === sheet.id),
-          0,
-          added,
-        );
+  function validateSheetName(id: string, name: string): string | null {
+    try {
+      validateWorksheetName(workbook, id, name);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : 'Choose a valid worksheet name.';
+    }
+  }
+  function renameSheet(id: string, name: string): boolean {
+    if (!canEdit || !workbook.worksheets.some((value) => value.id === id)) return false;
+    return mutateWithDraft((base) => renameWorksheet(base, id, name), 'Rename worksheet');
+  }
+  function sheetCommand(
+    command: 'add' | 'insert' | 'duplicate' | 'delete' | 'left' | 'right',
+    targetSheetId = sheet.id,
+  ): boolean {
+    if (!canEdit || !workbook.worksheets.some((value) => value.id === targetSheetId)) return false;
+    let activatedId: string | undefined;
+    const changed = mutateWithDraft((base) => {
+      let next = copyWorkbook(base);
+      const targetSheet = next.worksheets.find((value) => value.id === targetSheetId)!;
+      if (command === 'add' || command === 'insert' || command === 'duplicate') {
+        next = appendWorksheet(base);
+        const added = next.worksheets.at(-1)!;
+        if (command === 'insert') {
+          next.worksheets.pop();
+          next.worksheets.splice(
+            next.worksheets.findIndex((value) => value.id === targetSheetId),
+            0,
+            added,
+          );
+        }
+        if (command === 'duplicate')
+          next.worksheets[next.worksheets.length - 1] = {
+            ...structuredClone(targetSheet),
+            id: added.id,
+            name: added.name,
+          };
+        activatedId = added.id;
       }
-      activateSheet(added.id);
+      if (command === 'delete') {
+        const index = next.worksheets.findIndex((value) => value.id === targetSheetId);
+        next = deleteWorksheet(base, targetSheetId);
+        if (targetSheetId === sheet.id)
+          activatedId = next.worksheets[Math.min(index, next.worksheets.length - 1)].id;
+      }
+      if (command === 'left' || command === 'right') {
+        const index = next.worksheets.findIndex((value) => value.id === targetSheetId),
+          target =
+            (index + (command === 'left' ? -1 : 1) + next.worksheets.length) %
+            next.worksheets.length;
+        [next.worksheets[index], next.worksheets[target]] = [
+          next.worksheets[target],
+          next.worksheets[index],
+        ];
+      }
+      return next;
+    }, `${command} worksheet`);
+    if (changed && activatedId) {
+      setSheetId(activatedId);
+      setSelection(INITIAL_SELECTION);
     }
-    if (command === 'duplicate') {
-      next = appendWorksheet(workbook);
-      const added = next.worksheets.at(-1)!;
-      next.worksheets[next.worksheets.length - 1] = {
-        ...structuredClone(sheet),
-        id: added.id,
-        name: added.name,
-      };
-      if (!canSuggest) activateSheet(added.id);
-    }
-    if (command === 'delete') next = deleteWorksheet(workbook, sheet.id);
-    if (command === 'left' || command === 'right') {
-      const index = next.worksheets.findIndex((candidate) => candidate.id === sheet.id),
-        target =
-          (index + (command === 'left' ? -1 : 1) + next.worksheets.length) % next.worksheets.length;
-      if (target < 0 || target >= next.worksheets.length) return;
-      [next.worksheets[index], next.worksheets[target]] = [
-        next.worksheets[target],
-        next.worksheets[index],
-      ];
-    }
-    mutate(next, `${command} worksheet`);
+    return changed;
   }
   function openDialog(kind: Exclude<EditorDialog, null>) {
     setDialog(kind);
     setDialogValue(
-      kind === 'rename-sheet'
-        ? sheet.name
-        : kind === 'row-height'
-          ? String(sheet.rows?.[selection.y1]?.height ?? 26)
-          : kind === 'column-width'
-            ? String(sheet.columns?.[selection.x1]?.width ?? 100)
-            : kind === 'export'
-              ? JSON.stringify(workbook, null, 2)
-              : '',
+      kind === 'row-height'
+        ? String(sheet.rows?.[selection.y1]?.height ?? 26)
+        : kind === 'column-width'
+          ? String(sheet.columns?.[selection.x1]?.width ?? 100)
+          : kind === 'export'
+            ? JSON.stringify(workbook, null, 2)
+            : '',
     );
     grid.current?.releaseKeyboard();
   }
   const dialogError =
-    dialog === 'rename-sheet'
-      ? !dialogValue.trim() ||
-        workbook.worksheets.some(
-          (other) =>
-            other.id !== sheet.id &&
-            other.name.trim().replace(/\s+/g, ' ').toUpperCase() ===
-              dialogValue.trim().replace(/\s+/g, ' ').toUpperCase(),
-        ) ||
-        /[[\]:*?/\\!]/.test(dialogValue)
-        ? 'Choose a unique worksheet name without reserved characters.'
+    dialog === 'row-height' || dialog === 'column-width'
+      ? !Number.isFinite(Number(dialogValue)) ||
+        Number(dialogValue) <= 0 ||
+        Number(dialogValue) > 2000
+        ? 'Enter a positive size up to 2000 pixels.'
         : null
-      : dialog === 'row-height' || dialog === 'column-width'
-        ? !Number.isFinite(Number(dialogValue)) ||
-          Number(dialogValue) <= 0 ||
-          Number(dialogValue) > 2000
-          ? 'Enter a positive size up to 2000 pixels.'
-          : null
-        : null;
+      : null;
   function applyDialog() {
     if (dialogError) return;
     if (dialog === 'confirm-structure') {
@@ -780,30 +887,34 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       return;
     }
     if (!canEdit) return;
-    if (dialog === 'rename-sheet')
-      mutate(renameWorksheet(workbook, sheet.id, dialogValue), 'Rename worksheet');
     if (dialog === 'import') {
       const value = dialogValue.trimStart().startsWith('{')
         ? (JSON.parse(dialogValue) as Workbook)
         : createWorkbook(parseDelimited(dialogValue, ','));
       assertWorkbook(value);
-      mutate(value, 'Import workbook');
+      replaceWorkbook(value, 'Import workbook');
     }
     if (dialog === 'row-height' || dialog === 'column-width') {
       const measure = Number(dialogValue);
       if (!Number.isFinite(measure) || measure <= 0 || measure > 2000)
         throw new RangeError('Enter a positive size up to 2000 pixels.');
-      const next = structuredClone(sheet);
-      if (dialog === 'row-height') {
-        next.rows = { ...next.rows };
-        for (let y = selection.y1; y <= selection.y2; y++) next.rows[y] = { height: measure };
-      } else {
-        next.columns = [...(next.columns ?? [])];
-        while (next.columns.length <= selection.x2) next.columns.push({});
-        for (let x = selection.x1; x <= selection.x2; x++)
-          next.columns[x] = { ...next.columns[x], width: measure };
-      }
-      updateSheet(next);
+      mutateWithDraft(
+        (base) => {
+          const next = copyWorkbook(base),
+            target = next.worksheets.find((value) => value.id === sheet.id)!;
+          if (dialog === 'row-height') {
+            target.rows = { ...target.rows };
+            for (let y = selection.y1; y <= selection.y2; y++) target.rows[y] = { height: measure };
+          } else {
+            target.columns = [...(target.columns ?? [])];
+            while (target.columns.length <= selection.x2) target.columns.push({});
+            for (let x = selection.x1; x <= selection.x2; x++)
+              target.columns[x] = { ...target.columns[x], width: measure };
+          }
+          return next;
+        },
+        dialog === 'row-height' ? 'Set row height' : 'Set column width',
+      );
     }
     setDialog(null);
   }
@@ -838,17 +949,26 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       : matches[matchIndex]
         ? [matches[matchIndex]]
         : matches.slice(0, 1);
-    let next = workbook;
-    for (const match of targets) {
-      const value = String(
-        next.worksheets.find((sheet) => sheet.id === match.sheetId)!.data[match.y][match.x] ?? '',
-      );
-      const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
-      next = writeCells(next, match.sheetId, match.x, match.y, [
-        [value.replace(pattern, () => text)],
-      ]);
-    }
-    mutate(next, all ? 'Replace all matches' : 'Replace match');
+    mutateWithDraft(
+      (base) => {
+        let next = base;
+        for (const match of targets) {
+          const value = String(
+            next.worksheets.find((sheet) => sheet.id === match.sheetId)!.data[match.y][match.x] ??
+              '',
+          );
+          const pattern = new RegExp(
+            query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+            all ? 'gi' : 'i',
+          );
+          next = writeCells(next, match.sheetId, match.x, match.y, [
+            [value.replace(pattern, () => text)],
+          ]);
+        }
+        return next;
+      },
+      all ? 'Replace all matches' : 'Replace match',
+    );
   }
   const summary = useMemo(() => {
     const values = selectionCells(selection).map(({ x, y }) => output?.[y]?.[x] ?? null),
@@ -897,6 +1017,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     setDraftValue,
     draftDirty: draft?.key === draftKey && draft.value !== String(authored),
     applyFormula,
+    flushDraft: applyFormula,
     cancelFormula: () => setDraft(null),
     calculation,
     visibleCalculation,
@@ -907,10 +1028,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     summary,
     grid,
     updateSheet,
-    proposeCells: (values: import('../model/workbook.js').CellInput[][], x: number, y: number) =>
-      mutate(writeCells(workbook, sheet.id, x, y, values), 'Edit cells'),
+    proposeCells,
     commit,
     mutate,
+    mutateWithDraft,
+    replaceWorkbook,
     attempt,
     undo,
     redo,
@@ -976,16 +1098,18 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     openDialog,
     applyDialog,
     sheetCommand,
+    renameSheet,
+    validateSheetName,
     insert,
     clear: (formatting = false) =>
-      mutate(
-        clearSelection(workbook, sheet.id, selection, formatting),
+      mutateWithDraft(
+        (base) => clearSelection(base, sheet.id, selection, formatting),
         formatting ? 'Clear formatting' : 'Clear cells',
       ),
     merge: (unmerge = false) => {
       if (!canEdit) return;
-      mutate(
-        mergeSelection(workbook, sheet.id, selection, unmerge),
+      mutateWithDraft(
+        (base) => mergeSelection(base, sheet.id, selection, unmerge),
         unmerge ? 'Unmerge cells' : 'Merge cells',
       );
     },

@@ -38,6 +38,8 @@ body {
   display: flex;
   align-items: center;
   gap: 20px;
+  min-width: 0;
+  max-width: 100%;
 }
 .lab-chrome__suffix {
   font-weight: 400;
@@ -93,7 +95,7 @@ a {
   color: var(--ref-muted, #626973);
   text-decoration: none;
   padding-bottom: 5px;
-  border-bottom: 2px solid transparent;
+  border-bottom: 1px solid transparent;
 }
 .lab-switcher a[aria-current] {
   color: var(--ref-text, #20242a);
@@ -188,6 +190,7 @@ a {
   border: 1px solid var(--ref-border, #ddd);
   padding: 10px;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 .lab-document details {
   margin-top: 16px;
@@ -211,6 +214,7 @@ a {
   border-radius: 6px;
   overflow: hidden;
   background: var(--ref-surface, #fff);
+  min-width: 0;
 }
 .lab-app__topbar {
   display: flex;
@@ -283,7 +287,11 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.lab-app__heading > div {
+  min-width: 0;
 }
 .lab-app__heading h2 {
   margin: 2px 0;

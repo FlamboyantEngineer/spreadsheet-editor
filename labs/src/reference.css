@@ -1,6 +1,15 @@
 @import '@flamboyantengineer/ui-components/reference.css';
 
 .se-editor {
+  --se-reference-0: var(--ref-category-0);
+  --se-reference-1: var(--ref-category-1);
+  --se-reference-2: var(--ref-category-2);
+  --se-reference-3: var(--ref-category-3);
+  --se-reference-4: var(--ref-category-4);
+  --se-reference-5: var(--ref-category-5);
+  --se-reference-6: var(--ref-category-6);
+  --se-reference-7: var(--ref-category-7);
+
   border: 1px solid var(--ref-border);
   background: var(--ref-surface);
   color: var(--ref-text);
@@ -29,63 +38,14 @@
   width: 120px;
   flex: none;
 }
-.se-editor__header .ui-save-status {
-  font-size: 11px;
+.se-editor__menubar,
+.se-editor__toolbar,
+.se-editor__actions {
+  min-width: 0;
+  max-width: 100%;
 }
 .se-editor__menubar {
-  border: 0;
-  border-radius: 0;
-  padding: 0 6px 4px;
-  background: var(--ref-canvas);
-}
-.se-editor__toolbar {
-  padding: 3px 6px;
-  border-block: 1px solid var(--ref-border);
-  background: var(--ref-surface);
-}
-.se-editor__toolbar .ui-toolbar-scroller__strip {
-  gap: 0;
-  padding: 2px;
-}
-.se-editor__tool-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding-inline: 6px;
-}
-.se-editor__tool-group + .se-editor__tool-group {
-  border-inline-start: 1px solid var(--ref-border);
-}
-.se-editor__toolbar .ui-field {
-  flex: none;
-}
-.se-editor__font-family {
-  width: 116px;
-}
-.se-editor__font-size {
-  width: 58px;
-}
-.se-editor__number-format {
-  width: 110px;
-}
-.se-editor__toolbar .ui-color-field {
-  width: 100px;
-}
-.se-editor__toolbar .ui-button {
-  flex: none;
-}
-/* Toolbar fields have accessible names, but no visible labels or reserved empty feedback rows. */
-.se-editor__chrome .ui-field__message:empty,
-.se-editor__formula-bar .ui-field__message:empty {
-  display: none;
-}
-.se-editor__actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 10px;
-  background: var(--ref-canvas);
+  overflow-x: auto;
 }
 .se-editor__formula-bar {
   display: flex;
@@ -94,38 +54,15 @@
   padding: 6px 10px;
   border-bottom: 1px solid var(--ref-border);
   min-width: 0;
+  min-height: 40px;
 }
 .se-editor__formula-bar .ui-formula-bar {
   flex: 1 1 0;
   min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.se-editor__formula-controls {
-  display: flex;
-  align-items: center;
-  flex: 1 1 0;
-  gap: 4px;
-  min-width: 0;
-}
-.se-editor__formula-controls .ui-field {
-  flex: 1 1 0;
-  min-width: 0;
-}
-.se-editor__formula-controls > .ui-button {
-  flex: none;
 }
 .se-editor__address {
   width: 96px;
   min-width: 0;
-}
-.se-editor__address input {
-  text-align: center;
-  font-family: var(--ref-mono);
-}
-.se-editor__formula-controls input {
-  font-family: var(--ref-mono);
 }
 .se-editor__formula-bar output {
   flex: 0 1 220px;
@@ -155,10 +92,21 @@
   display: flex;
   flex-direction: column;
 }
+.se-editor__worksheet-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.se-editor__worksheet-panel {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+}
 .se-editor__grid {
   flex: 1;
   min-width: 0;
-  zoom: var(--se-zoom, 1);
+  min-height: 0;
+  overflow: hidden;
 }
 .se-editor__sidebar {
   display: flex;
@@ -190,23 +138,14 @@
   width: 100%;
   padding: 0;
 }
-.se-editor__engine .jss_worksheet td {
-  font-size: 12px;
-}
 .se-editor__engine td[data-approximate='true'] {
   color: var(--ref-warning);
 }
 .se-editor__engine td[data-se-comments] {
-  background-image: linear-gradient(45deg, transparent 50%, #ad690c 50%);
+  background-image: linear-gradient(45deg, transparent 50%, var(--ref-warning) 50%);
   background-position: top right;
   background-size: 7px 7px;
   background-repeat: no-repeat;
-}
-.se-editor__engine td[data-se-suggestions] {
-  box-shadow: inset 0 0 0 2px #2a8c74;
-}
-.se-editor__grid[data-gridlines='false'] .jss_worksheet tbody td {
-  border-color: transparent;
 }
 .se-editor__sheets,
 .se-editor__insertion {
@@ -214,14 +153,11 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-top: 1px solid #e0e7eb;
+  border-top: 1px solid var(--ref-border);
 }
 .se-editor__sheets {
   margin-top: auto;
-  background: #f8fbfc;
-}
-.se-editor__sheets .ui-button {
-  font-size: 12px;
+  background: var(--ref-canvas);
 }
 .se-editor__notice {
   display: flex;
@@ -229,7 +165,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  background: #fff4dc;
+  background: color-mix(in srgb, var(--ref-warning) 12%, var(--ref-canvas));
 }
 .se-editor__notice p {
   margin: 0;
@@ -284,12 +220,12 @@
   font-size: 12px;
 }
 .se-suggestion__change del {
-  background: #ffebe9;
-  color: #a32323;
+  background: color-mix(in srgb, var(--ref-danger) 12%, var(--ref-canvas));
+  color: var(--ref-danger);
 }
 .se-suggestion__change ins {
-  background: #d8f5e6;
-  color: #126b4c;
+  background: color-mix(in srgb, var(--ref-success) 12%, var(--ref-canvas));
+  color: var(--ref-success);
   text-decoration: none;
 }
 .se-suggestion__actions {
@@ -299,23 +235,96 @@
 }
 
 .se-editor__engine .jss_worksheet {
+  font-size: 12px;
   color: var(--ref-text);
+  border-spacing: 0;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
 }
 .se-editor__engine .jss_worksheet tbody td {
   background-color: var(--ref-surface);
-  border-color: var(--ref-border);
 }
 .se-editor__engine .jss_worksheet thead td,
 .se-editor__engine .jss_worksheet tbody td.jss_row {
   color: var(--ref-muted);
-  background-color: var(--ref-canvas) !important;
-  border-color: var(--ref-border);
+  background-color: var(--ref-canvas);
 }
-.se-editor__sheets {
-  padding: 4px 8px;
-  gap: 4px;
-  background: var(--ref-canvas);
-  border-color: var(--ref-border);
+.se-editor__engine .jss_worksheet thead td.selected,
+.se-editor__engine .jss_worksheet tbody td.jss_row.selected,
+.se-editor__engine .jss_worksheet tbody tr.selected > td.jss_row {
+  color: var(--ref-text);
+  background-color: var(--ref-selected);
+}
+/* Separate-border cells share a single top/left gridline. Inline authored borders win. */
+.se-editor__engine .jss_worksheet > :is(thead, tbody, tfoot) > tr > td {
+  border-width: 1px;
+}
+.se-editor__engine
+  .jss_worksheet
+  > :is(thead, tbody, tfoot)
+  > tr
+  > td:not(:where(.copying-top, .selection-top)) {
+  border-top-color: var(--se-cell-gridline, var(--ref-border));
+}
+.se-editor__engine
+  .jss_worksheet
+  > :is(thead, tbody, tfoot)
+  > tr
+  > td:not(:where(.copying-left, .selection-left)) {
+  border-left-color: var(--se-cell-gridline, var(--ref-border));
+}
+.se-editor__engine
+  .jss_worksheet
+  > :is(thead, tbody, tfoot)
+  > tr
+  > td:not(:where(.copying-right, .selection-right)) {
+  border-right-color: transparent;
+}
+.se-editor__engine
+  .jss_worksheet
+  > :is(thead, tbody, tfoot)
+  > tr
+  > td:not(:where(.copying-bottom, .selection-bottom)) {
+  border-bottom-color: transparent;
+}
+/* Closing edges belong to cells, avoiding a second painted table border. */
+.se-editor__engine .jss_worksheet > :is(thead, tbody, tfoot) > tr > td:last-child {
+  border-right-color: var(--se-cell-gridline, var(--ref-border));
+}
+.se-editor__engine .jss_worksheet > tbody > tr:last-child > td {
+  border-bottom-color: var(--se-cell-gridline, var(--ref-border));
+}
+.se-editor__grid[data-gridlines='false'] .jss_worksheet tbody td:not(.jss_row) {
+  --se-cell-gridline: transparent;
+}
+/* Frozen boundaries use the same single-pixel edges as the rest of the grid. */
+.se-editor__engine .jss_worksheet .jss_freezed {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -moz-box-shadow: none !important;
+}
+/* React owns the local perimeter; remove only the vendor highlight's extra shadows. */
+:where(.se-editor__engine) .jss_worksheet td:is(.highlight-top, .highlight-left),
+:where(.se-editor__engine) .jss_worksheet td.highlight-top.highlight-left {
+  box-shadow: none;
+  -webkit-box-shadow: none;
+  -moz-box-shadow: none;
+}
+.se-editor__engine .jss_worksheet td[data-se-suggestions] {
+  box-shadow: inset 0 0 0 1px var(--ref-success);
+}
+/* Keep copy/cut and native clipboard outlines distinct and readable in either theme. */
+.se-editor__engine .jss_worksheet :is(.copying-top, .selection-top) {
+  border-top-color: var(--ref-text);
+}
+.se-editor__engine .jss_worksheet :is(.copying-left, .selection-left) {
+  border-left-color: var(--ref-text);
+}
+.se-editor__engine .jss_worksheet :is(.copying-right, .selection-right) {
+  border-right-color: var(--ref-text);
+}
+.se-editor__engine .jss_worksheet :is(.copying-bottom, .selection-bottom) {
+  border-bottom-color: var(--ref-text);
 }
 .se-editor__insertion {
   padding: 6px 10px;
@@ -323,14 +332,7 @@
   flex-wrap: wrap;
   border-color: var(--ref-border);
 }
-.se-editor__statusbar {
-  padding: 4px 10px;
-  gap: 12px;
-  background: var(--ref-canvas);
-  border-color: var(--ref-border);
-}
-.se-editor__status,
-.se-editor__summary {
+.se-editor__status {
   color: var(--ref-muted);
 }
 .se-editor__status[role='alert'] {
@@ -358,7 +360,7 @@
   .se-editor__formula-bar output {
     flex-basis: 100%;
     max-width: 100%;
-    padding: 0 0 0 78px;
+    padding: 0;
     border: 0;
   }
   .se-editor__workspace:has(.ui-dock-panel[data-expanded]) {
@@ -372,38 +374,24 @@
   .se-editor__sidebar .ui-dock-panel[data-expanded] {
     width: 100% !important;
   }
-  .se-editor__statusbar .ui-zoom-control {
-    margin-inline-start: auto;
-  }
-  .se-editor__summary {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
-.se-editor__chrome .ui-field,
-.se-editor__formula-bar .ui-field {
-  display: flex;
-  align-items: center;
-}
-.se-editor__chrome .ui-field__control,
-.se-editor__formula-bar .ui-field__control {
-  flex: 1;
-  min-width: 0;
 }
 .se-editor__sheets {
   flex-wrap: nowrap;
   min-width: 0;
-  height: 34px;
+  min-height: 34px;
   padding: 0 6px;
+  gap: 4px;
+}
+.se-editor__sheets > .ui-tabs__bar {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .se-editor__sheet-tabs {
-  display: flex;
-  align-items: center;
   min-width: 0;
-  overflow: auto hidden;
-  gap: 4px;
+}
+.se-editor__sheet-tabs .ui-tabs__indicator {
+  height: 1px;
+  bottom: 0;
 }
 .se-editor__sheets > .ui-button {
   flex: none;
@@ -411,9 +399,6 @@
 .se-editor__sheets .ui-zoom-control {
   margin-inline-start: auto;
   flex: none;
-}
-.se-editor__sheets .ui-zoom-control__slider {
-  width: 70px;
 }
 .se-editor[data-chrome='embedded'] .se-editor__chrome {
   display: flex;
@@ -426,42 +411,20 @@
   order: 1;
   flex: none;
   padding: 4px 8px;
-  border-block: 1px solid var(--ref-border);
 }
 @media (max-width: 520px) {
-  .se-editor__sheets .ui-zoom-control__slider {
-    display: none;
+  .se-editor__sheets {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0;
+  }
+  .se-editor__sheets > .ui-zoom-control {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
   .se-editor[data-chrome='embedded'] .se-editor__header {
     gap: 4px;
   }
-  .se-editor[data-chrome='embedded'] .se-editor__header .ui-select-field {
-    width: 100px;
-  }
-}
-
-.se-editor__formula-input {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-.se-editor__formula-overlay {
-  position: absolute;
-  inset: 1px 7px;
-  pointer-events: none;
-  overflow: hidden;
-  white-space: pre;
-  font: 12px/22px var(--ref-mono);
-}
-.se-editor__formula-overlay > span {
-  display: inline-block;
-}
-.se-editor__formula-input[data-highlighted] input {
-  color: transparent;
-  caret-color: var(--ref-text);
-}
-.se-editor__formula-input input {
-  font-size: 12px;
 }
 .se-editor__grid-surface {
   position: relative;
@@ -475,7 +438,11 @@
 }
 .se-editor__reference-outline {
   position: absolute;
-  border: 2px solid;
+  border: 1px solid;
+  pointer-events: none;
+}
+.se-editor__selection-outline {
+  border: 1px solid var(--ref-accent-ink);
   pointer-events: none;
 }
 .se-editor__engine .jss_worksheet > thead > tr > td,
@@ -484,16 +451,6 @@
   vertical-align: middle;
 }
 
-.se-editor__format-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(76px, 1fr));
-  gap: 3px;
-}
-.se-editor__format-grid .ui-menu-item {
-  font-size: 11px;
-  padding: 6px;
-  justify-content: center;
-}
 .se-editor__historical {
   display: flex;
   align-items: center;
@@ -513,13 +470,9 @@
   text-align: left;
   margin-block: 8px;
 }
-.se-editor__formula-bar {
-  min-height: 40px;
-}
-
 .se-editor__presence-outline {
   position: absolute;
-  border: 2px solid var(--se-presence-color);
+  border: 1px solid var(--se-presence-outline-color, var(--se-presence-color));
   pointer-events: none;
 }
 .se-editor__presence-outline[data-kind='lock'] {
@@ -528,7 +481,7 @@
 .se-editor__presence-outline > span {
   position: absolute;
   bottom: 100%;
-  left: -2px;
+  left: -1px;
   padding: 1px 5px;
   background: var(--se-presence-color);
   color: white;
@@ -565,34 +518,42 @@
 .se-editor__presence-outline[data-color='0'],
 .se-editor__engine td[data-se-contributor='0'] {
   --se-presence-color: var(--ref-category-0-fill);
+  --se-presence-outline-color: var(--ref-category-0);
 }
 .se-editor__presence-outline[data-color='1'],
 .se-editor__engine td[data-se-contributor='1'] {
   --se-presence-color: var(--ref-category-1-fill);
+  --se-presence-outline-color: var(--ref-category-1);
 }
 .se-editor__presence-outline[data-color='2'],
 .se-editor__engine td[data-se-contributor='2'] {
   --se-presence-color: var(--ref-category-2-fill);
+  --se-presence-outline-color: var(--ref-category-2);
 }
 .se-editor__presence-outline[data-color='3'],
 .se-editor__engine td[data-se-contributor='3'] {
   --se-presence-color: var(--ref-category-3-fill);
+  --se-presence-outline-color: var(--ref-category-3);
 }
 .se-editor__presence-outline[data-color='4'],
 .se-editor__engine td[data-se-contributor='4'] {
   --se-presence-color: var(--ref-category-4-fill);
+  --se-presence-outline-color: var(--ref-category-4);
 }
 .se-editor__presence-outline[data-color='5'],
 .se-editor__engine td[data-se-contributor='5'] {
   --se-presence-color: var(--ref-category-5-fill);
+  --se-presence-outline-color: var(--ref-category-5);
 }
 .se-editor__presence-outline[data-color='6'],
 .se-editor__engine td[data-se-contributor='6'] {
   --se-presence-color: var(--ref-category-6-fill);
+  --se-presence-outline-color: var(--ref-category-6);
 }
 .se-editor__presence-outline[data-color='7'],
 .se-editor__engine td[data-se-contributor='7'] {
   --se-presence-color: var(--ref-category-7-fill);
+  --se-presence-outline-color: var(--ref-category-7);
 }
 
 .se-comment-bubble {
@@ -643,61 +604,44 @@
   white-space: pre;
 }
 
-.se-editor__formula-input > .ui-field {
-  width: 100%;
-}
 .se-editor__engine .jss_worksheet {
   background-color: var(--ref-canvas);
 }
 .se-editor__engine .jss_content {
-  box-shadow: none !important;
-  border-color: var(--ref-border);
+  box-shadow: none;
+  scrollbar-color: var(--ref-muted) var(--ref-surface);
+}
+.se-editor__engine .jss_content::-webkit-scrollbar-track {
+  background: var(--ref-surface);
+}
+.se-editor__engine .jss_content::-webkit-scrollbar-thumb {
+  background: var(--ref-muted);
 }
 .se-editor__engine .jss_worksheet td.highlight {
   background-color: color-mix(in srgb, var(--ref-accent) 8%, var(--ref-surface));
 }
 
-.se-editor__border-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 40px);
-  grid-template-rows: repeat(3, 36px);
-  gap: 3px;
-  min-width: 0;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-0'] {
+  color: var(--se-reference-0);
 }
-.se-editor__border-grid .ui-menu-item {
-  display: flex;
-  justify-content: center;
-  padding: 6px;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-1'] {
+  color: var(--se-reference-1);
 }
-.se-editor__border-grid .ui-menu-item__label {
-  position: absolute;
-  clip-path: inset(50%);
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  white-space: nowrap;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-2'] {
+  color: var(--se-reference-2);
 }
-.se-editor__border-grid .ui-menu-item:nth-child(1) {
-  grid-column: 2;
-  grid-row: 1;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-3'] {
+  color: var(--se-reference-3);
 }
-.se-editor__border-grid .ui-menu-item:nth-child(2) {
-  grid-column: 1;
-  grid-row: 2;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-4'] {
+  color: var(--se-reference-4);
 }
-.se-editor__border-grid .ui-menu-item:nth-child(3) {
-  grid-column: 2;
-  grid-row: 2;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-5'] {
+  color: var(--se-reference-5);
 }
-.se-editor__border-grid .ui-menu-item:nth-child(4) {
-  grid-column: 3;
-  grid-row: 2;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-6'] {
+  color: var(--se-reference-6);
 }
-.se-editor__border-grid .ui-menu-item:nth-child(5) {
-  grid-column: 2;
-  grid-row: 3;
-}
-.se-editor__border-grid .ui-menu-item:nth-child(6) {
-  grid-column: 3;
-  grid-row: 3;
+.se-editor__formula-input .ui-code-editor__token[data-token='reference-7'] {
+  color: var(--se-reference-7);
 }

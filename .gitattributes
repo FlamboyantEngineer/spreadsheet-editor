@@ -1,0 +1,2 @@
+# Preserve context whitespace in the maintainer handoff patch.
+docs/ui-components-tabular-formatting-glyphs.patch -whitespace
