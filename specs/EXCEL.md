@@ -15,3 +15,5 @@ The host prepares calculations, presents the loss report and owns preview/commit
 The host supplies authorized immutable stored results, route/access policy, attachment headers, source provenance and download orchestration. The browser callback is an integration seam, not a trusted storage or authorization boundary. See [HOST-PARITY.md](HOST-PARITY.md).
 
 Verification: `src/excel/excel.test.ts`, `scripts/check-package.mjs` through both packaged child-process paths, and `e2e/flight-parity.spec.ts` through preview/cancel/replace/download.
+
+The labs worker resolves ExcelJS as an installed Node dependency instead of bundling its optional transport integrations. Local XLSX conversion requires no cloud SDK or application service.

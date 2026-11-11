@@ -14,7 +14,7 @@ This private `0.x` package is the standalone extraction stage. Consumer migratio
 
 ## Run the labs
 
-Use Node 22 or newer and Git. The base component library comes from the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository:
+Use Node 24 (recommended), or Node 22.13 or newer within Node 22, and Git. The checked-in `.nvmrc` selects Node 24; with a version manager, run `nvm use` before installing. Check `node --version` in the same terminal: installing another Node version does not change which executable comes first on `PATH`. The base component library comes from the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository:
 
 ```sh
 npm run labs
@@ -30,7 +30,7 @@ The included server is a local development harness. Mount `handleCalculationRequ
 
 No separate `npm install` or `npm ci` step is needed. The launcher checks the installed packages against the lockfile and tests esbuild's native binary and the prepared UI assets. It automatically installs or repairs missing, stale or unusable dependencies with development/optional dependencies and lifecycle scripts enabled, even when your npm defaults omit them. Healthy installations are reused, so subsequent starts need no network installation. `npm run build:labs` uses the same setup.
 
-Node 22 or newer, npm, and Git must already be installed. First setup needs access to npm and the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository; no private-library token is required. If installation fails, the command preserves npm's diagnostics and stops. Fix the reported connection or installation problem and rerun `npm run labs`. The launcher works in PowerShell and other supported shells, including paths containing spaces.
+Node 22.13+ within Node 22 or Node 24+, npm, and Git must already be installed. Installs reject unsupported runtimes through `.npmrc` instead of continuing with engine warnings. First setup needs access to npm and the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository; no private-library token is required. npm may report that it skips an integrity check for this Git dependency: the lockfile pins its full commit SHA, while npm's tarball integrity checks apply to registry packages. If installation fails, the command preserves npm's diagnostics and stops. Fix the reported connection or installation problem and rerun `npm run labs`. The launcher works in PowerShell and other supported shells, including paths containing spaces.
 
 ## Embed the editor
 
