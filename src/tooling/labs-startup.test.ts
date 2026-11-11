@@ -194,29 +194,33 @@ describe('SE-LABS-2: self-bootstrapping portable startup', () => {
     expect(result.stderr).toContain('Fixture build failure');
     expect(result.stderr).not.toContain('Wrong-platform binary');
   });
-  it('repairs missing prepared UI assets even if package versions match', () => {
-    const directory = checkout(true),
-      lock = lockFor(directory);
-    const name = '@flamboyantengineer/ui-components';
-    lock.packages[''].dependencies[name] = 'fixture:ui';
-    lock.packages[`node_modules/${name}`] = { version: '0.1.0', resolved: 'fixture:ui' };
-    writeJson(join(directory, 'package.json'), lock.packages['']);
-    writeJson(join(directory, 'package-lock.json'), lock);
-    healthyTree(directory);
-    const ui = join(directory, 'healthy/node_modules', name);
-    writeJson(join(ui, 'package.json'), {
-      name,
-      version: '0.1.0',
-      exports: { './reference.css': './reference.css' },
-    });
-    writeFileSync(join(ui, 'reference.css'), '/* prepared */');
-    cpSync(join(directory, 'healthy/node_modules'), join(directory, 'node_modules'), {
-      recursive: true,
-    });
-    rmSync(join(directory, 'node_modules', name, 'reference.css'));
-    expect(ensure(directory).status).toBe(0);
-    expect(calls(directory)).toHaveLength(1);
-  });
+  it.each(['reference.css', 'labs.js'])(
+    'repairs missing prepared UI asset %s even if package versions match',
+    (asset) => {
+      const directory = checkout(true),
+        lock = lockFor(directory);
+      const name = '@flamboyantengineer/ui-components';
+      lock.packages[''].dependencies[name] = 'fixture:ui';
+      lock.packages[`node_modules/${name}`] = { version: '0.1.0', resolved: 'fixture:ui' };
+      writeJson(join(directory, 'package.json'), lock.packages['']);
+      writeJson(join(directory, 'package-lock.json'), lock);
+      healthyTree(directory);
+      const ui = join(directory, 'healthy/node_modules', name);
+      writeJson(join(ui, 'package.json'), {
+        name,
+        version: '0.1.0',
+        exports: { './reference.css': './reference.css', './labs': './labs.js' },
+      });
+      writeFileSync(join(ui, 'reference.css'), '/* prepared */');
+      writeFileSync(join(ui, 'labs.js'), 'export {};');
+      cpSync(join(directory, 'healthy/node_modules'), join(directory, 'node_modules'), {
+        recursive: true,
+      });
+      rmSync(join(directory, 'node_modules', name, asset));
+      expect(ensure(directory).status).toBe(0);
+      expect(calls(directory)).toHaveLength(1);
+    },
+  );
   it('keeps actual build failures and does not reinstall for a source error', () => {
     const directory = checkout(true),
       result = run(directory, 'labs.mjs');

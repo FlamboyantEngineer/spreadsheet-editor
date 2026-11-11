@@ -1,6 +1,6 @@
 # Public spreadsheet glyphs
 
-The editor uses the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) library, pinned to [`7d662b4f12c8ecefd4059e2426197f7e1935bc40`](https://github.com/FlamboyantEngineer/ui-components/tree/7d662b4f12c8ecefd4059e2426197f7e1935bc40). The original formatting-glyph request is fulfilled; the earlier prototype patch and category-icon substitutions are retired.
+The editor uses the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) library, pinned to [`15831ece4a6247725c5a8f76f7ca35a588b0eb03`](https://github.com/FlamboyantEngineer/ui-components/tree/15831ece4a6247725c5a8f76f7ca35a588b0eb03). The original formatting-glyph request is fulfilled; the earlier prototype patch and category-icon substitutions are retired.
 
 All formatting glyphs come directly from the public `/core` exports through `src/editor/editor-commands.ts`. Comment and suggestion controls also use the public comment glyphs.
 

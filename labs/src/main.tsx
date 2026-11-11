@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { UiProvider } from '@flamboyantengineer/ui-components/core';
-import { SelectField } from '@flamboyantengineer/ui-components/select-field';
+import { mountLabBar } from '@flamboyantengineer/ui-components/labs';
+import { labStorage } from './settings.js';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
 import type { Workbook } from '../../src/model/index.js';
@@ -44,7 +45,23 @@ const labs = [
   },
 ] as const;
 const current = labs.find((lab) => location.pathname === `/${lab.id}.html`);
-const initial = new URLSearchParams(location.search);
+let navigationSearch = '';
+const navigationListeners = new Set<() => void>();
+function subscribeNavigation(listener: () => void) {
+  navigationListeners.add(listener);
+  return () => navigationListeners.delete(listener);
+}
+mountLabBar({
+  host: document.getElementById('lab-chrome')!,
+  title: current?.title ?? 'Spreadsheet editor labs',
+  indexHref: current ? '/' : null,
+  storage: labStorage(),
+  referenceStylesheet: '/reference.css',
+  onSettingsChange(_settings, search) {
+    navigationSearch = search;
+    for (const listener of navigationListeners) listener();
+  },
+});
 
 function MinimalLab() {
   return (
@@ -123,65 +140,10 @@ function EmbeddedLab() {
 }
 
 function App() {
-  const [theme, setTheme] = useState(initial.get('theme') ?? 'system');
-  const [stylesheet, setStylesheet] = useState(
-    initial.get('stylesheet') === 'unstyled' ? 'unstyled' : 'reference',
-  );
-  useEffect(() => {
-    const media = matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => {
-      document.documentElement.dataset.theme =
-        theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
-    };
-    apply();
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, [theme]);
-  useEffect(() => {
-    (document.getElementById('lab-reference') as HTMLLinkElement).disabled =
-      stylesheet === 'unstyled';
-    const url = new URL(location.href);
-    url.searchParams.set('theme', theme);
-    url.searchParams.set('stylesheet', stylesheet);
-    history.replaceState(null, '', url);
-  }, [stylesheet, theme]);
-  const href = (id?: string) =>
-    `${id ? `/${id}.html` : '/'}?${new URLSearchParams({ theme, stylesheet })}`;
+  const search = useSyncExternalStore(subscribeNavigation, () => navigationSearch);
+  const href = (id?: string) => `${id ? `/${id}.html` : '/'}${search}`;
   return (
     <UiProvider>
-      <header className="lab-chrome">
-        <div className="lab-chrome__title">
-          {current && <a href={href()}>All labs</a>}
-          <strong>
-            {current?.title ?? 'Spreadsheet editor'}
-            <span className="lab-chrome__suffix"> · Labs</span>
-          </strong>
-        </div>
-        <div className="lab-chrome__controls">
-          <SelectField
-            label="Stylesheet"
-            labelLayout="label-colon-control"
-            size="sm"
-            value={stylesheet}
-            onChange={(value) => setStylesheet(String(value))}
-            options={[
-              { id: 'reference', label: 'Reference' },
-              { id: 'unstyled', label: 'Unstyled' },
-            ]}
-          />
-          <SelectField
-            label="Theme"
-            labelLayout="label-colon-control"
-            size="sm"
-            value={theme}
-            onChange={(value) => setTheme(String(value))}
-            options={['system', 'light', 'dark'].map((id) => ({
-              id,
-              label: id[0].toUpperCase() + id.slice(1),
-            }))}
-          />
-        </div>
-      </header>
       <main className="lab-page">
         <header className="lab-page__intro">
           <h1>{current?.title ?? 'Spreadsheet editor labs'}</h1>

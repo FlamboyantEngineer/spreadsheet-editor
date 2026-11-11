@@ -21,7 +21,7 @@ Use Node 24 (recommended), or Node 22.13 or newer within Node 22, and Git. The c
 npm run labs
 ```
 
-Open **http://127.0.0.1:4173/**. On a fresh checkout, the command installs the locked dependencies, including development tools and the public UI library, then builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, Full editor and Host integration labs, with the same Stylesheet and Theme selectors as the ui-components labs. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
+Open **http://127.0.0.1:4173/**. On a fresh checkout, the command installs the locked dependencies, including development tools and the public UI library, then builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, Full editor and Host integration labs, using the public ui-components lab bar in an isolated shadow root. The shared controls offer Reference, Unstyled and Custom URL stylesheets; System, Light, Dark and custom themes; and a configurable root theme attribute. Settings follow navigation and reloads through a safe lab-only storage adapter. A page-head bootstrap applies them before the editor bundle loads. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
 
 ```sh
 npm run labs -- --port 4200 --host 0.0.0.0

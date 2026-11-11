@@ -2,7 +2,7 @@
 
 Use Node 24 (selected by `.nvmrc` and CI), `npm ci`, and a scoped branch from `dev`. Node 22.13+ within Node 22 is also supported. The minimum matches the lint and DOM test toolchain. `.npmrc` enforces the engine range. On Windows, check `where.exe node` and `node --version` after switching versions; an older standalone installation earlier on `PATH` can override a version manager. Restart terminals and editors after changing the system installation or persistent `PATH`.
 
-The public `@flamboyantengineer/ui-components` library from [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) is pinned by Git SHA in the development manifest and lockfile; hosts supply it as a peer. npm's skipped-integrity warning for this Git package is expected; retain the reviewed full SHA. Keep React as a peer to avoid multiple renderer instances.
+The public `@flamboyantengineer/ui-components` library from [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) is pinned by Git SHA in the development manifest and lockfile; hosts supply it as a peer. npm's skipped-integrity warning for this Git package is expected; retain the reviewed full SHA. Keep React as a peer to avoid multiple renderer instances. Labs consume the public `/labs` entry point for `mountLabBar` and `bootLabSettings`; keep shell behavior in that shared code and the browser-storage adapter in `labs/`.
 
 Git normalizes text checkouts to LF through `.gitattributes`, including on Windows, so Prettier sees the same files locally and in CI. Newer npm versions use the version-pinned `allowScripts` entry for esbuild's required native-binary setup; review that entry when updating esbuild.
 

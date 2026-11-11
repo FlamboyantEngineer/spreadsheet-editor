@@ -48,9 +48,19 @@ This stage extracts reusable grid and parser modules and provides an independent
 
 ## SE-LABS-3 — Independent configurations
 
-The labs index shall link to minimal, embedded and full editor pages. Each page shares ui-components-style Stylesheet (Reference/Unstyled) and Theme (System/Light/Dark) selectors; selections follow navigation. Minimal provides the editable grid and worksheet strip, embedded provides compact tools inside an application-owned workspace, and full provides all menus and review commands. Reference presentation must keep formula entry, address, Apply/Cancel and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
+The labs index shall link to minimal, embedded, full editor and host integration pages. Each page uses the public ui-components lab bar and settings controls; selections follow navigation. Minimal provides the editable grid and worksheet strip, embedded provides compact tools inside an application-owned workspace, full provides all menus and review commands, and host integration demonstrates lifecycle and authoritative result contracts. Reference presentation must keep formula entry, address and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
 
 Verification: `e2e/labs.spec.ts` at 1440, 768 and 390 pixels, plus `e2e/editor.spec.ts`.
+
+## SE-LABS-4 — Shared lab shell
+
+The labs shall use `mountLabBar` and `bootLabSettings` from `@flamboyantengineer/ui-components/labs`. The public bar renders in its own shadow root, keeping its controls usable when custom page styles change component appearance. The head bootstrap applies stylesheet and theme settings before the editor bundle runs. Reference, Unstyled and Custom URL stylesheets; System, Light, Dark and custom theme values; and configurable root theme attributes use the upstream settings contract. The legacy `stylesheet=unstyled` query maps to `none`.
+
+The lab host supplies a safe, namespaced storage adapter. Missing or refused browser storage never prevents startup or editing. Settings persist across navigation/reload, explicit query parameters take precedence, and System follows color-scheme changes. Navigation links carry current settings, including custom URLs and theme attributes. Package editor source remains independent of the lab shell and browser storage. One-command dependency readiness checks include the prepared `/labs` export.
+
+Implementation: `labs/src/main.tsx`, `labs/src/boot.ts`, `labs/src/settings.ts`, `scripts/build-labs.mjs`, `scripts/lib/labs-dependencies.mjs`.
+
+Verification: `e2e/labs.spec.ts` (SE-LABS-4), `src/tooling/labs-startup.test.ts`.
 
 ## SE-HOST-MODEL-1 — Canonical authored values and logical identities
 

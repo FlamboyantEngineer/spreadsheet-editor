@@ -21,40 +21,10 @@ body {
 [data-theme='light'] {
   color-scheme: light;
 }
-.lab-chrome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  padding: 8px 24px;
-  border-bottom: 1px solid var(--ref-border, #d5d9de);
-  background: var(--ref-surface, Canvas);
-  color: var(--ref-text, CanvasText);
-  font-size: 13px;
-}
-.lab-chrome__title,
-.lab-chrome__controls {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  min-width: 0;
-  max-width: 100%;
-}
-.lab-chrome__suffix {
-  font-weight: 400;
-  color: var(--ref-muted, GrayText);
-}
-.lab-chrome .ui-field {
-  width: auto;
-}
-.lab-chrome .ui-select-field__trigger {
-  width: 110px;
-}
-.lab-chrome .ui-field__message:empty,
 .lab-controls .ui-field__message:empty {
   display: none;
 }
+
 a {
   color: var(--ref-link, #2457a7);
   text-underline-offset: 3px;
@@ -327,16 +297,8 @@ a {
   }
 }
 @media (max-width: 520px) {
-  .lab-chrome,
   .lab-page {
     padding-inline: 12px;
-  }
-  .lab-chrome__controls {
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .lab-chrome .ui-select-field__trigger {
-    width: 94px;
   }
   .lab-switcher {
     gap: 16px;

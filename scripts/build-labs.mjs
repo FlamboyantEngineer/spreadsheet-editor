@@ -12,6 +12,16 @@ export async function buildLabs() {
   await mkdir(output, { recursive: true });
   await build({
     absWorkingDir: root,
+    entryPoints: ['labs/src/boot.ts'],
+    outfile: resolve(output, 'boot.js'),
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2022',
+    sourcemap: true,
+  });
+  await build({
+    absWorkingDir: root,
     entryPoints: { labs: 'labs/src/main.tsx', reference: 'labs/src/reference.css' },
     outdir: output,
     bundle: true,
@@ -68,7 +78,7 @@ export async function buildLabs() {
   })) {
     await writeFile(
       resolve(output, `${page}.html`),
-      `<!doctype html><html lang="en" data-reference-document><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Labs</title><link rel="icon" href="data:,"><link id="lab-reference" rel="stylesheet" href="/reference.css"><link rel="stylesheet" href="/labs.css"></head><body><div id="root"></div><script type="module" src="/labs.js"></script></body></html>`,
+      `<!doctype html><html lang="en" data-reference-document><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Labs</title><link rel="icon" href="data:,"><script src="/boot.js"></script><link rel="stylesheet" href="/labs.css"></head><body><header id="lab-chrome"></header><div id="root"></div><script type="module" src="/labs.js"></script></body></html>`,
     );
   }
 }
