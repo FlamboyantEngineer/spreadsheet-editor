@@ -1,6 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  ChatBubbleCheckGlyph,
+  ChatBubblePlusGlyph,
+  ChatBubbleXMarkGlyph,
+} from '@flamboyantengineer/ui-components/core';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { Spinner } from '@flamboyantengineer/ui-components/progress-bar';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
@@ -64,7 +69,11 @@ export function CommentsPanel({
               { id: 'mine', label: 'My conversations' },
             ]}
           />
-          <Button onPress={e.beginWorkbookComment} isDisabled={!e.canComment}>
+          <Button
+            startIcon={ChatBubblePlusGlyph}
+            onPress={e.beginWorkbookComment}
+            isDisabled={!e.canComment}
+          >
             Add comment
           </Button>
         </div>
@@ -130,7 +139,11 @@ export function CommentsPanel({
               { id: 'mine', label: 'My conversations' },
             ]}
           />
-          <Button onPress={e.beginWorkbookComment} isDisabled={!e.canComment}>
+          <Button
+            startIcon={ChatBubblePlusGlyph}
+            onPress={e.beginWorkbookComment}
+            isDisabled={!e.canComment}
+          >
             Add comment
           </Button>
         </div>
@@ -187,12 +200,14 @@ export function CommentsPanel({
                 {proposal.status === 'pending' && (
                   <div className="se-suggestion__actions">
                     <Button
+                      startIcon={ChatBubbleCheckGlyph}
                       isDisabled={!e.canDecide || proposal.outdated}
                       onPress={() => e.attempt(() => e.decide(proposal.id, 'accepted'))}
                     >
                       Accept suggestion
                     </Button>
                     <Button
+                      startIcon={ChatBubbleXMarkGlyph}
                       isDisabled={!e.canDecide}
                       onPress={() => e.attempt(() => e.decide(proposal.id, 'rejected'))}
                     >
@@ -401,12 +416,14 @@ export function SuggestionsPanel({ editor: e }: { editor: SpreadsheetEditorContr
           {suggestion.status === 'pending' && (
             <div className="se-suggestion__actions">
               <Button
+                startIcon={ChatBubbleCheckGlyph}
                 isDisabled={!e.canDecide || suggestion.outdated}
                 onPress={() => e.attempt(() => e.decide(suggestion.id, 'accepted'))}
               >
                 Accept suggestion
               </Button>
               <Button
+                startIcon={ChatBubbleXMarkGlyph}
                 isDisabled={!e.canDecide}
                 onPress={() => e.attempt(() => e.decide(suggestion.id, 'rejected'))}
               >
