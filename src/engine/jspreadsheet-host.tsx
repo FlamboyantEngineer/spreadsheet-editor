@@ -502,6 +502,14 @@ export function releaseJSpreadsheetKeyboardOwner(): (() => void) | null {
   };
 }
 
+/** Restore keyboard ownership to the exact mounted worksheet requested by React chrome. */
+export function focusJSpreadsheetWorksheet(worksheet: JSpreadsheetWorksheetInstance): void {
+  const element = worksheet.element ?? worksheet.root ?? worksheet.table;
+  if (element instanceof Element && !element.isConnected) return;
+  const vendor = jspreadsheet as unknown as { current?: JSpreadsheetWorksheetInstance | null };
+  vendor.current = worksheet;
+}
+
 /**
  * Public prop contract of `JSpreadsheetHost`. Every prop below is OPTIONAL
  * except `config` so Phase 9B can adopt the host incrementally.

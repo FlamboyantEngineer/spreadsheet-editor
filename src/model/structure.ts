@@ -267,22 +267,28 @@ export function changeWorkbookStructure(
   return next;
 }
 
-export function renameWorksheet(workbook: Workbook, sheetId: string, name: string): Workbook {
-  const next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
+/** Return the normalized name accepted by worksheet renaming, or throw without changing the workbook. */
+export function validateWorksheetName(workbook: Workbook, sheetId: string, name: string): string {
   const normalized = name.trim().replace(/\s+/g, ' ');
   if (
-    !sheet ||
+    !workbook.worksheets.some((sheet) => sheet.id === sheetId) ||
     !normalized ||
     normalized.length > 256 ||
     /[[\]:*?/\\!]/.test(normalized) ||
-    next.worksheets.some(
+    workbook.worksheets.some(
       (other) =>
         other.id !== sheetId &&
         other.name.trim().replace(/\s+/g, ' ').toUpperCase() === normalized.toUpperCase(),
     )
   )
     throw new TypeError('Choose a unique worksheet name without reserved characters.');
+  return normalized;
+}
+
+export function renameWorksheet(workbook: Workbook, sheetId: string, name: string): Workbook {
+  const normalized = validateWorksheetName(workbook, sheetId, name),
+    next = copyWorkbook(workbook),
+    sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
   const previous = sheet.name;
   sheet.name = normalized;
   next.worksheets.forEach((current) =>

@@ -105,4 +105,6 @@ export interface GridController {
     range: CellSelection,
   ): { left: number; top: number; right: number; bottom: number } | null;
   releaseKeyboard(): void;
+  /** Returns keyboard focus to this instance after formula entry. */
+  focus?(): void;
 }

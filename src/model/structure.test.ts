@@ -5,6 +5,7 @@ import { writeCells, parseDelimited, serializeDelimited } from './editing.js';
 import {
   changeWorkbookStructure,
   renameWorksheet,
+  validateWorksheetName,
   deleteWorksheet,
   rewriteStructureReferences,
 } from './structure.js';
@@ -110,6 +111,36 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
     expect(renamed.worksheets[0].data[0]).toEqual(["='O''Brien'!A1+1E-25", '="Inputs!A1"']);
     expect(deleteWorksheet(renamed, 'inputs').worksheets[0].data[0][0]).toBe('=#REF!+1E-25');
     expect(() => renameWorksheet(workbook, 'inputs', 'Bad:Name')).toThrow('unique worksheet');
+  });
+  it('SE-CHROME-2: shares normalized worksheet validation with inline renaming', () => {
+    const workbook = createWorkbook([["='  Input   Data  '!$A$1+1E-25"]]);
+    workbook.worksheets.push({ id: 'inputs', name: '  Input   Data  ', data: [['3']] });
+    const original = structuredClone(workbook);
+
+    expect(validateWorksheetName(workbook, 'inputs', '  Input\n Data  ')).toBe('Input Data');
+    expect(validateWorksheetName(workbook, 'inputs', ' x '.repeat(128))).toHaveLength(255);
+    expect(validateWorksheetName(workbook, 'inputs', 'x'.repeat(256))).toHaveLength(256);
+    const renamed = renameWorksheet(workbook, 'inputs', '  Year\n  One  ');
+    expect(renamed.worksheets[1]).toMatchObject({ id: 'inputs', name: 'Year One' });
+    expect(renamed.worksheets[0].data[0][0]).toBe("='Year One'!$A$1+1E-25");
+    expect(workbook).toEqual(original);
+  });
+  it.each(['', ' \t\n ', 'sheet1', ' Sheet1 ', 'x'.repeat(257), ...'[]:*?/\\!'])(
+    'SE-CHROME-2: refuses invalid inline worksheet name %j in validation and mutation',
+    (name) => {
+      const workbook = createWorkbook();
+      workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['']] });
+      expect(() => validateWorksheetName(workbook, 'inputs', name)).toThrow(TypeError);
+      expect(() => renameWorksheet(workbook, 'inputs', name)).toThrow(TypeError);
+      expect(workbook.worksheets[1].name).toBe('Inputs');
+    },
+  );
+  it('SE-CHROME-2: rejects stale worksheet ids and case/whitespace-equivalent names', () => {
+    const workbook = createWorkbook();
+    workbook.worksheets.push({ id: 'inputs', name: ' Input   Data ', data: [['']] });
+    expect(() => validateWorksheetName(workbook, 'sheet-1', '  input\n data ')).toThrow(TypeError);
+    expect(() => validateWorksheetName(workbook, 'missing', 'New name')).toThrow(TypeError);
+    expect(() => renameWorksheet(workbook, 'missing', 'New name')).toThrow(TypeError);
   });
   it('round-trips multiline CSV and clipboard text without converting numeric strings', () => {
     const rows = [['1E-25', '0.9999999999999999999999999', 'line\none', 'a,b', '"quoted"']];

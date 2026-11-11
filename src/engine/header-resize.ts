@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from 'react';
 import type { Worksheet } from '../model/workbook.js';
+import { DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT, gridZoomScale } from './grid-geometry.js';
 import {
   applyJSpreadsheetColumnMeasure,
   applyJSpreadsheetRowMeasure,
@@ -24,6 +25,7 @@ interface Options {
   worksheet: Worksheet;
   getWorksheet(): JSpreadsheetWorksheetInstance | null;
   canResize: boolean;
+  zoom?: number;
   onChange(worksheet: Worksheet): void;
   onGeometryChange(): void;
   subscribeBlur?: (callback: () => void) => () => void;
@@ -103,9 +105,12 @@ export function useHeaderResize(options: Options) {
     window.addEventListener('blur', callback);
     return () => window.removeEventListener('blur', callback);
   }, [active, options.subscribeBlur]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!options.canResize) cancel();
   }, [options.canResize]);
+  useLayoutEffect(() => {
+    if (drag.current && drag.current.scale !== gridZoomScale(options.zoom)) cancel();
+  }, [options.zoom]);
   useEffect(() => () => cancel(false), []);
   function start(event: PointerEvent<HTMLDivElement>): boolean {
     const current = latest.current,
@@ -118,7 +123,7 @@ export function useHeaderResize(options: Options) {
     event.preventDefault();
     event.stopPropagation();
     const root = current.root.current!,
-      scale = root.getBoundingClientRect().width / root.offsetWidth || 1;
+      scale = gridZoomScale(current.zoom);
     const selected =
       header.axis === 'column'
         ? worksheet.getSelectedColumns?.(true)
@@ -131,20 +136,12 @@ export function useHeaderResize(options: Options) {
       header.axis === 'column'
         ? {
             index,
-            size: Number(
-              current.worksheet.columns?.[index]?.width ??
-                worksheet.getWidth?.(index) ??
-                rect.width / scale,
-            ),
+            size: current.worksheet.columns?.[index]?.width ?? DEFAULT_COLUMN_WIDTH,
             column: readJSpreadsheetColumnMeasure(worksheet, index),
           }
         : {
             index,
-            size: Number(
-              current.worksheet.rows?.[String(index)]?.height ??
-                worksheet.getHeight?.(index) ??
-                rect.height / scale,
-            ),
+            size: current.worksheet.rows?.[String(index)]?.height ?? DEFAULT_ROW_HEIGHT,
             row: readJSpreadsheetRowMeasureSnapshot(worksheet, index),
           },
     );
@@ -174,10 +171,12 @@ export function useHeaderResize(options: Options) {
     current.delta =
       ((current.axis === 'column' ? event.clientX : event.clientY) - current.start) / current.scale;
     for (const original of current.originals) {
-      const size = String(Math.max(1, Math.min(2000, original.size + current.delta)));
+      const size = String(
+        Math.max(1, Math.min(2000, original.size + current.delta)) * current.scale,
+      );
       if (current.axis === 'column')
         applyJSpreadsheetColumnMeasure(current.worksheet, original.index, size, `${size}px`);
-      else applyJSpreadsheetRowMeasure(current.worksheet, original.index, `${size}px`, `${size}px`);
+      else applyJSpreadsheetRowMeasure(current.worksheet, original.index, `${size}px`, size);
     }
     latest.current.onGeometryChange();
     return true;
@@ -193,7 +192,13 @@ export function useHeaderResize(options: Options) {
     setActive(false);
     const root = latest.current.root.current;
     if (root?.hasPointerCapture(current.pointerId)) root.releasePointerCapture(current.pointerId);
-    if (unchanged || !latest.current.canResize) return true;
+    latest.current.onGeometryChange();
+    if (
+      unchanged ||
+      !latest.current.canResize ||
+      latest.current.getWorksheet() !== current.worksheet
+    )
+      return true;
     const next = structuredClone(latest.current.worksheet);
     for (const original of current.originals) {
       const size = Math.max(1, Math.min(2000, original.size + current.delta));

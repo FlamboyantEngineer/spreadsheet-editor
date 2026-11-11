@@ -2,6 +2,15 @@
 
 import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
+import { observeGridBorderCopies } from './shared-grid-borders.js';
+import {
+  gridViewport,
+  gridZoomScale,
+  measureGridSelection,
+  restoreGridScroll,
+  scrollGridCellIntoView,
+  syncFrozenColumns,
+} from './grid-geometry.js';
 import { useNativeFormula } from './native-formula.js';
 import { useHeaderResize, deliveredHeader } from './header-resize.js';
 import type { CellValue } from '../calculation/values.js';
@@ -18,6 +27,7 @@ import type { GridController } from '../editor/contracts.js';
 import { writeCells, parseDelimited, type CellSelection } from '../model/editing.js';
 import {
   JSpreadsheetHost,
+  focusJSpreadsheetWorksheet,
   releaseJSpreadsheetKeyboardOwner,
   type JSpreadsheetHostHandle,
   type JSpreadsheetSelectionRange,
@@ -38,6 +48,8 @@ export interface WorkbookGridProps {
   values?: CellValue[][];
   display?: DisplayOptions;
   readOnly?: boolean;
+  /** Grid-only zoom percentage. Chrome and the scroll viewport keep their size. */
+  zoom?: number;
   unavailableText?: string;
   selection: CellSelection;
   reviewMode?: boolean;
@@ -67,6 +79,7 @@ export interface WorkbookGridProps {
 
 export default function WorkbookGrid(props: WorkbookGridProps) {
   const handle = useRef<JSpreadsheetHostHandle | null>(null);
+  const stopBorderCopies = useRef<(() => void) | null>(null);
   const surface = useRef<HTMLDivElement | null>(null);
   const picking = useRef<CellSelection | null>(null);
   const inCell = useRef(false);
@@ -74,16 +87,19 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
   useEffect(
     () => () => {
       if (commentClick.current) clearTimeout(commentClick.current);
+      stopBorderCopies.current?.();
     },
     [],
   );
   const selectedHeader = useRef<'row' | 'column' | null>(null);
   const applied = useRef<Worksheet | null>(null);
+  const appliedZoom = useRef(100);
   const native = useNativeFormula((value) => latest.current.onEditDraft?.(value), surface);
   const [frames, setFrames] = useState<
     {
       key: string;
       style: CSSProperties;
+      local?: boolean;
       kind?: 'selection' | 'lock';
       name?: string;
       colorIndex?: number;
@@ -133,22 +149,32 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     const current = latest.current,
       root = surface.current,
       sheet = worksheet();
-    if (!root || !sheet || (!current.formulaReferences?.length && !current.collaborators?.length)) {
+    if (!root || !sheet) {
       setFrames([]);
       return;
     }
-    const viewport = (sheet as { content?: HTMLElement }).content ?? root;
+    syncFrozenColumns(sheet);
+    const viewport = gridViewport(sheet) ?? root;
     const base = root.getBoundingClientRect(),
-      scale = base.width / root.offsetWidth || 1,
       bounds = viewport.getBoundingClientRect();
     setClip({
-      left: (bounds.left - base.left) / scale,
-      top: (bounds.top - base.top) / scale,
+      position: 'absolute',
+      pointerEvents: 'none',
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+      zIndex: 5,
+      left: bounds.left - base.left + viewport.clientLeft - root.clientLeft,
+      top: bounds.top - base.top + viewport.clientTop - root.clientTop,
       width: viewport.clientWidth,
       height: viewport.clientHeight,
     });
+    const measured: typeof frames = measureGridSelection(
+      sheet,
+      current.worksheet,
+      current.selection,
+      viewport,
+    ).map((style, index) => ({ key: `local:${index}`, local: true, style }));
     const seen = new Set<string>();
-    const measured: typeof frames = [];
     for (const ref of current.formulaReferences ?? []) {
       if (seen.has(ref.normalizedKey)) continue;
       seen.add(ref.normalizedKey);
@@ -169,22 +195,16 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
               (current.worksheet.minDimensions?.[1] ?? 100) - 1,
               current.worksheet.data.length - 1,
             );
-      const first = sheet.getCellFromCoords?.(x1, y1)?.getBoundingClientRect(),
-        last = sheet.getCellFromCoords?.(x2, y2)?.getBoundingClientRect();
-      if (first && last)
-        measured.push({
-          key: ref.normalizedKey,
-          style: {
-            left: (first.left - bounds.left) / scale,
-            top: (first.top - bounds.top) / scale,
-            width: (last.right - first.left) / scale,
-            height: (last.bottom - first.top) / scale,
-            borderColor:
-              FORMULA_REFERENCE_HIGHLIGHT_COLORS[
-                ref.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_COLORS.length
-              ],
-          },
-        });
+      measureGridSelection(sheet, current.worksheet, { x1, y1, x2, y2 }, viewport).forEach(
+        (style, index) =>
+          measured.push({
+            key: `${ref.normalizedKey}:${index}`,
+            style: {
+              ...style,
+              borderColor: `var(--se-reference-${ref.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_COLORS.length}, ${FORMULA_REFERENCE_HIGHLIGHT_COLORS[ref.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_COLORS.length]})`,
+            },
+          }),
+      );
     }
     for (const person of current.collaborators ?? []) {
       const target = collaboratorSheet(
@@ -199,25 +219,15 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       for (const kind of ['selection', 'lock'] as const) {
         const range = kind === 'selection' ? person.selection : person.editLock;
         if (!range) continue;
-        const first = sheet
-            .getCellFromCoords?.(Math.min(range.x1, range.x2), Math.min(range.y1, range.y2))
-            ?.getBoundingClientRect(),
-          last = sheet
-            .getCellFromCoords?.(Math.max(range.x1, range.x2), Math.max(range.y1, range.y2))
-            ?.getBoundingClientRect();
-        if (first && last)
+        measureGridSelection(sheet, current.worksheet, range, viewport).forEach((style, index) =>
           measured.push({
-            key: `${person.id}:${kind}`,
+            key: `${person.id}:${kind}:${index}`,
             kind,
             name: person.name,
             colorIndex: collaboratorColorIndex(person.id),
-            style: {
-              left: (first.left - bounds.left) / scale,
-              top: (first.top - bounds.top) / scale,
-              width: (last.right - first.left) / scale,
-              height: (last.bottom - first.top) / scale,
-            },
-          });
+            style,
+          }),
+        );
       }
     }
     setFrames(measured);
@@ -234,17 +244,18 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       observer.disconnect();
       cancelAnimationFrame(frameRequest.current);
     };
-  }, [props.formulaReferences, props.collaborators, props.selection, revision]);
+  }, [props.formulaReferences, props.collaborators, props.selection, props.zoom, revision]);
   const resize = useHeaderResize({
     root: surface,
     worksheet: props.worksheet,
     getWorksheet: worksheet,
     canResize: !props.readOnly && !props.reviewMode,
+    zoom: props.zoom,
     onChange: props.onChange,
     onGeometryChange: scheduleReferences,
     subscribeBlur: props.subscribeWindowBlur,
   });
-  const controller = useMemo<GridController>(
+  const controller = useMemo<GridController & { focus(): void }>(
     () => ({
       select(range) {
         if (selecting.current) return;
@@ -252,9 +263,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         try {
           const sheet = worksheet();
           sheet?.updateSelectionFromCoords?.(range.x1, range.y1, range.x2, range.y2);
-          sheet
-            ?.getCellFromCoords?.(range.x1, range.y1)
-            ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+          if (sheet) scrollGridCellIntoView(sheet, range.x1, range.y1);
         } finally {
           selecting.current = false;
         }
@@ -265,7 +274,16 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         );
       },
       releaseKeyboard() {
+        if (commentClick.current) clearTimeout(commentClick.current);
+        commentClick.current = null;
         releaseJSpreadsheetKeyboardOwner();
+      },
+      focus() {
+        const sheet = worksheet();
+        if (!sheet) return;
+        focusJSpreadsheetWorksheet(sheet);
+        surface.current?.focus({ preventScroll: true });
+        scheduleReferences();
       },
     }),
     [],
@@ -295,19 +313,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         data: normalized.map((row) => [...row]),
         ...(merge && !Array.isArray(merge) ? { mergeCells: structuredClone(merge) } : {}),
       };
-      const width = Math.max(current.columns?.length ?? 0, ...normalized.map((row) => row.length));
-      next.columns = Array.from({ length: width }, (_, x) => {
-        const measured = Number(worksheet.getWidth?.(x));
-        return {
-          ...current.columns?.[x],
-          ...(Number.isFinite(measured) && measured > 0 ? { width: measured } : {}),
-        };
-      });
-      next.rows = {};
-      normalized.forEach((_row, y) => {
-        const height = Number(worksheet.getHeight?.(y));
-        if (Number.isFinite(height) && height > 0) next.rows![String(y)] = { height };
-      });
+      // Native data edits must never capture zoomed presentation measures as authored sizes.
       if (JSON.stringify(next) !== JSON.stringify(current)) latest.current.onChange(next);
     }
     function propose(values: CellInput[][], x: number, y: number) {
@@ -415,15 +421,28 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     try {
       if (applied.current?.data !== props.worksheet.data)
         handle.current.setData(props.worksheet.data.map((row) => [...row]));
-      syncWorksheetPresentation(sheet, applied.current, props.worksheet, !!props.readOnly);
+      const viewport = gridViewport(sheet);
+      const scroll = { left: viewport?.scrollLeft ?? 0, top: viewport?.scrollTop ?? 0 };
+      const scale = gridZoomScale(props.zoom),
+        previousScale = gridZoomScale(appliedZoom.current);
+      const zoomOnly = applied.current === props.worksheet && scale !== previousScale;
+      syncWorksheetPresentation(
+        sheet,
+        applied.current,
+        props.worksheet,
+        !!props.readOnly,
+        props.zoom,
+      );
       applied.current = props.worksheet;
+      appliedZoom.current = props.zoom ?? 100;
       paint(handle.current, props);
-      controller.select(props.selection);
+      if (scale !== previousScale) restoreGridScroll(viewport, scroll, previousScale, scale);
+      if (!zoomOnly) controller.select(props.selection);
       scheduleReferences();
     } finally {
       suppress.current = false;
     }
-  }, [props.worksheet, props.readOnly, props.pickingFormula, revision]);
+  }, [props.worksheet, props.readOnly, props.pickingFormula, props.zoom, revision]);
   useLayoutEffect(() => {
     if (handle.current) controller.select(props.selection);
   }, [props.selection, controller]);
@@ -497,6 +516,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         }
       }}
       className="se-editor__grid-surface"
+      style={{ position: 'relative', minWidth: 0 }}
       onClick={(event) => {
         if (commentClick.current) clearTimeout(commentClick.current);
         if (inCell.current || picking.current || event.detail !== 1 || !event.isTrusted) return;
@@ -585,20 +605,27 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         onMounted={(_instance, api) => {
           handle.current = api;
           const sheet = worksheet();
+          stopBorderCopies.current?.();
+          stopBorderCopies.current = sheet ? observeGridBorderCopies(sheet) : null;
           if (sheet)
             syncWorksheetPresentation(
               sheet,
               null,
               latest.current.worksheet,
               !!latest.current.readOnly,
+              latest.current.zoom,
             );
+          appliedZoom.current = latest.current.zoom ?? 100;
           applied.current = latest.current.worksheet;
           paint(api, latest.current);
           controller.select(latest.current.selection);
           scheduleReferences();
         }}
         onSelectionChange={(range) => {
-          if (!selecting.current) props.onSelectionChange(range);
+          // CE selects merge anchors while constructing or changing merges. Those
+          // presentation callbacks must not replace the host's current selection.
+          if (applied.current && !suppress.current && !selecting.current)
+            props.onSelectionChange(range);
         }}
         onContextMenuRequest={props.onContextMenu}
         onCellCommentRequest={props.onCommentRequest}
@@ -623,7 +650,11 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           {frames.map((frame) => (
             <div
               className={
-                frame.kind ? 'se-editor__presence-outline' : 'se-editor__reference-outline'
+                frame.local
+                  ? 'se-editor__selection-outline'
+                  : frame.kind
+                    ? 'se-editor__presence-outline'
+                    : 'se-editor__reference-outline'
               }
               data-kind={frame.kind}
               data-color={frame.colorIndex}

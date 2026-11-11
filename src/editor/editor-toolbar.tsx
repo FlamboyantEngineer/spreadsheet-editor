@@ -1,63 +1,110 @@
 'use client';
 
-import {
-  UsersGlyph,
-  EditGlyph,
-  ReplyGlyph,
-  EyeGlyph,
-  UndoGlyph,
-  RedoGlyph,
-  SaveGlyph,
-} from '@flamboyantengineer/ui-components/core';
 import { Button } from '@flamboyantengineer/ui-components/button';
+import { DropdownMenu } from '@flamboyantengineer/ui-components/dropdown-menu';
+import type { IconSource } from '@flamboyantengineer/ui-components/icon';
 import {
-  Menu,
-  MenuPopover,
-  MenuTrigger,
-  type MenuEntry,
-} from '@flamboyantengineer/ui-components/menu';
+  ToolbarRow,
+  ToolbarRowGroup,
+  ToolbarRowSeparator,
+} from '@flamboyantengineer/ui-components/layout';
+import type { MenuEntry } from '@flamboyantengineer/ui-components/menu';
 import { Menubar, MenubarMenu } from '@flamboyantengineer/ui-components/menubar';
 import { AvatarGroup } from '@flamboyantengineer/ui-components/avatar-group';
-import { collaboratorColorIndex } from '../model/presence.js';
-import { ToolbarScroller } from '@flamboyantengineer/ui-components/toolbar-scroller';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import { ColorField } from '@flamboyantengineer/ui-components/color-field';
 import { SaveStatus } from '@flamboyantengineer/ui-components/save-status';
+import { Tooltip } from '@flamboyantengineer/ui-components/tooltip';
+import { collaboratorColorIndex } from '../model/presence.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
 import { UNIT_PRESETS } from '../calculation/units.js';
-import { BorderGlyph } from './border-glyph.js';
+import { editorCommandMetadata, editorGlyphs, numberFormatGlyphs } from './editor-commands.js';
 import { editorMenus } from './editor-menus.js';
 
 function MenuButton({
   label,
   items,
+  icon,
   disabled,
-  grid,
+  iconOnly = false,
+  hint,
 }: {
   label: string;
   items: MenuEntry[];
+  icon: IconSource;
   disabled?: boolean;
-  grid?: boolean | 'border';
+  iconOnly?: boolean;
+  hint?: string;
 }) {
   return (
-    <MenuTrigger>
-      <Button size="sm" isDisabled={disabled}>
-        {label}
-      </Button>
-      <MenuPopover>
-        <Menu
-          className={
-            grid === 'border'
-              ? 'se-editor__border-grid'
-              : grid
-                ? 'se-editor__format-grid'
-                : undefined
-          }
-          aria-label={label}
-          items={items}
-        />
-      </MenuPopover>
-    </MenuTrigger>
+    <Tooltip content={hint ?? label} isDisabled={disabled}>
+      <DropdownMenu
+        label={label}
+        aria-label={label}
+        size="sm"
+        icon={icon}
+        iconOnly={iconOnly}
+        isDisabled={disabled}
+        items={items}
+      />
+    </Tooltip>
+  );
+}
+
+interface FormatOption {
+  id: string;
+  label: string;
+  icon?: IconSource;
+}
+function FormatSelector({
+  embedded,
+  label,
+  value,
+  options,
+  icon,
+  disabled,
+  className,
+  onChange,
+}: {
+  embedded: boolean;
+  label: string;
+  value: string;
+  options: FormatOption[];
+  icon: IconSource;
+  disabled: boolean;
+  className?: string;
+  onChange(value: string): void;
+}) {
+  if (embedded)
+    return (
+      <MenuButton
+        label={label}
+        hint={`${label}: ${options.find((option) => option.id === value)?.label ?? value}`}
+        icon={icon}
+        iconOnly
+        disabled={disabled}
+        items={options.map((option) => ({
+          ...option,
+          icon: option.icon ?? icon,
+          isSelected: option.id === value,
+          onAction: () => onChange(option.id),
+        }))}
+      />
+    );
+  return (
+    <SelectField
+      tracksChanges={false}
+      menu={[]}
+      density="compact"
+      labelLayout="control-only"
+      size="sm"
+      className={className}
+      label={label}
+      value={value}
+      isDisabled={disabled}
+      options={options}
+      onChange={(next) => onChange(String(next))}
+    />
   );
 }
 
@@ -78,7 +125,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
         {e.props.onSave && (
           <SaveStatus
             phase={e.savePhase}
-            onRetry={() => void e.save()}
+            onRetry={embedded ? undefined : () => void e.save()}
             hideSavedAfter={3000}
             labels={{
               dirty: 'Modified.',
@@ -107,28 +154,27 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
           size="sm"
           variant="ghost"
           isSelected={e.showContributors}
-          icon={UsersGlyph}
+          icon={editorGlyphs.contributors}
           label="Contributors"
           tooltip="Contributors"
           onPress={() => e.setShowContributors(!e.showContributors)}
-        ></Button>
+        />
         {e.props.features?.modeControl !== false &&
           (embedded ? (
-            <MenuTrigger>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={e.mode === 'author' ? EditGlyph : e.mode === 'review' ? ReplyGlyph : EyeGlyph}
-                label="Editing mode"
-                tooltip={`Editing mode: ${e.mode === 'author' ? 'Authoring' : e.mode === 'review' ? 'Reviewing' : 'Reading'}`}
-                isDisabled={e.props.readOnly}
-              />
-              <MenuPopover>
-                <Menu aria-label="Editing mode" items={menus.review.slice(0, 3)} />
-              </MenuPopover>
-            </MenuTrigger>
+            <MenuButton
+              label="Editing mode"
+              hint={`Editing mode: ${e.mode === 'author' ? 'Authoring' : e.mode === 'review' ? 'Reviewing' : 'Reading'}`}
+              icon={editorGlyphs[e.mode]}
+              iconOnly
+              disabled={e.props.readOnly}
+              items={menus.review
+                .slice(0, 3)
+                .map((item) => ({ ...item, isSelected: item.id === e.mode }))}
+            />
           ) : (
             <SelectField
+              tracksChanges={false}
+              menu={[]}
               density="compact"
               labelLayout="control-only"
               size="sm"
@@ -161,11 +207,16 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
         {e.props.onSave && (
           <Button
             size="sm"
-            startIcon={SaveGlyph}
+            icon={embedded ? editorGlyphs.save : undefined}
+            startIcon={embedded ? undefined : editorGlyphs.save}
+            label="Save"
+            tooltip={e.savePhase === 'error' ? 'Retry save' : 'Save'}
+            shortcut="Ctrl+S"
             isDisabled={!e.canEdit || e.savePhase === 'saving'}
+            isPending={e.savePhase === 'saving'}
             onPress={() => e.save()}
           >
-            Save
+            {embedded ? undefined : 'Save'}
           </Button>
         )}
       </div>
@@ -180,98 +231,111 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
           ))}
         </Menubar>
       )}
-      <ToolbarScroller aria-label="Spreadsheet formatting" className="se-editor__toolbar">
+      <ToolbarRow
+        aria-label="Spreadsheet formatting"
+        className="se-editor__toolbar"
+        overflow="scroll"
+        justify="start"
+      >
         {embedded && (
-          <MenuButton
-            label="Spreadsheet actions"
-            items={(['file', 'edit', 'insert', 'view', 'review'] as const).map((id) => ({
-              id,
-              label: id[0].toUpperCase() + id.slice(1),
-              items: menus[id],
-            }))}
-          />
+          <>
+            <MenuButton
+              label="Spreadsheet actions"
+              icon={editorGlyphs.actions}
+              iconOnly
+              items={(['file', 'edit', 'insert', 'view', 'review'] as const).map((id) => ({
+                id,
+                label: id[0].toUpperCase() + id.slice(1),
+                ...editorCommandMetadata(id),
+                items: menus[id],
+              }))}
+            />
+            <ToolbarRowSeparator />
+          </>
         )}
-        <div className="se-editor__tool-group" role="group" aria-label="History">
+        <ToolbarRowGroup className="se-editor__tool-group" aria-label="History">
           <Button
             size="sm"
-            icon={UndoGlyph}
-            aria-label="Undo"
+            icon={editorGlyphs.undo}
+            label="Undo"
             variant="ghost"
             onPress={e.undo}
             isDisabled={disabled || !e.history.past.length}
             tooltip="Undo"
-          ></Button>
+            shortcut="Ctrl+Z"
+          />
           <Button
             size="sm"
-            icon={RedoGlyph}
-            aria-label="Redo"
+            icon={editorGlyphs.redo}
+            label="Redo"
             variant="ghost"
             onPress={e.redo}
             isDisabled={disabled || !e.history.future.length}
             tooltip="Redo"
-          ></Button>
-        </div>
-        <div className="se-editor__tool-group" role="group" aria-label="Text formatting">
+            shortcut="Ctrl+Y"
+          />
+        </ToolbarRowGroup>
+        <ToolbarRowSeparator />
+        <ToolbarRowGroup className="se-editor__tool-group" aria-label="Text formatting">
           <Button
             size="sm"
+            icon={editorGlyphs.bold}
             aria-label="Bold selection"
             tooltip="Bold"
+            shortcut="Ctrl+B"
             isSelected={e.style['font-weight'] === 'bold'}
             isDisabled={disabled}
             onPress={() => e.attempt(() => e.toggleFormat('font-weight', 'bold'))}
-          >
-            <strong>B</strong>
-          </Button>
+          />
           <Button
             size="sm"
+            icon={editorGlyphs.italic}
             aria-label="Italicize selection"
             tooltip="Italic"
+            shortcut="Ctrl+I"
             isSelected={e.style['font-style'] === 'italic'}
             isDisabled={disabled}
             onPress={() => e.attempt(() => e.toggleFormat('font-style', 'italic'))}
-          >
-            <em>I</em>
-          </Button>
+          />
           <Button
             size="sm"
+            icon={editorGlyphs.strike}
             aria-label="Strikethrough selection"
             tooltip="Strikethrough"
             isSelected={e.style['text-decoration'] === 'line-through'}
             isDisabled={disabled}
             onPress={() => e.attempt(() => e.toggleFormat('text-decoration', 'line-through'))}
-          >
-            <s>S</s>
-          </Button>
-          <SelectField
-            density="compact"
-            labelLayout="control-only"
-            size="sm"
-            className="se-editor__font-family"
+          />
+          <FormatSelector
+            embedded={embedded}
             label="Font family"
+            className="se-editor__font-family"
             value={e.style['font-family'] ?? 'sans-serif'}
-            isDisabled={disabled}
+            disabled={disabled}
+            icon={editorGlyphs.fontFamily}
             options={['sans-serif', 'serif', 'monospace', 'Arial', 'Georgia', 'Verdana'].map(
               (id) => ({ id, label: id }),
             )}
-            onChange={(value) => e.attempt(() => e.format({ 'font-family': String(value) }))}
+            onChange={(value) => e.attempt(() => e.format({ 'font-family': value }))}
           />
-          <SelectField
-            density="compact"
-            labelLayout="control-only"
-            size="sm"
-            className="se-editor__font-size"
+          <FormatSelector
+            embedded={embedded}
             label="Font size"
+            className="se-editor__font-size"
             value={e.style['font-size'] ?? '12px'}
-            isDisabled={disabled}
+            disabled={disabled}
+            icon={editorGlyphs.fontSize}
             options={[10, 11, 12, 14, 16, 18, 24, 32].map((size) => ({
               id: `${size}px`,
               label: String(size),
             }))}
-            onChange={(value) => e.attempt(() => e.format({ 'font-size': String(value) }))}
+            onChange={(value) => e.attempt(() => e.format({ 'font-size': value }))}
           />
           {!embedded && (
             <>
               <ColorField
+                tracksChanges={false}
+                menu={['clear']}
                 density="compact"
                 labelLayout="control-only"
                 size="sm"
@@ -282,6 +346,8 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
                 onChange={(value) => e.attempt(() => e.format({ color: value }))}
               />
               <ColorField
+                tracksChanges={false}
+                menu={['clear']}
                 density="compact"
                 labelLayout="control-only"
                 size="sm"
@@ -293,28 +359,21 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
               />
             </>
           )}
-        </div>
-        <div className="se-editor__tool-group" role="group" aria-label="Number formatting">
-          <SelectField
-            density="compact"
-            labelLayout="control-only"
-            size="sm"
-            className="se-editor__number-format"
+        </ToolbarRowGroup>
+        <ToolbarRowSeparator />
+        <ToolbarRowGroup className="se-editor__tool-group" aria-label="Number formatting">
+          <FormatSelector
+            embedded={embedded}
             label="Number format"
+            className="se-editor__number-format"
             value={e.cellFormat.kind}
-            isDisabled={disabled}
-            options={[
-              'general',
-              'number',
-              'percent',
-              'currency',
-              'scientific',
-              'fraction',
-              'date',
-              'time',
-              'datetime',
-              'unit',
-            ].map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) }))}
+            disabled={disabled}
+            icon={numberFormatGlyphs[e.cellFormat.kind]}
+            options={Object.entries(numberFormatGlyphs).map(([id, icon]) => ({
+              id,
+              icon,
+              label: id[0].toUpperCase() + id.slice(1),
+            }))}
             onChange={(value) =>
               e.attempt(() =>
                 e.format(
@@ -328,23 +387,21 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             }
           />
           {e.cellFormat.kind === 'unit' && (
-            <SelectField
-              className="se-editor__number-format"
+            <FormatSelector
+              embedded={embedded}
               label="Display unit"
-              density="compact"
-              labelLayout="control-only"
-              size="sm"
+              className="se-editor__number-format"
               value={e.cellFormat.unit ?? 'mm'}
-              isDisabled={disabled}
+              disabled={disabled}
+              icon={editorGlyphs.unit}
               options={UNIT_PRESETS.map((unit) => ({ id: unit, label: unit }))}
-              onChange={(unit) =>
-                e.attempt(() => e.format({}, { ...e.cellFormat, unit: String(unit) }))
-              }
+              onChange={(unit) => e.attempt(() => e.format({}, { ...e.cellFormat, unit }))}
             />
           )}
           <Button
             size="sm"
-            aria-label="Increase decimal places"
+            icon={editorGlyphs.increaseDecimals}
+            label="Increase decimal places"
             tooltip="Increase decimal places"
             isDisabled={disabled}
             onPress={() =>
@@ -358,12 +415,11 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
                 ),
               )
             }
-          >
-            .00+
-          </Button>
+          />
           <Button
             size="sm"
-            aria-label="Decrease decimal places"
+            icon={editorGlyphs.decreaseDecimals}
+            label="Decrease decimal places"
             tooltip="Decrease decimal places"
             isDisabled={disabled}
             onPress={() =>
@@ -377,49 +433,69 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
                 ),
               )
             }
-          >
-            .0−
-          </Button>
-        </div>
-        <div className="se-editor__tool-group" role="group" aria-label="Cell layout">
-          <MenuButton label="Align cells" items={menus.align} disabled={disabled} grid />
+          />
+        </ToolbarRowGroup>
+        <ToolbarRowSeparator />
+        <ToolbarRowGroup className="se-editor__tool-group" aria-label="Cell layout">
+          <MenuButton
+            label="Align cells"
+            icon={editorGlyphs.align}
+            items={menus.align}
+            disabled={disabled}
+            iconOnly={embedded}
+          />
           <MenuButton
             label="Borders"
-            items={menus.borders.slice(0, 6).map((item, index) => ({
-              ...item,
-              icon: <BorderGlyph side={['top', 'left', 'all', 'right', 'bottom', 'none'][index]} />,
-            }))}
+            icon={editorGlyphs.borders}
+            items={menus.borders}
             disabled={disabled}
-            grid="border"
+            iconOnly={embedded}
           />
           <Button
             size="sm"
+            icon={embedded ? editorGlyphs.wrap : undefined}
+            startIcon={embedded ? undefined : editorGlyphs.wrap}
+            label="Wrap text"
+            tooltip="Wrap text"
             isDisabled={disabled}
             isSelected={e.style['white-space'] === 'pre-wrap'}
             onPress={() => e.attempt(() => e.toggleFormat('white-space', 'pre-wrap'))}
           >
-            Wrap text
+            {embedded ? undefined : 'Wrap text'}
           </Button>
           <Button
             size="sm"
+            icon={embedded ? editorGlyphs.merge : undefined}
+            startIcon={embedded ? undefined : editorGlyphs.merge}
+            label="Merge cells"
+            tooltip="Merge cells"
             onPress={() => e.attempt(() => e.merge())}
             isDisabled={
               !e.canEdit || (e.selection.x1 === e.selection.x2 && e.selection.y1 === e.selection.y2)
             }
           >
-            Merge cells
+            {embedded ? undefined : 'Merge cells'}
           </Button>
           <Button
             size="sm"
+            icon={embedded ? editorGlyphs.unmerge : undefined}
+            startIcon={embedded ? undefined : editorGlyphs.unmerge}
+            label="Unmerge cells"
+            tooltip="Unmerge cells"
             onPress={() => e.attempt(() => e.merge(true))}
             isDisabled={!e.canEdit || !Object.keys(e.sheet.mergeCells ?? {}).length}
           >
-            Unmerge cells
+            {embedded ? undefined : 'Unmerge cells'}
           </Button>
-        </div>
-      </ToolbarScroller>
+        </ToolbarRowGroup>
+      </ToolbarRow>
       {!embedded && (
-        <div className="se-editor__actions" role="group" aria-label="Spreadsheet commands">
+        <ToolbarRow
+          role="group"
+          className="se-editor__actions"
+          aria-label="Spreadsheet commands"
+          justify="start"
+        >
           <Button size="sm" onPress={() => e.attempt(menus.appendRow)} isDisabled={!e.canEdit}>
             Add row
           </Button>
@@ -450,19 +526,11 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             {e.workbook.suggestions?.filter((item) => item.status === 'pending').length ?? 0})
           </Button>
           {e.props.onRefresh && (
-            <Button
-              isDisabled={!e.canEdit}
-              size="sm"
-              onPress={() =>
-                e.attempt(async () => {
-                  await e.refresh();
-                })
-              }
-            >
+            <Button isDisabled={!e.canEdit} size="sm" onPress={() => e.attempt(() => e.refresh())}>
               Refresh data
             </Button>
           )}
-        </div>
+        </ToolbarRow>
       )}
     </div>
   );

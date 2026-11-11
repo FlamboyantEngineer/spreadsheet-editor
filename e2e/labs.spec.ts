@@ -47,17 +47,18 @@ for (const width of [1440, 768, 390]) {
       const bar = root.querySelector('.se-editor__formula-bar')!.getBoundingClientRect();
       const toolbar = root.querySelector('.se-editor__toolbar')!.getBoundingClientRect();
       const input = root
-        .querySelector<HTMLInputElement>('.se-editor__formula-input input')!
+        .querySelector<HTMLTextAreaElement>('.se-editor__formula-input textarea')!
         .getBoundingClientRect();
-      const apply = Array.from(root.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Apply')!
+      const output = root
+        .querySelector('output[aria-label="Calculated cell value"]')!
         .getBoundingClientRect();
       return {
         bar: bar.height,
         toolbar: toolbar.height,
         input: input.width,
         inputSpace: root.querySelector('.se-editor__formula-input')!.getBoundingClientRect().width,
-        overlap: input.right > apply.left,
+        overlap:
+          input.right > output.left && input.bottom > output.top && input.top < output.bottom,
         overflow: document.documentElement.scrollWidth > innerWidth,
       };
     });
@@ -70,7 +71,9 @@ for (const width of [1440, 768, 390]) {
     await editor
       .getByRole('textbox', { name: 'Cell value or formula', exact: true })
       .fill('=1-(1-1E-25)');
-    await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+    await editor
+      .getByRole('textbox', { name: 'Cell value or formula', exact: true })
+      .press('Control+Enter');
     await expect(editor.getByLabel('Calculated cell value')).toHaveText('1e-25');
   });
 }
@@ -105,7 +108,7 @@ test('SE-LABS-3: dark grid uses the active theme and compact controls show their
   const cell = editor.locator('td[data-x="1"][data-y="1"]').first();
   await expect(cell).toHaveCSS('background-color', 'rgb(21, 27, 35)');
   await expect(cell).toHaveCSS('color', 'rgb(240, 246, 252)');
-  await expect(editor.locator('thead td[data-x="0"]').first()).toHaveCSS(
+  await expect(editor.locator('thead td[data-x="1"]').first()).toHaveCSS(
     'background-color',
     'rgb(13, 17, 23)',
   );
