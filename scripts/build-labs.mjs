@@ -52,6 +52,9 @@ export async function buildLabs() {
     format: 'esm',
     platform: 'node',
     target: 'node22',
+    // Resolve the Node-only adapter at runtime. Bundling ExcelJS also follows its
+    // unused optional transports (such as unzipper's S3 integration).
+    external: ['exceljs'],
     banner: {
       js: "import { createRequire as _createRequire } from 'node:module'; const require=_createRequire(import.meta.url);",
     },

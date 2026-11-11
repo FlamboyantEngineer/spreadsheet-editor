@@ -1,9 +1,10 @@
 export class LabsSetupError extends Error {}
 
 export function assertLabsNodeVersion(version = process.versions.node) {
-  if (Number(version.split('.')[0]) < 22) {
+  const [major, minor] = version.split('.').map(Number);
+  if (!(major === 22 && minor >= 13) && major < 24) {
     throw new LabsSetupError(
-      `Spreadsheet labs require Node.js 22 or newer; found ${version}. Switch Node versions, then rerun npm run labs.`,
+      `Spreadsheet labs require Node.js 22.13+ or 24+; found ${version}. Switch Node versions, then rerun npm run labs.`,
     );
   }
 }

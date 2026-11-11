@@ -99,9 +99,17 @@ function checkout(installed = false) {
   return directory;
 }
 function run(directory: string, script: string, env: NodeJS.ProcessEnv = {}) {
+  const overrides = { npm_execpath: join(directory, 'fixture tools/npm cli.js'), ...env };
+  // Windows environment names are case-insensitive. Vitest workers can inherit uppercase
+  // npm variables, which must not take precedence over this fixture's lowercase overrides.
+  const inherited = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !Object.keys(overrides).some((name) => name.toLowerCase() === key.toLowerCase()),
+    ),
+  );
   return spawnSync(process.execPath, [join(directory, 'scripts', script)], {
     cwd: directory,
-    env: { ...process.env, npm_execpath: join(directory, 'fixture tools/npm cli.js'), ...env },
+    env: { ...inherited, ...overrides },
     encoding: 'utf8',
     timeout: 15_000,
   });
@@ -248,24 +256,42 @@ describe('SE-LABS-2: self-bootstrapping portable startup', () => {
     expect(result.stderr).toContain('missing-esbuild-internal-fixture');
     expect(result.stderr).not.toContain('esbuild is missing');
   });
-  it('reports the Node requirement before attempting to install anything', () => {
+  it.each(['20.20.2', '22.12.0', '23.11.0'])(
+    'reports the Node requirement for %s before attempting to install anything',
+    (version) => {
+      const directory = checkout();
+      const script = `const m = await import(process.argv[1]); try { m.assertLabsNodeVersion(${JSON.stringify(version)}); } catch (error) { m.reportLabsError(error); }`;
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          script,
+          pathToFileURL(join(directory, 'scripts/lib/labs-setup.mjs')).href,
+        ],
+        { encoding: 'utf8' },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Node.js 22.13+ or 24+');
+      expect(result.stderr).toContain(version);
+      expect(existsSync(join(directory, 'install-calls.json'))).toBe(false);
+    },
+  );
+  it.each(['22.13.0', '22.23.4', '24.0.0', '24.22.2'])('accepts supported Node %s', (version) => {
     const directory = checkout();
-    const script =
-      'const m = await import(process.argv[1]); try { m.assertLabsNodeVersion("20.19.0"); } catch (error) { m.reportLabsError(error); }';
     const result = spawnSync(
       process.execPath,
       [
         '--input-type=module',
         '-e',
-        script,
+        'const m = await import(process.argv[1]); m.assertLabsNodeVersion(process.argv[2]);',
         pathToFileURL(join(directory, 'scripts/lib/labs-setup.mjs')).href,
+        version,
       ],
       { encoding: 'utf8' },
     );
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('Node.js 22 or newer');
-    expect(result.stderr).toContain('20.19.0');
-    expect(existsSync(join(directory, 'install-calls.json'))).toBe(false);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
   });
   it('prepares a Git dependency with spaces in its path without npm.cmd or a shell', () => {
     const directory = checkout();
