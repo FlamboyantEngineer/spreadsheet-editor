@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from '@testing-library/react';
+import { UiProvider } from '@flamboyantengineer/ui-components/core';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
@@ -189,6 +190,33 @@ describe('SE-CHROME-1 / SE-CONTEXT-1: shared command presentation', () => {
 });
 
 describe('SE-CHROME-4: embedded icon toolbar', () => {
+  it('renders new border and merge glyphs through public provider overrides and retains their commands', async () => {
+    const user = userEvent.setup();
+    const { editor } = fixture({ chrome: 'embedded' });
+    render(
+      <UiProvider
+        icons={{
+          'table-border-top': () => <svg data-testid="provided-border-top" aria-hidden="true" />,
+          'merge-cells': () => <svg data-testid="provided-merge" aria-hidden="true" />,
+        }}
+      >
+        <EditorToolbar editor={editor} />
+      </UiProvider>,
+    );
+    const merge = screen.getByRole('button', { name: 'Merge cells' });
+    expect(merge.querySelector('[data-testid="provided-merge"]')).toBeTruthy();
+    await user.click(merge);
+    expect(editor.merge).toHaveBeenCalledWith();
+    await user.click(screen.getByRole('button', { name: 'Borders' }));
+    const top = screen.getByRole('menuitem', { name: 'Top borders' });
+    expect(top.querySelector('[data-testid="provided-border-top"]')).toBeTruthy();
+    const outside = screen.getByRole('menuitem', { name: 'Outside borders' });
+    expect(outside.querySelectorAll('svg path').length).toBeGreaterThan(1);
+    expect(outside.querySelector('path[stroke-dasharray]')).toBeTruthy();
+    await user.click(top);
+    expect(editor.border).toHaveBeenCalledWith('top');
+  });
+
   it('renders named glyph-only controls using the public toolbar layout, including unit and Save actions', () => {
     const { editor } = fixture(
       { chrome: 'embedded', onSave: vi.fn() },

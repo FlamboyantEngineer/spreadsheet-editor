@@ -8,7 +8,7 @@ A standalone React spreadsheet editor built on [`@flamboyantengineer/ui-componen
 - Threaded comments with replies, editing, reactions, resolve/reopen and cell markers. Reviewing mode records cell and formatting suggestions with explicit acceptance/rejection and conflict checks.
 - Cross-sheet formulas, ranges, undo/redo, row/column insertion and deletion, reference rewriting, resizing, frozen columns, merged cells and independent editor instances.
 - Document insertion as an ordinary table snapshot or an editable spreadsheet retaining live formulas.
-- The [icon request and checked upstream patch](docs/UI-COMPONENTS-ICON-REQUEST.md) cover dedicated formatting glyphs; current controls use existing public library icons.
+- Uses dedicated public ui-components glyphs for formatting, borders, alignment, comments and file commands. [Glyph coverage](docs/UI-COMPONENTS-ICON-REQUEST.md) records the public exports.
 - Unstyled React chrome using the base library's menus, controls, panels, comment threads, composers, formula bar and zoom control. The grid uses the extracted Jspreadsheet React host. Hosts own presentation; labs provide a reference stylesheet.
 
 This private `0.x` package is the standalone extraction stage. Consumer migrations are separate: neither the existing application nor `document-editor` is changed here. Storage, authentication, collaboration transports, durable history and application workflow services remain host responsibilities.
