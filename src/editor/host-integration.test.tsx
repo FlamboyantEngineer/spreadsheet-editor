@@ -10,6 +10,25 @@ import { formulaFunctionCatalog } from './public-host.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 
 describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
+  it('uses the host factory for worksheet identities and publishes that same identity', () => {
+    const onChange = vi.fn();
+    let sequence = 0;
+    const idFactory = (kind: string) => `host-${kind}-${++sequence}`;
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ defaultValue: createWorkbook(), idFactory, onChange }),
+    );
+    act(() => {
+      result.current.sheetCommand('add');
+    });
+    const sheet = result.current.workbook.worksheets.at(-1)!;
+    expect(sheet.id).toBe('host-sheet-1');
+    expect(onChange.mock.calls[0][1].operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'sheet-add',
+        sheet: expect.objectContaining({ id: sheet.id }),
+      }),
+    );
+  });
   it('rejects the host transaction before accepting data/history and retains its draft for save/flush', async () => {
     const editorRef = createRef<SpreadsheetEditorHandle>(),
       onSave = vi.fn();

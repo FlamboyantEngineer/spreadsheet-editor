@@ -1071,6 +1071,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       if (command === 'add' || command === 'insert' || command === 'duplicate') {
         next = appendWorksheet(base);
         const added = next.worksheets.at(-1)!;
+        added.id = (props.idFactory ?? createWorkbookEntityId)('sheet');
         if (command === 'insert') {
           next.worksheets.pop();
           next.worksheets.splice(
