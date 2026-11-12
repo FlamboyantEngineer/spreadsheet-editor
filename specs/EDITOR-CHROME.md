@@ -50,11 +50,15 @@ Verification: `src/editor/use-editor.test.ts`, `e2e/interaction-parity.spec.ts`,
 
 Zoom scales grid cell text, row heights, column widths and headers inside the fixed grid viewport. Editor width/height, toolbar, formula bar, worksheet tabs, sidebar and zoom controls do not scale. Default and authored grid borders and selection/reference/presence strokes remain one CSS pixel at every supported zoom level. Resizing headers converts pointer deltas back to canonical workbook dimensions; changing zoom never authors workbook geometry. Visible selection edges enclose all four sides in light and dark themes, including ranges clipped by frozen columns or scrolling.
 
+During a pointer drag, the local perimeter shall follow the engine's current highlight before the same paint. Geometry work coalesces into one queued animation frame without postponing it for later pointer events or waiting for parent selection/statistics updates. Ordinary rectangular ranges measure their corners instead of scanning every selected cell; merged or hidden endpoints retain their complete bounds. Controlled selection echoes do not interrupt the live drag or scroll its anchor back into view.
+
+Selection, formula-reference and presence overlay containers shall be clipped to the visible cell body, excluding both sticky header bands and scrollbar gutters. Header bounds use the live row and column headers as well as the corner, including at fractional zoom and across frozen columns. The vendor fill handle shall also be clipped there, so an offscreen selection cannot paint or intercept clicks over headers; scrolling back restores its visible handle.
+
 The embedded toolbar uses icon-only action triggers and the public ToolbarRow default appearance. All triggers have accessible names and tooltips. Full mode retains labelled application menus. Worksheet controls use public Tabs with a scrollable tab list with Add immediately after the final tab and a separate fixed zoom control, without an ellipsis menu, close marks or a zoom-reset control. Double-click, F2 and Rename open editing directly inside the worksheet tab. Enter/blur commits a valid unique normalized name, Escape cancels, and invalid Enter submissions remain editable with feedback (leaving an invalid field cancels). Rename and structural commands preserve pending formula edits and remap references.
 
 Implementation: `src/engine/workbook-grid.tsx`, `src/engine/worksheet-presentation.ts`, `src/engine/header-resize.ts`, `src/editor/editor-formula-bar.tsx`, `src/editor/worksheet-strip.tsx`, `src/editor/editor-toolbar.tsx`, `labs/src/reference.css`.
 
-Verification: engine/controller/component unit tests and browser editor suites cover geometry, selection, inline rename and formula ownership across the three lab presets.
+Verification: `src/engine/grid-geometry.test.ts`, `src/engine/selection-publication.test.ts`, `e2e/selection-rendering.spec.ts`, and existing editor suites cover geometry, single-frame drag updates, native fill-handle clipping, scrolling, frozen columns, inline rename and formula ownership across the three lab presets.
 
 ## SE-CHROME-6 — Chrome surfaces and grid boundaries
 

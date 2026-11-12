@@ -1,7 +1,7 @@
 'use client';
 
 import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import type {
   CellPresentationSnapshot,
   FormulaFunctionDescriptor,
@@ -13,11 +13,14 @@ import { createSelectionPublication } from './selection-publication.js';
 import { observeGridBorderCopies } from './shared-grid-borders.js';
 import {
   gridViewport,
+  gridBodyBounds,
+  clipGridSelectionHandle,
   gridZoomScale,
   measureGridSelection,
   restoreGridScroll,
   scrollGridCellIntoView,
   syncFrozenColumns,
+  syncFrozenColumnOffsets,
 } from './grid-geometry.js';
 import { useNativeFormula } from './native-formula.js';
 import { useHeaderResize, deliveredHeader } from './header-resize.js';
@@ -153,6 +156,9 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
   const latest = useRef(props),
     suppress = useRef(false),
     selecting = useRef(false);
+  const visualSelection = useRef(props.selection);
+  const draggingSelection = useRef(false);
+  const scrolled = useRef(false);
   const selectionPublication = useMemo(
     () => createSelectionPublication((range) => latest.current.onSelectionChange(range)),
     [],
@@ -200,25 +206,33 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       return;
     }
     const viewport = gridViewport(sheet) ?? root;
+    if (scrolled.current) {
+      syncFrozenColumnOffsets(sheet);
+      scrolled.current = false;
+    }
     const base = root.getBoundingClientRect(),
-      bounds = viewport.getBoundingClientRect();
+      body = gridBodyBounds(sheet, viewport);
+    const offset = { left: body.left - body.origin.left, top: body.top - body.origin.top };
+    const selectionStyles = (range: CellSelection) =>
+      measureGridSelection(sheet, current.worksheet, range, viewport).map((style) => ({
+        ...style,
+        left: Number(style.left ?? 0) - offset.left,
+        top: Number(style.top ?? 0) - offset.top,
+      }));
     setClip({
       position: 'absolute',
       pointerEvents: 'none',
       overflow: 'hidden',
       boxSizing: 'border-box',
       zIndex: 5,
-      left: bounds.left - base.left + viewport.clientLeft - root.clientLeft,
-      top: bounds.top - base.top + viewport.clientTop - root.clientTop,
-      width: viewport.clientWidth,
-      height: viewport.clientHeight,
+      left: body.left - base.left - root.clientLeft,
+      top: body.top - base.top - root.clientTop,
+      width: body.right - body.left,
+      height: body.bottom - body.top,
     });
-    const measured: typeof frames = measureGridSelection(
-      sheet,
-      current.worksheet,
-      current.selection,
-      viewport,
-    ).map((style, index) => ({ key: `local:${index}`, local: true, style }));
+    const measured: typeof frames = selectionStyles(visualSelection.current).map(
+      (style, index) => ({ key: `local:${index}`, local: true, style }),
+    );
     const seen = new Set<string>();
     for (const ref of current.formulaReferences ?? []) {
       if (seen.has(ref.normalizedKey)) continue;
@@ -240,15 +254,14 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
               (current.worksheet.minDimensions?.[1] ?? 100) - 1,
               current.worksheet.data.length - 1,
             );
-      measureGridSelection(sheet, current.worksheet, { x1, y1, x2, y2 }, viewport).forEach(
-        (style, index) =>
-          measured.push({
-            key: `${ref.normalizedKey}:${index}`,
-            style: {
-              ...style,
-              borderColor: `var(--se-reference-${ref.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_COLORS.length}, ${FORMULA_REFERENCE_HIGHLIGHT_COLORS[ref.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_COLORS.length]})`,
-            },
-          }),
+      selectionStyles({ x1, y1, x2, y2 }).forEach((style, index) =>
+        measured.push({
+          key: `${ref.normalizedKey}:${index}`,
+          style: {
+            ...style,
+            borderColor: `var(--se-reference-${ref.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_COLORS.length}, ${FORMULA_REFERENCE_HIGHLIGHT_COLORS[ref.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_COLORS.length]})`,
+          },
+        }),
       );
     }
     for (const person of current.collaborators ?? []) {
@@ -264,7 +277,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       for (const kind of ['selection', 'lock'] as const) {
         const range = kind === 'selection' ? person.selection : person.editLock;
         if (!range) continue;
-        measureGridSelection(sheet, current.worksheet, range, viewport).forEach((style, index) =>
+        selectionStyles(range).forEach((style, index) =>
           measured.push({
             key: `${person.id}:${kind}:${index}`,
             kind,
@@ -276,11 +289,20 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       }
     }
     setFrames(measured);
+    clipGridSelectionHandle(sheet, body);
   }
   function scheduleReferences() {
-    cancelAnimationFrame(frameRequest.current);
-    frameRequest.current = requestAnimationFrame(measureReferences);
+    if (frameRequest.current) return;
+    frameRequest.current = requestAnimationFrame(() => {
+      frameRequest.current = 0;
+      // The engine highlight already changed. Commit its matching outline before
+      // this paint, without waiting for parent selection/summary publication.
+      flushSync(measureReferences);
+    });
   }
+  useLayoutEffect(() => {
+    scheduleReferences();
+  }, [props.formulaReferences, props.collaborators, props.zoom, revision]);
   useEffect(() => {
     scheduleReferences();
     const observer = new ResizeObserver(scheduleReferences);
@@ -290,9 +312,13 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       cancelAnimationFrame(frameRequest.current);
       cancelAnimationFrame(focusRequest.current);
     };
-  }, [props.formulaReferences, props.collaborators, props.selection, props.zoom, revision]);
+  }, []);
   useEffect(() => {
-    const finish = () => selectionPublication.finish();
+    const finish = () => {
+      draggingSelection.current = false;
+      selectionPublication.finish();
+      scheduleReferences();
+    };
     const stop = latest.current.subscribeWindowBlur?.(finish);
     if (!stop) window.addEventListener('blur', finish);
     window.addEventListener('pointerup', finish);
@@ -319,18 +345,23 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     },
     subscribeBlur: props.subscribeWindowBlur,
   });
+  function selectGridRange(range: CellSelection, reveal: boolean) {
+    if (selecting.current) return;
+    visualSelection.current = range;
+    selecting.current = true;
+    try {
+      const sheet = worksheet();
+      sheet?.updateSelectionFromCoords?.(range.x1, range.y1, range.x2, range.y2);
+      if (sheet && reveal) scrollGridCellIntoView(sheet, range.x1, range.y1);
+    } finally {
+      selecting.current = false;
+    }
+    scheduleReferences();
+  }
   const controller = useMemo<GridController & { focus(): void }>(
     () => ({
       select(range) {
-        if (selecting.current) return;
-        selecting.current = true;
-        try {
-          const sheet = worksheet();
-          sheet?.updateSelectionFromCoords?.(range.x1, range.y1, range.x2, range.y2);
-          if (sheet) scrollGridCellIntoView(sheet, range.x1, range.y1);
-        } finally {
-          selecting.current = false;
-        }
+        selectGridRange(range, true);
       },
       getAnchor(range) {
         return (
@@ -538,7 +569,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       appliedZoom.current = props.zoom ?? 100;
       paint(handle.current, props);
       if (scale !== previousScale) restoreGridScroll(viewport, scroll, previousScale, scale);
-      if (!zoomOnly) controller.select(props.selection);
+      if (!zoomOnly && !draggingSelection.current) selectGridRange(props.selection, false);
       scheduleReferences();
     } finally {
       suppress.current = false;
@@ -553,7 +584,17 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     revision,
   ]);
   useLayoutEffect(() => {
-    if (handle.current) controller.select(props.selection);
+    const current = visualSelection.current,
+      next = props.selection;
+    if (
+      handle.current &&
+      !draggingSelection.current &&
+      (current.x1 !== next.x1 ||
+        current.y1 !== next.y1 ||
+        current.x2 !== next.x2 ||
+        current.y2 !== next.y2)
+    )
+      controller.select(next);
   }, [props.selection, controller]);
   function paint(api: JSpreadsheetHostHandle, current: WorkbookGridProps) {
     renderReviewMarkers(api, current.worksheet.id, current.comments, current.suggestions);
@@ -695,7 +736,11 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         event.stopPropagation();
         latest.current.onContextMenu(coords, cell.getBoundingClientRect());
       }}
-      onScrollCapture={scheduleReferences}
+      onScrollCapture={(event) => {
+        const sheet = worksheet();
+        if (sheet && event.target === gridViewport(sheet)) scrolled.current = true;
+        scheduleReferences();
+      }}
       onInputCapture={(event) => {
         if (inCell.current) native.onInput(event);
       }}
@@ -719,8 +764,10 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       }}
       onPointerDownCapture={(event) => {
         if (resize.start(event)) return;
-        if (event.button === 0 && !latest.current.pickingFormula && !inCell.current)
+        if (event.button === 0 && !latest.current.pickingFormula && !inCell.current) {
+          draggingSelection.current = true;
           selectionPublication.start();
+        }
         const header = deliveredHeader(event, surface.current);
         selectedHeader.current = header?.axis ?? null;
         if (header) event.currentTarget.focus({ preventScroll: true });
@@ -755,6 +802,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         if (cell) picking.current = { ...picking.current, x2: cell.x, y2: cell.y };
       }}
       onPointerUp={(event) => {
+        draggingSelection.current = false;
         selectionPublication.finish();
         if (resize.finish(event)) return;
         if (!picking.current) return;
@@ -767,11 +815,15 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       }}
       onPointerLeave={() => setHoveredPeer(null)}
       onPointerCancel={() => {
+        draggingSelection.current = false;
         selectionPublication.finish();
         resize.cancel();
         picking.current = null;
       }}
-      onLostPointerCapture={() => selectionPublication.finish()}
+      onLostPointerCapture={() => {
+        draggingSelection.current = false;
+        selectionPublication.finish();
+      }}
     >
       <JSpreadsheetHost
         ref={handle}
@@ -817,8 +869,11 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         onSelectionChange={(range) => {
           // CE selects merge anchors while constructing or changing merges. Those
           // presentation callbacks must not replace the host's current selection.
-          if (applied.current && !suppress.current && !selecting.current)
+          if (applied.current && !suppress.current && !selecting.current) {
+            visualSelection.current = range;
+            scheduleReferences();
             selectionPublication.update(range);
+          }
         }}
         onContextMenuRequest={props.onContextMenu}
         onCellCommentRequest={props.onCommentRequest}

@@ -75,6 +75,30 @@ export function syncFrozenColumns(engine: JSpreadsheetWorksheetInstance) {
   }
 }
 
+/** Restore sticky offsets after CE's scroll handler writes relative-scroll offsets over them. */
+export function syncFrozenColumnOffsets(engine: JSpreadsheetWorksheetInstance) {
+  const count = engine.options?.freezeColumns ?? 0;
+  if (!count) return;
+  let left =
+    engine.table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect().width ??
+    DEFAULT_ROW_HEADER_WIDTH;
+  const positioned = new Set<HTMLElement>();
+  for (let x = 0; x < count; x++) {
+    const offset = `${left}px`,
+      header = engine.headers?.[x];
+    if (header && header.style.left !== offset) header.style.left = offset;
+    for (const row of engine.records ?? []) {
+      const cell = row?.[x]?.element;
+      if (!(cell instanceof HTMLElement) || positioned.has(cell)) continue;
+      positioned.add(cell);
+      if (cell.style.left !== offset) cell.style.left = offset;
+    }
+    const col = engine.cols?.[x]?.colElement;
+    if (col?.style.display !== 'none')
+      left += Number.parseFloat(col?.style.width || col?.getAttribute('width') || '0') || 0;
+  }
+}
+
 /** Resolve hidden merged-over endpoints to the complete selected merge span. */
 export function expandMergedSelection(range: CellSelection, sheet: Worksheet): CellSelection {
   const result = {
@@ -119,6 +143,52 @@ interface Box {
   bottom: number;
 }
 
+/** The visible cell body excludes both sticky header bands and scrollbar gutters. */
+export function gridBodyBounds(engine: JSpreadsheetWorksheetInstance, viewport: HTMLElement) {
+  const bounds = viewport.getBoundingClientRect();
+  const origin = { left: bounds.left + viewport.clientLeft, top: bounds.top + viewport.clientTop };
+  const right = origin.left + viewport.clientWidth,
+    bottom = origin.top + viewport.clientHeight;
+  const corner = engine.table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect();
+  const column = engine.headers
+    ?.find((header) => header?.getBoundingClientRect().height > 0)
+    ?.getBoundingClientRect();
+  const row = engine.rows
+    ?.find((row) => (row?.element?.firstElementChild?.getBoundingClientRect().width ?? 0) > 0)
+    ?.element.firstElementChild?.getBoundingClientRect();
+  return {
+    origin,
+    left: Math.min(
+      right,
+      Math.max(origin.left, corner?.right ?? origin.left, row?.right ?? origin.left),
+    ),
+    top: Math.min(
+      bottom,
+      Math.max(origin.top, corner?.bottom ?? origin.top, column?.bottom ?? origin.top),
+    ),
+    right,
+    bottom,
+  };
+}
+
+/** CE's absolutely positioned fill handle must not paint or intercept clicks over headers. */
+export function clipGridSelectionHandle(engine: JSpreadsheetWorksheetInstance, body: Box) {
+  const handle = engine.corner;
+  if (!handle) return;
+  const rect = handle.getBoundingClientRect();
+  const top = Math.max(0, body.top - rect.top),
+    right = Math.max(0, rect.right - body.right),
+    bottom = Math.max(0, rect.bottom - body.bottom),
+    left = Math.max(0, body.left - rect.left);
+  const clip =
+    top + bottom >= rect.height || left + right >= rect.width
+      ? 'inset(50%)'
+      : top || right || bottom || left
+        ? `inset(${top}px ${right}px ${bottom}px ${left}px)`
+        : '';
+  if (handle.style.clipPath !== clip) handle.style.clipPath = clip;
+}
+
 /** CSS-pixel outline fragments, clipped behind headers and frozen cells.
  * Clipped edges carry no stroke: scrolling must not invent a selection edge.
  */
@@ -129,14 +199,12 @@ export function measureGridSelection(
   viewport: HTMLElement,
 ): CSSProperties[] {
   const range = expandMergedSelection(selection, sheet);
-  const bounds = viewport.getBoundingClientRect();
-  const origin = { left: bounds.left + viewport.clientLeft, top: bounds.top + viewport.clientTop };
-  const viewportRight = origin.left + viewport.clientWidth,
-    viewportBottom = origin.top + viewport.clientHeight;
-  const table = engine.table;
-  const headerBottom =
-    table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect().bottom ?? origin.top;
-  const cornerRight = table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect().right ?? origin.left;
+  const body = gridBodyBounds(engine, viewport),
+    { origin } = body;
+  const viewportRight = body.right,
+    viewportBottom = body.bottom,
+    headerBottom = body.top,
+    cornerRight = body.left;
   const frozenCount = sheet.freezeColumns ?? 0;
   const frozenRight = frozenCount
     ? Math.max(
@@ -145,27 +213,61 @@ export function measureGridSelection(
       )
     : cornerRight;
   const boxes: [Box | undefined, Box | undefined] = [undefined, undefined];
-  const measured = new Set<HTMLElement>();
+  const hasMerges = Object.entries(sheet.mergeCells ?? {}).some(([address, [width, height]]) => {
+    const start = parseSpreadsheetAddress(address);
+    return (
+      start &&
+      start.x <= range.x2 &&
+      start.x + width > range.x1 &&
+      start.y <= range.y2 &&
+      start.y + height > range.y1
+    );
+  });
+  const measured = new Map<HTMLElement, DOMRect | null>();
+  function cellRect(x: number, y: number) {
+    const cell = engine.getCellFromCoords?.(x, y);
+    if (!cell || cell.style.display === 'none') return null;
+    if (measured.has(cell)) return measured.get(cell)!;
+    const rect = cell.getBoundingClientRect(),
+      visible = rect.width > 0 && rect.height > 0 ? rect : null;
+    measured.set(cell, visible);
+    return visible;
+  }
+  function include(rect: DOMRect, part: 0 | 1) {
+    const old = boxes[part];
+    boxes[part] = old
+      ? {
+          left: Math.min(old.left, rect.left),
+          top: Math.min(old.top, rect.top),
+          right: Math.max(old.right, rect.right),
+          bottom: Math.max(old.bottom, rect.bottom),
+        }
+      : { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+  }
   const lastY = Math.min(range.y2, (engine.records?.length ?? range.y2 + 1) - 1);
-  for (let y = Math.max(0, range.y1); y <= lastY; y++) {
-    const lastX = Math.min(range.x2, (engine.cols?.length ?? range.x2 + 1) - 1);
-    for (let x = Math.max(0, range.x1); x <= lastX; x++) {
-      const cell = engine.getCellFromCoords?.(x, y);
-      if (!cell || cell.style.display === 'none' || measured.has(cell)) continue;
-      measured.add(cell);
-      const rect = cell.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) continue;
-      const part = x < frozenCount ? 0 : 1;
-      const old = boxes[part];
-      boxes[part] = old
-        ? {
-            left: Math.min(old.left, rect.left),
-            top: Math.min(old.top, rect.top),
-            right: Math.max(old.right, rect.right),
-            bottom: Math.max(old.bottom, rect.bottom),
-          }
-        : { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
-    }
+  const firstY = Math.max(0, range.y1),
+    lastX = Math.min(range.x2, (engine.cols?.length ?? range.x2 + 1) - 1);
+  for (const part of [0, 1] as const) {
+    const firstX = Math.max(0, range.x1, part === 1 ? frozenCount : 0),
+      endX = Math.min(lastX, part === 0 ? frozenCount - 1 : lastX);
+    if (endX < firstX || lastY < firstY) continue;
+    // Ordinary rectangular grids need only their corners, independent of selected area.
+    const corners = hasMerges
+      ? []
+      : [
+          [firstX, firstY],
+          [endX, firstY],
+          [firstX, lastY],
+          [endX, lastY],
+        ].map(([x, y]) => cellRect(x, y));
+    if (corners.length && corners.every((rect): rect is DOMRect => rect !== null)) {
+      for (const rect of corners) include(rect, part);
+    } else
+      for (let y = firstY; y <= lastY; y++)
+        for (let x = firstX; x <= endX; x++) {
+          const rect = cellRect(x, y);
+          if (rect) include(rect, part);
+        }
   }
   return boxes.flatMap((box, index) => {
     if (!box) return [];
