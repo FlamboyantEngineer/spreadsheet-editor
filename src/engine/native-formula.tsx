@@ -17,6 +17,7 @@ import {
 } from '../model/formula-reference-parser.js';
 import { formulaFunctionCatalog, type FormulaFunctionDescriptor } from '../editor/public-host.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import { fitNativeCellEditor } from './native-cell-editor.js';
 
 /** React completion UI attached to the exact native editor published by CE's edition tuple. */
 export function useNativeFormula(
@@ -25,6 +26,7 @@ export function useNativeFormula(
   functions?: readonly FormulaFunctionDescriptor[],
 ) {
   const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const releaseEditor = useRef<(() => void) | null>(null);
   const [value, setValue] = useState('');
   const [mirror, setMirror] = useState<CSSProperties>({});
   const [scroll, setScroll] = useState(0);
@@ -44,6 +46,8 @@ export function useNativeFormula(
       zIndex: 6,
       overflow: 'hidden',
       whiteSpace: 'pre',
+      display: 'flex',
+      alignItems: control instanceof HTMLInputElement ? 'center' : 'flex-start',
       left: box.left - base.left - container.clientLeft,
       top: box.top - base.top - container.clientTop,
       width: box.width,
@@ -91,14 +95,16 @@ export function useNativeFormula(
       const edition = (sheet as { edition?: [HTMLElement] } | null)?.edition;
       const control = edition?.[0]?.firstElementChild;
       if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
-        // Vendor inputs do not inherit the cell's font in every host stylesheet.
-        control.style.font = getComputedStyle(edition![0]).font;
+        releaseEditor.current?.();
+        releaseEditor.current = fitNativeCellEditor(edition![0], control);
         input.current = control;
         track();
       }
     });
   }
   function end() {
+    releaseEditor.current?.();
+    releaseEditor.current = null;
     input.current = null;
     setValue('');
     setOpen(false);
@@ -154,7 +160,7 @@ export function useNativeFormula(
   );
   const overlay = highlighted && (
     <div className="se-editor__native-formula" aria-hidden="true" style={mirror}>
-      <span style={{ display: 'block', transform: `translateX(${-scroll}px)` }}>
+      <span style={{ display: 'block', flex: '0 0 auto', transform: `translateX(${-scroll}px)` }}>
         {buildFormulaReferenceTokenSegments(value, references).map((segment, index) => (
           <span
             key={index}

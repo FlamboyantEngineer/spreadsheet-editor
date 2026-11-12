@@ -42,9 +42,11 @@ Verification: `e2e/full-editor.spec.ts` (SE-CONTEXT-1, SE-CHROME-2, SE-REVIEW-5)
 
 The engine root remains mounted through cell/style/geometry changes. Protected edits defer data/presentation replacement until commit/cancel. Fractional header resize previews only engine measure channels and commits one immutable workbook change on release; Escape, blur, pointer cancellation, permission loss and teardown restore original measures. Optional host blur subscriptions avoid requiring a global application event bus. Row/column header menus and header Delete/Backspace use canonical structural commands; changes intersecting merges require shared-modal confirmation. Worksheets support insert-before and wraparound left/right moves.
 
+Native text entry shall fit inside the existing cell or complete merged span without changing row heights, column widths or neighboring cell positions. Its input stays out of table sizing, inherits the cell's font, padding and text color, and restores temporary positioning on commit/cancel. Frozen anchors retain sticky positioning. Text and formula-reference highlighting remain visible in both themes; the formula mirror follows single-line input alignment instead of moving merged-cell text to the top of its span.
+
 `onSave` receives a cancellation signal, stable request id and manual/autosave kind. `autosaveMs` opts in. Saving never starts merely from viewing or selecting. Manual saves coalesce and queue after autosave; later edits remain dirty. Only autosave 503 errors retry quietly with bounded backoff. Historical views force Reading and keep the host-controlled banner until the host restores the current version. The full preset keeps an additional dedicated Suggestions pane; hosts may replace built-in panels.
 
-Verification: `src/editor/use-editor.test.ts`, `e2e/interaction-parity.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-COMPATIBILITY.md).
+Verification: `src/editor/use-editor.test.ts`, `e2e/native-cell-editing.spec.ts`, `e2e/interaction-parity.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-COMPATIBILITY.md).
 
 ## SE-CHROME-5 — Grid zoom and visual integration
 
@@ -66,9 +68,11 @@ Cell secondary clicks cancel the browser context menu before opening the shared 
 
 Unstyled cells use the library canvas token (white in light mode); row and column headers use the slightly shaded surface token. Authored fills and selected-cell/header states retain their meaning. Toolbar rows use the canvas background and popup menus keep the library's default menu surface. The full menubar spans the editor width without a border. Full-mode action buttons share one scrolling icon toolbar; font, size, color, number-format and unit fields remain readable controls. The embedded action trigger uses the public three-line glyph and a standard bordered button variant, inset from the toolbar edge. FormulaBar has no extra surrounding box; the address and formula fields retain their normal borders.
 
+Sticky header backgrounds stay opaque, including selected headers: the selection token is tinted over the surface instead of exposing cells beneath it. Column headers own their bottom border, and row headers and the corner own their right border, so these one-pixel edges stay visible while cells scroll underneath. The adjacent resting cell omits its duplicate default seam; authored and clipboard borders retain their own paint. Header content pixels remain unchanged during vertical/horizontal scrolling in both themes and at fractional zoom.
+
 Add Worksheet sits immediately after the last worksheet inside the scrolling tab list, including when tabs overflow. Zoom remains separate at the trailing end or on a second mobile row. The grid reserves its own vertical scrollbar gutter and confines overlays to its viewport; a collapsed or expanded dock panel cannot cover the scrollbar.
 
-Verification: `e2e/chrome-layout.spec.ts`, `src/editor/editor-toolbar.test.tsx`, existing editor and lab browser suites.
+Verification: `e2e/sticky-headers.spec.ts`, `e2e/chrome-layout.spec.ts`, `src/editor/editor-toolbar.test.tsx`, existing editor and lab browser suites.
 
 ## SE-CHROME-7 — Text size and color controls
 
