@@ -1,4 +1,6 @@
 import type { CellValue } from '../calculation/values.js';
+import type { ReactNode } from 'react';
+import type { CellPresentationSnapshot, RenderCellContent } from '../editor/public-host.js';
 import type { DisplayOptions } from '../calculation/format.js';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
 import { collaboratorColorIndex } from '../model/presence.js';
@@ -20,6 +22,48 @@ function worksheetFrom(handle: JSpreadsheetHostHandle): JSpreadsheetWorksheetIns
       ? instance.worksheets?.[0]
       : (instance as JSpreadsheetWorksheetInstance);
 }
+export interface GridDraft {
+  x: number;
+  y: number;
+  text: string;
+}
+export interface CellPortal {
+  key: string;
+  target: HTMLElement;
+  content: ReactNode;
+}
+export interface GridCellPresentation {
+  sheetId: string;
+  publication?: { inputKey: string; revision: number };
+  readyCells?: ReadonlySet<string>;
+  cellPresentation?: CellPresentationSnapshot;
+  renderCellContent?: RenderCellContent;
+  draft?: GridDraft;
+}
+const previousPresentations = new WeakMap<JSpreadsheetHostHandle, Set<HTMLElement>>();
+const portalTargets = new WeakMap<HTMLElement, HTMLElement>();
+const presentationTitles = new WeakMap<HTMLElement, string>();
+function clearCellPresentation(cell: HTMLElement) {
+  if (cell.dataset.sePresentation !== undefined) {
+    if (cell.title === presentationTitles.get(cell)) cell.removeAttribute('title');
+    presentationTitles.delete(cell);
+    cell.removeAttribute('aria-description');
+    delete cell.dataset.sePresentation;
+    delete cell.dataset.seDecoration;
+    delete cell.dataset.sePresentationStatus;
+  }
+}
+
+/** Release only presentation owned by this renderer; authored styles remain untouched. */
+export function clearCalculatedPresentation(handle: JSpreadsheetHostHandle) {
+  for (const cell of previousPresentations.get(handle) ?? []) {
+    clearCellPresentation(cell);
+    const target = portalTargets.get(cell);
+    if (target) target.remove();
+    portalTargets.delete(cell);
+  }
+  previousPresentations.delete(handle);
+}
 /** Only engine-owned cells are painted; raw data and formulas remain untouched. */
 export function renderCalculatedCells(
   handle: JSpreadsheetHostHandle,
@@ -29,9 +73,21 @@ export function renderCalculatedCells(
   unavailableText = '…',
   formats: Record<string, CellFormat> = {},
   showFormulas = false,
-): void {
+  presentation?: GridCellPresentation,
+): CellPortal[] {
   const worksheet = worksheetFrom(handle);
-  if (!worksheet?.getCellFromCoords) return;
+  if (!worksheet?.getCellFromCoords) return [];
+  const portals: CellPortal[] = [];
+  const touched = new Set<HTMLElement>();
+  const previous = previousPresentations.get(handle) ?? new Set<HTMLElement>();
+  for (const cell of previous) clearCellPresentation(cell);
+  const accepted = presentation?.publication;
+  const hints =
+    accepted &&
+    presentation?.cellPresentation?.inputKey === accepted.inputKey &&
+    presentation.cellPresentation.revision === accepted.revision
+      ? presentation.cellPresentation.cells
+      : undefined;
   const visible: CellValue[][] =
     values ??
     raw.map((row) =>
@@ -47,18 +103,91 @@ export function renderCalculatedCells(
     row.forEach((value, x) => {
       const cell = worksheet.getCellFromCoords?.(x, y);
       if (!cell || cell.classList.contains('editor')) return;
-      const text =
-        showFormulas &&
-        typeof raw[y]?.[x] === 'string' &&
-        String(raw[y][x]).trimStart().startsWith('=')
-          ? String(raw[y][x])
-          : formatWorksheetCell(value, formats[formatSpreadsheetAddress(x, y)], display);
-      if (cell.textContent !== text) cell.textContent = text;
+      const key = JSON.stringify([presentation?.sheetId, x, y]);
+      const draft = presentation?.draft;
+      const drafting = draft?.x === x && draft.y === y;
+      const ready = !drafting && (!presentation?.readyCells || presentation.readyCells.has(key));
+      const hint = ready ? hints?.[key] : undefined;
+      const authoredFormat = formats[formatSpreadsheetAddress(x, y)];
+      const format: CellFormat | undefined =
+        hint?.defaultUnit && !authoredFormat
+          ? { kind: 'unit', unit: hint.defaultUnit }
+          : authoredFormat;
+      const calculatedText = formatWorksheetCell(value, format, display);
+      const text = drafting
+        ? draft.text
+        : !ready && raw[y]?.[x] !== null && raw[y]?.[x] !== undefined && raw[y]?.[x] !== ''
+          ? unavailableText
+          : showFormulas &&
+              typeof raw[y]?.[x] === 'string' &&
+              String(raw[y][x]).trimStart().startsWith('=')
+            ? String(raw[y][x])
+            : (hint?.text ?? calculatedText);
+      touched.add(cell);
+      if (hint) {
+        cell.dataset.sePresentation = '';
+        if (hint.tooltip) {
+          cell.title = hint.tooltip;
+          presentationTitles.set(cell, hint.tooltip);
+        }
+        if (hint.ariaDescription) cell.setAttribute('aria-description', hint.ariaDescription);
+        if (hint.decoration) cell.dataset.seDecoration = hint.decoration;
+        if (hint.status) cell.dataset.sePresentationStatus = hint.status;
+      }
+      const content =
+        accepted && ready && presentation?.renderCellContent
+          ? presentation.renderCellContent({
+              cellKey: key,
+              sheetId: presentation.sheetId,
+              x,
+              y,
+              inputKey: accepted.inputKey,
+              revision: accepted.revision,
+              rawInput: raw[y]?.[x] ?? null,
+              value,
+              presentation: hint,
+              calculatedText,
+            })
+          : undefined;
+      if (content !== undefined && !showFormulas) {
+        let target = portalTargets.get(cell);
+        if (!target || target.parentElement !== cell) {
+          target = cell.ownerDocument.createElement('span');
+          target.className = 'se-editor__cell-content';
+          cell.replaceChildren(target);
+          portalTargets.set(cell, target);
+        }
+        portals.push({ key, target, content });
+      } else {
+        const target = portalTargets.get(cell);
+        if (target || cell.textContent !== text) cell.textContent = text;
+        portalTargets.delete(cell);
+      }
       cell.dataset.approximate = String(
         typeof value === 'object' && value !== null && value.kind === 'number' && value.approximate,
       );
     }),
   );
+  if (presentation?.draft) {
+    const { x, y, text } = presentation.draft;
+    const cell = worksheet.getCellFromCoords(x, y);
+    if (cell && !cell.classList.contains('editor')) {
+      cell.textContent = text;
+      cell.dataset.approximate = 'false';
+      clearCellPresentation(cell);
+      portalTargets.delete(cell);
+      touched.add(cell);
+    }
+  }
+  for (const cell of previous)
+    if (!touched.has(cell)) {
+      const target = portalTargets.get(cell);
+      if (target) target.remove();
+      portalTargets.delete(cell);
+      if (!cell.classList.contains('editor')) cell.textContent = '';
+    }
+  previousPresentations.set(handle, touched);
+  return portals;
 }
 export function renderReviewMarkers(
   handle: JSpreadsheetHostHandle,

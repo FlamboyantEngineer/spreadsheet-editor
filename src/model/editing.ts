@@ -1,6 +1,13 @@
-import { copyWorkbook, assertWorkbook, type CellInput, type Workbook } from './workbook.js';
+import {
+  copyWorkbook,
+  assertWorkbook,
+  DEFAULT_WORKBOOK_LIMITS,
+  type CellInput,
+  type Workbook,
+} from './workbook.js';
 import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 import type { CellFormat } from './review.js';
+import { extendWorksheetIdentities } from './extent.js';
 
 export interface CellSelection {
   x1: number;
@@ -66,8 +73,10 @@ export function writeCells(
     row.forEach((value, dx) => {
       while (sheet.data[y + dy].length <= x + dx) sheet.data[y + dy].push(null);
       sheet.data[y + dy][x + dx] = value;
+      if (sheet.inputValues) delete sheet.inputValues[formatSpreadsheetAddress(x + dx, y + dy)];
     });
   });
+  extendWorksheetIdentities(sheet);
   assertWorkbook(next);
   return next;
 }
@@ -143,7 +152,10 @@ export function clearSelection(
     if (formatting) {
       if (sheet.style) delete sheet.style[address];
       if (sheet.formats) delete sheet.formats[address];
-    } else if (sheet.data[y]?.[x] !== undefined) sheet.data[y][x] = null;
+    } else {
+      if (sheet.data[y]?.[x] !== undefined) sheet.data[y][x] = null;
+      if (sheet.inputValues) delete sheet.inputValues[address];
+    }
   }
   return next;
 }
@@ -192,6 +204,12 @@ export function borderCells(
 
 /** RFC 4180-style quoting, also used for tab-delimited clipboard text. */
 export function parseDelimited(text: string, delimiter = '\t'): string[][] {
+  if (
+    text.length > 16 * 1024 * 1024 ||
+    new TextEncoder().encode(text).byteLength > 16 * 1024 * 1024
+  )
+    throw new RangeError('Clipboard text exceeds the byte limit.');
+  let cellCount = 0;
   const rows: string[][] = [[]];
   let field = '',
     quoted = false;
@@ -204,6 +222,8 @@ export function parseDelimited(text: string, delimiter = '\t'): string[][] {
       } else if (!field || quoted) quoted = !quoted;
       else field += character;
     } else if (!quoted && (character === delimiter || character === '\n' || character === '\r')) {
+      if (++cellCount > DEFAULT_WORKBOOK_LIMITS.maxCells || rows.at(-1)!.length >= 16_384)
+        throw new RangeError('Clipboard exceeds the cell limit.');
       rows.at(-1)!.push(field);
       field = '';
       if (character !== delimiter) {
@@ -211,8 +231,12 @@ export function parseDelimited(text: string, delimiter = '\t'): string[][] {
         rows.push([]);
       }
     } else field += character;
+    if (field.length > DEFAULT_WORKBOOK_LIMITS.maxCellLength)
+      throw new RangeError('Clipboard cell exceeds the text limit.');
   }
   if (quoted) throw new TypeError('Unclosed quoted field.');
+  if (cellCount + 1 > DEFAULT_WORKBOOK_LIMITS.maxCells || rows.at(-1)!.length >= 16_384)
+    throw new RangeError('Clipboard exceeds the cell limit.');
   rows.at(-1)!.push(field);
   if (
     rows.length > 1 &&

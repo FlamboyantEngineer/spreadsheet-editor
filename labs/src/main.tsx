@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { UiProvider } from '@flamboyantengineer/ui-components/core';
-import { SelectField } from '@flamboyantengineer/ui-components/select-field';
+import { mountLabBar } from '@flamboyantengineer/ui-components/labs';
+import { labStorage } from './settings.js';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
 import type { Workbook } from '../../src/model/index.js';
 import { FullLab } from './full-lab.js';
+import { HostLab } from './host-lab.js';
 import { engineeringSample } from './sample.js';
 import 'jsuites/dist/jsuites.css';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
@@ -22,7 +24,7 @@ const labs = [
   {
     id: 'embedded',
     title: 'Embedded in an app',
-    description: 'A compact editor inside a project workspace, inspired by Host.',
+    description: 'A compact editor inside a project workspace.',
     detail:
       'The application owns navigation and context. The editor supplies compact tools, formulas, review panels and save callbacks.',
   },
@@ -33,9 +35,33 @@ const labs = [
     detail:
       'Explore the complete editor, then use the sections below to try server calculation, exact values and both document insertion modes.',
   },
+  {
+    id: 'host',
+    title: 'Host integration',
+    description:
+      'Public lifecycle handles, captured results, function descriptors and React cell content.',
+    detail:
+      'Explore a host-controlled workbook with protected drafts, publication revisions, explicit save and durability callbacks.',
+  },
 ] as const;
 const current = labs.find((lab) => location.pathname === `/${lab.id}.html`);
-const initial = new URLSearchParams(location.search);
+let navigationSearch = '';
+const navigationListeners = new Set<() => void>();
+function subscribeNavigation(listener: () => void) {
+  navigationListeners.add(listener);
+  return () => navigationListeners.delete(listener);
+}
+mountLabBar({
+  host: document.getElementById('lab-chrome')!,
+  title: current?.title ?? 'Spreadsheet editor labs',
+  indexHref: current ? '/' : null,
+  storage: labStorage(),
+  referenceStylesheet: '/reference.css',
+  onSettingsChange(_settings, search) {
+    navigationSearch = search;
+    for (const listener of navigationListeners) listener();
+  },
+});
 
 function MinimalLab() {
   return (
@@ -60,7 +86,7 @@ function EmbeddedLab() {
   return (
     <section className="lab-app" aria-label="Example project workspace">
       <div className="lab-app__topbar">
-        <strong>Host</strong>
+        <strong>Engineering workspace</strong>
         <span>Example workspace</span>
         <span className="lab-app__user">AL</span>
       </div>
@@ -114,71 +140,16 @@ function EmbeddedLab() {
 }
 
 function App() {
-  const [theme, setTheme] = useState(initial.get('theme') ?? 'system');
-  const [stylesheet, setStylesheet] = useState(
-    initial.get('stylesheet') === 'unstyled' ? 'unstyled' : 'reference',
-  );
-  useEffect(() => {
-    const media = matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => {
-      document.documentElement.dataset.theme =
-        theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
-    };
-    apply();
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, [theme]);
-  useEffect(() => {
-    (document.getElementById('lab-reference') as HTMLLinkElement).disabled =
-      stylesheet === 'unstyled';
-    const url = new URL(location.href);
-    url.searchParams.set('theme', theme);
-    url.searchParams.set('stylesheet', stylesheet);
-    history.replaceState(null, '', url);
-  }, [stylesheet, theme]);
-  const href = (id?: string) =>
-    `${id ? `/${id}.html` : '/'}?${new URLSearchParams({ theme, stylesheet })}`;
+  const search = useSyncExternalStore(subscribeNavigation, () => navigationSearch);
+  const href = (id?: string) => `${id ? `/${id}.html` : '/'}${search}`;
   return (
     <UiProvider>
-      <header className="lab-chrome">
-        <div className="lab-chrome__title">
-          {current && <a href={href()}>All labs</a>}
-          <strong>
-            {current?.title ?? 'Spreadsheet editor'}
-            <span className="lab-chrome__suffix"> · Labs</span>
-          </strong>
-        </div>
-        <div className="lab-chrome__controls">
-          <SelectField
-            label="Stylesheet"
-            labelLayout="label-colon-control"
-            size="sm"
-            value={stylesheet}
-            onChange={(value) => setStylesheet(String(value))}
-            options={[
-              { id: 'reference', label: 'Reference' },
-              { id: 'unstyled', label: 'Unstyled' },
-            ]}
-          />
-          <SelectField
-            label="Theme"
-            labelLayout="label-colon-control"
-            size="sm"
-            value={theme}
-            onChange={(value) => setTheme(String(value))}
-            options={['system', 'light', 'dark'].map((id) => ({
-              id,
-              label: id[0].toUpperCase() + id.slice(1),
-            }))}
-          />
-        </div>
-      </header>
       <main className="lab-page">
         <header className="lab-page__intro">
           <h1>{current?.title ?? 'Spreadsheet editor labs'}</h1>
           <p>
             {current?.detail ??
-              'Three ways to use the same spreadsheet editor. Each example is interactive and uses the shared ui-components controls and reference stylesheet.'}
+              'Explore the same spreadsheet editor in standalone and host-controlled examples. Each lab is interactive and uses the shared ui-components controls and reference stylesheet.'}
           </p>
         </header>
         {current ? (
@@ -198,6 +169,8 @@ function App() {
               <MinimalLab />
             ) : current.id === 'embedded' ? (
               <EmbeddedLab />
+            ) : current.id === 'host' ? (
+              <HostLab />
             ) : (
               <FullLab />
             )}
@@ -210,7 +183,9 @@ function App() {
                 <li key={lab.id}>
                   <a href={href(lab.id)}>{lab.title}</a>
                   <p>{lab.description}</p>
-                  <code>chrome="{lab.id}"</code>
+                  <code>
+                    {lab.id === 'host' ? 'editorRef + external results' : `chrome="${lab.id}"`}
+                  </code>
                 </li>
               ))}
             </ul>

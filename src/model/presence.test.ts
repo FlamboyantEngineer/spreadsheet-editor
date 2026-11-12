@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createWorkbook } from './workbook.js';
 import { collaboratorSheet, remoteCollaborators, selectionLock } from './presence.js';
-describe('Host SE-CO: host-neutral presence', () => {
+describe('SE-CO: host-neutral presence', () => {
   it('deduplicates remote identities, removes self and resolves sheets without trusting peer coordinates', () => {
     const workbook = createWorkbook();
     workbook.worksheets[0].name = 'Mass Budget';

@@ -490,10 +490,14 @@ export function readJSpreadsheetHeaderSelection(): {
  * that reattaches the worksheet unless the vendor tracks another one by then or
  * the worksheet was destroyed.
  */
-export function releaseJSpreadsheetKeyboardOwner(): (() => void) | null {
+export function releaseJSpreadsheetKeyboardOwner(
+  expectedOwner?: JSpreadsheetWorksheetInstance | null,
+): (() => void) | null {
   const vendor = jspreadsheet as unknown as { current?: { element?: unknown } | null };
   const owner = vendor.current;
   if (!owner) return null;
+  // Late teardown of one mounted grid must not release a newer sheet or editor.
+  if (expectedOwner !== undefined && owner !== expectedOwner) return null;
   vendor.current = null;
   return () => {
     const element = owner.element;

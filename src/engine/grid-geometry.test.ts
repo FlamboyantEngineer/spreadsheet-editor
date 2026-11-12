@@ -5,10 +5,13 @@ import { syncWorksheetPresentation } from './worksheet-presentation.js';
 import {
   expandMergedSelection,
   gridZoomScale,
+  gridBodyBounds,
+  clipGridSelectionHandle,
   measureGridSelection,
   restoreGridScroll,
   scrollGridCellIntoView,
   syncFrozenColumns,
+  syncFrozenColumnOffsets,
 } from './grid-geometry.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
@@ -130,9 +133,68 @@ describe('SE-CR-2.18: grid-only zoom keeps authored geometry and pixel strokes',
     expect(records[0][1].element.style.left).toBe('');
     expect(records[0][1].element.classList.contains('jss_freezed')).toBe(false);
   });
+  it('restores frozen scroll offsets without changing unfrozen cells or their classes', () => {
+    const { engine, cols, records } = grid();
+    engine.options!.freezeColumns = 1;
+    cols[0].colElement.style.width = '150.75px';
+    syncFrozenColumns(engine);
+    engine.headers![0].style.left = '0px';
+    records[0][0].element.style.left = '149px';
+    const plain = records[0][1].element.getAttribute('style');
+    syncFrozenColumnOffsets(engine);
+    expect(engine.headers![0].style.left).toBe('50px');
+    expect(records[0][0].element.style.left).toBe('50px');
+    expect(records[0][1].element.getAttribute('style')).toBe(plain);
+  });
 });
 
 describe('SE-UI-1: local selection geometry', () => {
+  it('clips the native fill handle to the cell body and restores it after scrolling back', () => {
+    const { engine, viewport } = grid();
+    const handle = document.createElement('div');
+    engine.corner = handle;
+    const measure = vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue(rect(58, 40, 7, 7));
+    const body = gridBodyBounds(engine, viewport);
+    clipGridSelectionHandle(engine, body);
+    expect(handle.style.clipPath).toBe('inset(4px 0px 0px 2px)');
+    measure.mockReturnValue(rect(20, 30, 7, 7));
+    clipGridSelectionHandle(engine, body);
+    expect(handle.style.clipPath).toBe('inset(50%)');
+    measure.mockReturnValue(rect(60, 44, 7, 7));
+    clipGridSelectionHandle(engine, body);
+    expect(handle.style.clipPath).toBe('');
+  });
+  it('clips to live row and column headers when the corner has scrolled away', () => {
+    const { engine, sheet, viewport, table } = grid();
+    vi.mocked(table.tHead!.rows[0].cells[0].getBoundingClientRect).mockReturnValue(
+      rect(-190, -80, 50, 24),
+    );
+    vi.spyOn(table.tBodies[0].rows[0].cells[0], 'getBoundingClientRect').mockReturnValue(
+      rect(10, -20, 55, 24),
+    );
+    expect(gridBodyBounds(engine, viewport)).toEqual({
+      origin: { left: 10, top: 20 },
+      left: 65,
+      top: 44,
+      right: 410,
+      bottom: 420,
+    });
+    expect(measureGridSelection(engine, sheet, { x1: 0, y1: 0, x2: 0, y2: 0 }, viewport)).toEqual([
+      expect.objectContaining({ left: 55, top: 24, width: 95, height: 24, borderLeftWidth: 0 }),
+    ]);
+  });
+  it('measures only rectangle corners, including with unrelated merges elsewhere', () => {
+    const { engine, sheet, viewport, records } = grid();
+    sheet.mergeCells = { Z99: [2, 2] };
+    measureGridSelection(engine, sheet, { x1: 0, y1: 0, x2: 2, y2: 1 }, viewport);
+    const reads = records
+      .flat()
+      .reduce(
+        (total, cell) => total + vi.mocked(cell.element.getBoundingClientRect).mock.calls.length,
+        0,
+      );
+    expect(reads).toBe(4);
+  });
   it('measures all four edges of a cell or reversed range in CSS pixels', () => {
     const { engine, sheet, viewport } = grid();
     expect(measureGridSelection(engine, sheet, { x1: 0, y1: 0, x2: 0, y2: 0 }, viewport)).toEqual([

@@ -1,11 +1,13 @@
 import { Decimal } from 'decimal.js';
-import { CalculationError, type NumericValue } from './values.js';
+import { CalculationError, mergeNumericProvenance, type NumericValue } from './values.js';
 
 export interface NumericOptions {
   /** Significant digits used only for non-rational functions. */
   precision?: number;
   /** Resource limit, not an arithmetic rounding precision. */
   maxIntegerDigits?: number;
+  /** Architecture context; never assume a machine word size. */
+  wordSizeBits?: string;
 }
 
 export function createArithmetic(options: NumericOptions = {}) {
@@ -89,6 +91,7 @@ export function createArithmetic(options: NumericOptions = {}) {
     );
   }
   function compare(a: NumericValue, b: NumericValue): number {
+    mergeNumericProvenance(a, b);
     const difference =
       BigInt(a.numerator) * BigInt(b.denominator) - BigInt(b.numerator) * BigInt(a.denominator);
     return difference === 0n ? 0 : difference < 0n ? -1 : 1;
@@ -231,20 +234,30 @@ export function createArithmetic(options: NumericOptions = {}) {
         throw new CalculationError('#NAME?');
     }
   }
+  const carry =
+    <Args extends unknown[]>(operation: (...args: Args) => NumericValue) =>
+    (...args: Args): NumericValue => {
+      const inputs = args.filter((value): value is Args[number] & NumericValue =>
+        Boolean(value && typeof value === 'object' && 'kind' in value && value.kind === 'number'),
+      );
+      const provenance = mergeNumericProvenance(...inputs);
+      const result = operation(...args);
+      return provenance ? { ...result, provenance } : result;
+    };
   return {
     parse,
     value,
-    add,
-    subtract,
-    multiply,
-    divide,
+    add: carry(add),
+    subtract: carry(subtract),
+    multiply: carry(multiply),
+    divide: carry(divide),
     compare,
-    negate,
+    negate: carry(negate),
     integer,
-    power,
-    sqrt,
-    round,
-    unary,
+    power: carry(power),
+    sqrt: carry(sqrt),
+    round: carry(round),
+    unary: carry(unary),
     pi: () => approximate(D.acos(-1)),
     precision,
   };

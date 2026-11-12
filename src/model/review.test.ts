@@ -144,7 +144,7 @@ describe('SE-REVIEW-2: tracked suggestions', () => {
   });
 });
 
-describe('Host SE-CR-3.1/3.4/3.5: conversation and reviewer overlay contracts', () => {
+describe('SE-CR-3.1/3.4/3.5: conversation and reviewer overlay contracts', () => {
   it('prevents overlapping open threads, keeps workbook scope, and reopens a resolved range', () => {
     let workbook = addComment(createWorkbook(), 'sheet-1', 'A1:B2', 'Range', stamp('range'));
     expect(findOpenComment(workbook, 'sheet-1', 'B2:C3')?.id).toBe('range');

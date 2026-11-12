@@ -1,7 +1,8 @@
 import ExcelJS from 'exceljs';
 import { readThemeColors } from './colors.js';
 import { inspectXlsx, type XlsxLimits } from './guard.js';
-import type { XlsxImport, XlsxWarning } from './contracts.js';
+import type { ExcelFormulaCapabilities, XlsxImport, XlsxWarning } from './contracts.js';
+import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
 import { importCellStyle, importNumberFormat } from './styles.js';
 import { createArithmetic } from '../calculation/rational.js';
 import { formatCellValue } from '../calculation/format.js';
@@ -19,27 +20,15 @@ import {
 } from '../model/spreadsheet-addressing.js';
 
 const decode = new TextDecoder();
-const external = [
-  'WORKITEM',
-  'WORKITEM.FIELD',
-  'WORKITEM.FIELD.LABEL',
-  'WORKITEM.FIELD.PROMPT',
-  'DOCUMENT.FIELD',
-  'USER.NAME',
-  'USER.EMAIL',
-  'USER.FIRSTNAME',
-  'USER.LASTNAME',
-];
-function unsupported(node: FormulaNode): string[] {
+function unsupported(node: FormulaNode, external: ReadonlyMap<string, unknown>): string[] {
   if (node.kind === 'call')
     return [
-      ...(!SUPPORTED_FUNCTIONS.includes(node.name) && !external.includes(node.name)
-        ? [node.name]
-        : []),
-      ...node.args.flatMap(unsupported),
+      ...(!SUPPORTED_FUNCTIONS.includes(node.name) && !external.has(node.name) ? [node.name] : []),
+      ...node.args.flatMap((arg) => unsupported(arg, external)),
     ];
-  if (node.kind === 'binary') return [...unsupported(node.left), ...unsupported(node.right)];
-  return node.kind === 'unary' ? unsupported(node.operand) : [];
+  if (node.kind === 'binary')
+    return [...unsupported(node.left, external), ...unsupported(node.right, external)];
+  return node.kind === 'unary' ? unsupported(node.operand, external) : [];
 }
 function attrs(tag: string): Record<string, string> {
   return Object.fromEntries(
@@ -48,7 +37,12 @@ function attrs(tag: string): Record<string, string> {
 }
 
 /** Runs only in the isolated import child. Excel's formula caches are never read. */
-export async function convertXlsx(bytes: Uint8Array, limits: XlsxLimits = {}): Promise<XlsxImport> {
+export async function convertXlsx(
+  bytes: Uint8Array,
+  limits: XlsxLimits = {},
+  formulaCapabilities?: ExcelFormulaCapabilities,
+): Promise<XlsxImport> {
+  const external = hostFunctionMap(validateFormulaCapabilities(formulaCapabilities));
   const inspected = inspectXlsx(bytes, limits),
     warnings = new Map<string, XlsxWarning>();
   const warn = (
@@ -155,7 +149,7 @@ export async function convertXlsx(bytes: Uint8Array, limits: XlsxLimits = {}): P
           value = '=' + cell.formula;
           report.formulas++;
           try {
-            for (const name of unsupported(parseFormula(cell.formula)))
+            for (const name of unsupported(parseFormula(cell.formula), external))
               warn(
                 `formula:${name}`,
                 `${name} is retained but is unavailable in the calculation catalog.`,

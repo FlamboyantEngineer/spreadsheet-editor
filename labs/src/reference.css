@@ -59,7 +59,12 @@
   width: 116px;
 }
 .se-editor__font-size {
-  width: 58px;
+  width: 128px;
+}
+.se-editor__color-palette {
+  display: grid;
+  gap: 8px;
+  min-width: 200px;
 }
 .se-editor__number-format {
   width: 110px;
@@ -282,7 +287,8 @@
 .se-editor__engine .jss_worksheet tbody td.jss_row.selected,
 .se-editor__engine .jss_worksheet tbody tr.selected > td.jss_row {
   color: var(--ref-text);
-  background-color: var(--ref-selected);
+  background-color: var(--ref-surface);
+  background-image: linear-gradient(var(--ref-selected), var(--ref-selected));
 }
 /* Separate-border cells share a single top/left gridline. Inline authored borders win. */
 .se-editor__engine .jss_worksheet > :is(thead, tbody, tfoot) > tr > td {
@@ -322,6 +328,30 @@
 }
 .se-editor__engine .jss_worksheet > tbody > tr:last-child > td {
   border-bottom-color: var(--se-cell-gridline, var(--ref-border));
+}
+/* Sticky headers own their closing edges; their neighboring cell's seam scrolls away. */
+.se-editor__engine .jss_worksheet > thead > tr > td {
+  border-bottom-color: var(--ref-border);
+}
+.se-editor__engine .jss_worksheet > thead > tr > td:first-child,
+.se-editor__engine .jss_worksheet > tbody > tr > td.jss_row {
+  border-right-color: var(--ref-border);
+}
+/* Paint each resting seam once, retaining native clipboard edges. */
+.se-editor__engine
+  .jss_worksheet
+  > tbody
+  > tr:first-child
+  > td:not(:where(.copying-top, .selection-top)) {
+  border-top-color: transparent;
+}
+.se-editor__engine
+  .jss_worksheet
+  > :is(thead, tbody)
+  > tr
+  > td:first-child
+  + td:not(:where(.copying-left, .selection-left)) {
+  border-left-color: transparent;
 }
 .se-editor__grid[data-gridlines='false'] .jss_worksheet tbody td:not(.jss_row) {
   --se-cell-gridline: transparent;

@@ -8,3 +8,7 @@ export * from './structure.js';
 export * from './clipboard.js';
 export * from './provenance.js';
 export * from './presence.js';
+
+export * from './extent.js';
+export * from './operations.js';
+export * from './cell-format.js';

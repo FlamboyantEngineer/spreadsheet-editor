@@ -1,3 +1,6 @@
+import { assertCellFormat } from './cell-format.js';
+import type { NumericValue } from '../calculation/values.js';
+import { assertNumericValue } from '../calculation/values.js';
 import {
   assertWorkbook,
   copyWorkbook,
@@ -42,6 +45,8 @@ export interface SuggestedCellChange {
   after: CellInput;
   beforeStyle?: string;
   afterStyle?: string;
+  beforeInputValue?: NumericValue;
+  afterInputValue?: NumericValue;
   beforeFormat?: CellFormat;
   afterFormat?: CellFormat;
 }
@@ -75,6 +80,8 @@ export interface CellFormat {
     | 'time'
     | 'datetime'
     | 'unit';
+  locale?: string;
+  currency?: string;
   decimals?: number;
   unit?: string;
   inputUnit?: string;
@@ -205,6 +212,7 @@ function structureOf(sheets: Worksheet[]) {
     delete shape.style;
     delete shape.formats;
     delete shape.cellProvenance;
+    delete shape.inputValues;
     delete (shape as Partial<Worksheet>).data;
     return shape;
   });
@@ -233,6 +241,8 @@ export function proposeWorkbookChange(
         ...Object.keys(after.style ?? {}),
         ...Object.keys(sheet.formats ?? {}),
         ...Object.keys(after.formats ?? {}),
+        ...Object.keys(sheet.inputValues ?? {}),
+        ...Object.keys(after.inputValues ?? {}),
       ]);
       after.data.forEach((row, y) =>
         row.forEach((_value, x) => addresses.add(formatSpreadsheetAddress(x, y))),
@@ -253,7 +263,9 @@ export function proposeWorkbookChange(
         if (
           before !== value ||
           beforeStyle !== afterStyle ||
-          JSON.stringify(beforeFormat) !== JSON.stringify(afterFormat)
+          JSON.stringify(beforeFormat) !== JSON.stringify(afterFormat) ||
+          JSON.stringify(sheet.inputValues?.[address]) !==
+            JSON.stringify(after.inputValues?.[address])
         )
           changes.push({
             sheetId: sheet.id,
@@ -264,6 +276,8 @@ export function proposeWorkbookChange(
             afterStyle,
             beforeFormat,
             afterFormat,
+            beforeInputValue: sheet.inputValues?.[address],
+            afterInputValue: after.inputValues?.[address],
           });
       }
     });
@@ -293,6 +307,10 @@ export function proposeWorkbookChange(
       return {
         ...before,
         after: change.after !== change.before ? change.after : before.after,
+        afterInputValue:
+          JSON.stringify(change.afterInputValue) !== JSON.stringify(change.beforeInputValue)
+            ? change.afterInputValue
+            : before.afterInputValue,
         afterStyle:
           change.afterStyle !== change.beforeStyle ? change.afterStyle : before.afterStyle,
         afterFormat:
@@ -394,7 +412,9 @@ export function decideSuggestion(
           !cell ||
           (sheet.data[cell.y]?.[cell.x] ?? null) !== change.before ||
           sheet.style?.[change.address] !== change.beforeStyle ||
-          JSON.stringify(sheet.formats?.[change.address]) !== JSON.stringify(change.beforeFormat)
+          JSON.stringify(sheet.formats?.[change.address]) !== JSON.stringify(change.beforeFormat) ||
+          JSON.stringify(sheet.inputValues?.[change.address]) !==
+            JSON.stringify(change.beforeInputValue)
         )
           throw new Error(
             `Cell ${change.address} changed since this suggestion. It has not been overwritten.`,
@@ -406,6 +426,9 @@ export function decideSuggestion(
         while (sheet.data.length <= cell.y) sheet.data.push([]);
         while (sheet.data[cell.y].length <= cell.x) sheet.data[cell.y].push(null);
         sheet.data[cell.y][cell.x] = change.after;
+        sheet.inputValues = { ...sheet.inputValues };
+        if (change.afterInputValue === undefined) delete sheet.inputValues[change.address];
+        else sheet.inputValues[change.address] = structuredClone(change.afterInputValue);
         sheet.style = { ...sheet.style };
         sheet.formats = { ...sheet.formats };
         if (change.afterStyle === undefined) delete sheet.style[change.address];
@@ -417,7 +440,11 @@ export function decideSuggestion(
   }
   if (decision === 'accepted')
     for (const change of suggestion.changes) {
-      if (change.before === change.after) continue;
+      if (
+        change.before === change.after &&
+        JSON.stringify(change.beforeInputValue) === JSON.stringify(change.afterInputValue)
+      )
+        continue;
       const sheet = next.worksheets.find((sheet) => sheet.id === change.sheetId);
       if (sheet)
         (sheet.cellProvenance ??= {})[change.address] = {
@@ -527,6 +554,17 @@ export function assertReviewData(workbook: Workbook): void {
         (change.afterStyle !== undefined && typeof change.afterStyle !== 'string')
       )
         throw new TypeError('Invalid suggested cell.');
+    for (const change of suggestion.changes)
+      for (const field of ['beforeInputValue', 'afterInputValue'] as const)
+        if (change[field] !== undefined) {
+          assertNumericValue(change[field], 10_000);
+          const input = field === 'beforeInputValue' ? change.before : change.after;
+          if (typeof input === 'string' && input.trimStart().startsWith('='))
+            throw new TypeError('A suggested canonical input cannot override a formula.');
+        }
+    for (const change of suggestion.changes)
+      for (const field of ['beforeFormat', 'afterFormat'] as const)
+        if (change[field] !== undefined) assertCellFormat(change[field]);
     if (suggestion.structure) {
       assertWorkbook({ schemaVersion: 1, worksheets: suggestion.structure.before });
       assertWorkbook({ schemaVersion: 1, worksheets: suggestion.structure.after });
@@ -594,6 +632,9 @@ export function previewSuggestions(workbook: Workbook, actorId: string): Workboo
       while (sheet.data.length <= cell.y) sheet.data.push([]);
       while (sheet.data[cell.y].length <= cell.x) sheet.data[cell.y].push(null);
       sheet.data[cell.y][cell.x] = change.after;
+      if (change.afterInputValue !== undefined)
+        (sheet.inputValues ??= {})[change.address] = structuredClone(change.afterInputValue);
+      else if (sheet.inputValues) delete sheet.inputValues[change.address];
       if (change.afterStyle !== undefined) (sheet.style ??= {})[change.address] = change.afterStyle;
       else if (sheet.style) delete sheet.style[change.address];
       if (change.afterFormat !== undefined)

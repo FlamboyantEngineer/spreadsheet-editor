@@ -7,6 +7,7 @@ import {
   useId,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -15,18 +16,13 @@ import { CodeEditor, type CodeTokenizer } from '@flamboyantengineer/ui-component
 import type { CompletionSource } from '@flamboyantengineer/ui-components/completion-list';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
-import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
+import { formulaFunctionCatalog, type FormulaFunctionDescriptor } from './public-host.js';
 import { type CellSelection, selectionAddress } from '../model/editing.js';
 import {
   buildFormulaReferenceTokenSegments,
   parseFormulaReferenceHighlights,
 } from '../model/formula-reference-parser.js';
 import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
-
-const completions = SUPPORTED_FUNCTIONS.map((name) => ({ label: name, insertText: `${name}(` }));
-// A stable source also completes a formula pasted into an initially empty/plain-text cell.
-const completeFormula: CompletionSource = ({ value, query, isExplicit }) =>
-  value.trimStart().startsWith('=') && (query || isExplicit) ? completions : [];
 
 /** Semantic tokens let the host use the same reference palette in the editor and grid. */
 const tokenize: CodeTokenizer = (source) =>
@@ -44,6 +40,7 @@ export interface EditorFormulaBarHandle {
 }
 
 export interface EditorFormulaBarProps {
+  formulaFunctions?: readonly FormulaFunctionDescriptor[];
   ref?: Ref<EditorFormulaBarHandle>;
   selection: CellSelection;
   /** The host owns the protected draft, including updates while the same cell is edited. */
@@ -74,6 +71,28 @@ function addressSelection(value: string): CellSelection | null {
 
 /** Caller-owned drafts and transactions with the base library's formula layout and code surface. */
 export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
+  const completeFormula = useMemo<CompletionSource>(() => {
+    const catalog = formulaFunctionCatalog(props.formulaFunctions);
+    return ({ value, query, isExplicit }) => {
+      if (!value.trimStart().startsWith('=')) return [];
+      if (!query && value.trim() !== '=' && !isExplicit) return [];
+      const search = query.toUpperCase();
+      return catalog
+        .flatMap((descriptor) =>
+          [descriptor.name, ...(descriptor.aliases ?? [])].map((name) => ({
+            label: name,
+            description: descriptor.description,
+            insertText: descriptor.insertText ?? `${name}(`,
+          })),
+        )
+        .filter((entry) => !search || entry.label.includes(search))
+        .sort(
+          (a, b) =>
+            Number(b.label === search) - Number(a.label === search) ||
+            a.label.localeCompare(b.label),
+        );
+    };
+  }, [props.formulaFunctions]);
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const editing = useRef(false);

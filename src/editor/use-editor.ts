@@ -8,7 +8,20 @@ import {
 } from '../model/presence.js';
 import { attributeCellChanges } from '../model/provenance.js';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { calculationCellKey, pendingCalculationCells } from '../calculation/publication.js';
+import { commandOperations } from './command-operations.js';
+import {
+  changeWorkbookStructureWithOperations,
+  collectCellOperations,
+  invertWorkbookOperations,
+  type WorkbookOperation,
+  type WorkbookCommandResult,
+  type WorkbookChangeContext,
+} from '../model/operations.js';
+import { createWorkbookEntityId, worksheetCalculationExtent } from '../model/extent.js';
+import { acceptedPresentation, usePublication } from './use-publication.js';
+import type { SpreadsheetEditorHandle, SpreadsheetEditorState } from './public-host.js';
 import { createClientCalculator } from '../calculation/provider.js';
 import {
   createSpreadsheetCopy,
@@ -48,7 +61,6 @@ import {
   type CellSelection,
 } from '../model/editing.js';
 import {
-  changeWorkbookStructure,
   deleteWorksheet,
   renameWorksheet,
   validateWorksheetName,
@@ -66,17 +78,28 @@ import {
 } from '../model/review.js';
 import { createDocumentInsertion } from '../document/insertion.js';
 import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
-import { useCalculation } from './use-calculation.js';
 
 export type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
+function immutableBaseline(workbook: Workbook): Workbook {
+  const snapshot = copyWorkbook(workbook),
+    pending: object[] = [snapshot];
+  while (pending.length) {
+    const value = pending.pop()!;
+    if (Object.isFrozen(value)) continue;
+    for (const child of Object.values(value))
+      if (child && typeof child === 'object') pending.push(child);
+    Object.freeze(value);
+  }
+  return snapshot;
+}
 export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const [local, setLocal] = useState(() => copyWorkbook(props.defaultValue ?? createWorkbook()));
   const workbook = props.value ?? local;
   const [history, setHistory] = useState<{
     head: Workbook | null;
-    past: { workbook: Workbook; label: string }[];
-    future: { workbook: Workbook; label: string }[];
+    past: { workbook: Workbook; label: string; operations: WorkbookOperation[] }[];
+    future: { workbook: Workbook; label: string; operations: WorkbookOperation[] }[];
   }>({ head: null, past: [], future: [] });
   const currentHistory =
     history.head === workbook ? history : { head: workbook, past: [], future: [] };
@@ -141,13 +164,16 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     [showGridlines, setShowGridlines] = useState(true),
     [showFormulas, setShowFormulas] = useState(false);
   const [notice, setNoticeState] = useState<string | null>(null);
+  const errorNotice = useRef<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<'danger' | 'warning'>('danger');
   const [noticeRevision, setNoticeRevision] = useState(0);
   function setNotice(message: string | null) {
+    errorNotice.current = message;
     setNoticeTone('danger');
     setNoticeState(message);
   }
   function warn(message: string) {
+    errorNotice.current = null;
     setNoticeTone('warning');
     setNoticeState(message);
     setNoticeRevision((value) => value + 1);
@@ -164,11 +190,32 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const [savePhase, setSavePhase] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>(
     'idle',
   );
+  const localRevision = useRef(0),
+    persistedRevision = useRef(0);
+  const listeners = useRef(new Set<() => void>());
+  const [flushing, setFlushing] = useState(false);
+  const activeFlush = useRef<{ promise: Promise<void>; controller: AbortController } | null>(null);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sheetViews = useRef(
+    new Map<string, { selection: CellSelection; viewport: { left: number; top: number } }>(),
+  );
+  const [nativeDraft, setNativeDraftState] = useState<{
+    x: number;
+    y: number;
+    text: string;
+  } | null>(null);
+  const nativeDraftRef = useRef(nativeDraft);
+  function setNativeDraft(next: typeof nativeDraft) {
+    nativeDraftRef.current = next;
+    setNativeDraftState(next);
+  }
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
+      activeFlush.current?.controller.abort();
+      listeners.current.clear();
     };
   }, []);
   const latestWorkbook = useRef(workbook);
@@ -211,29 +258,76 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const calculationOptions = useMemo(
     () => ({
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      ...props.calculation?.options,
+      ...(props.calculation?.mode === 'external' ? undefined : props.calculation?.options),
     }),
-    [props.calculation?.options],
+    [props.calculation?.mode === 'external' ? undefined : props.calculation?.options],
   );
-  const calculation = useCalculation(workbook, provider, calculationOptions);
+  const calculation = usePublication(workbook, props.calculation, provider, calculationOptions);
   const previewWorkbook = useMemo(
     () => (canSuggest ? previewSuggestions(workbook, actor.id) : workbook),
     [workbook, actor.id, canSuggest],
   );
-  const previewCalculation = useCalculation(
+  const previewCalculation = usePublication(
     previewWorkbook,
+    props.calculation,
     provider,
     calculationOptions,
     previewWorkbook !== workbook,
   );
   const visibleCalculation = previewWorkbook !== workbook ? previewCalculation : calculation;
+  const publication = useMemo(
+    () => ({ inputKey: visibleCalculation.inputKey, revision: visibleCalculation.revision }),
+    [visibleCalculation.inputKey, visibleCalculation.revision],
+  );
   const previewSheet = previewWorkbook.worksheets.find((value) => value.id === sheet.id)!;
   const authored = previewSheet.data[selection.y1]?.[selection.x1] ?? '';
   const draftKey = `${sheet.id}:${selection.x1}:${selection.y1}`;
   const draftValue = draft?.key === draftKey ? draft.value : String(authored);
-  const output = visibleCalculation.result?.worksheets.find(
+  const draftDirty = draft?.key === draftKey && draft.value !== String(authored);
+  const draftCell = draftDirty
+    ? { x: selection.x1, y: selection.y1, text: draft!.value }
+    : nativeDraft;
+  const calculationExtent = worksheetCalculationExtent(sheet);
+  const pendingCells = useMemo(
+    () =>
+      draftCell
+        ? pendingCalculationCells(
+            visibleCalculation.result,
+            [calculationCellKey(sheet.id, draftCell.x, draftCell.y)],
+            draftCell.x >= calculationExtent.columns || draftCell.y >= calculationExtent.rows
+              ? [sheet.id]
+              : [],
+          )
+        : new Set<string>(),
+    [
+      visibleCalculation.result,
+      sheet.id,
+      calculationExtent.columns,
+      calculationExtent.rows,
+      draftCell?.x,
+      draftCell?.y,
+      draftCell?.text,
+    ],
+  );
+  const readyCells = useMemo(
+    () => new Set([...visibleCalculation.readyCells].filter((key) => !pendingCells.has(key))),
+    [visibleCalculation.readyCells, pendingCells],
+  );
+  const presentation = acceptedPresentation(
+    props.cellPresentation,
+    visibleCalculation.inputKey,
+    visibleCalculation.revision,
+  );
+  const acceptedOutput = visibleCalculation.result?.worksheets.find(
     (result) => result.id === sheet.id,
   )?.values;
+  const output = useMemo(
+    () =>
+      acceptedOutput?.map((row, y) =>
+        row.map((value, x) => (readyCells.has(calculationCellKey(sheet.id, x, y)) ? value : null)),
+      ),
+    [acceptedOutput, readyCells, sheet.id],
+  );
   const style = parseCellStyle(
     previewSheet.style?.[selectionAddress({ ...selection, x2: selection.x1, y2: selection.y1 })],
   );
@@ -261,28 +355,53 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function stamp(): ReviewStamp {
     return { id: globalThis.crypto.randomUUID(), time: new Date().toISOString(), actor };
   }
-  function publish(next: Workbook) {
+  function publish(
+    next: Workbook,
+    operations: WorkbookOperation[] = commandOperations(workbook, next),
+    source: WorkbookChangeContext['source'] = 'user',
+  ) {
     assertWorkbook(next);
+    const context: WorkbookChangeContext = {
+      transactionId: (props.idFactory ?? createWorkbookEntityId)('transaction'),
+      source,
+      baseline: immutableBaseline(workbook),
+      operations: structuredClone(operations),
+    };
+    try {
+      props.onChange?.(next, context);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The workbook change was rejected.');
+      throw error;
+    }
     latestWorkbook.current = next;
+    localRevision.current++;
     if (!props.value) setLocal(next);
-    props.onChange?.(next);
     setSavePhase('dirty');
   }
-  function commit(next: Workbook, label = 'Edit workbook') {
+  function commit(next: Workbook, label = 'Edit workbook', operations?: WorkbookOperation[]) {
     if (next === workbook) return;
     assertWorkbook(next);
+    const acceptedOperations = operations ?? commandOperations(workbook, next);
+    publish(next, acceptedOperations);
     setHistory({
       head: next,
-      past: [...currentHistory.past.slice(-49), { workbook: copyWorkbook(workbook), label }],
+      past: [
+        ...currentHistory.past.slice(-49),
+        {
+          workbook: copyWorkbook(workbook),
+          label,
+          operations: structuredClone(acceptedOperations),
+        },
+      ],
       future: [],
     });
-    publish(next);
     publishPresence(/comment|reply|reaction|suggest/i.test(label) ? 'Reviewing' : 'Editing');
   }
   function mutate(
     next: Workbook,
     label: string,
     operation?: { sheetId: string; change: StructureChange },
+    operations?: WorkbookOperation[],
   ) {
     if (!alive.current) return false;
     if (!canWrite) {
@@ -298,18 +417,16 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       warn(`${locked.name} is editing a cell in this selection. Try again after they finish.`);
       return false;
     }
-    commit(
-      canSuggest
-        ? proposeWorkbookChange(workbook, next, label, stamp(), operation)
-        : operation
-          ? next
-          : attributeCellChanges(workbook, next, {
-              actor,
-              source: 'human',
-              at: new Date().toISOString(),
-            }),
-      canSuggest ? `Suggest: ${label}` : label,
-    );
+    const accepted = canSuggest
+      ? proposeWorkbookChange(workbook, next, label, stamp(), operation)
+      : operation
+        ? next
+        : attributeCellChanges(workbook, next, {
+            actor,
+            source: 'human',
+            at: new Date().toISOString(),
+          });
+    commit(accepted, canSuggest ? `Suggest: ${label}` : label, canSuggest ? undefined : operations);
     if (canSuggest) {
       setPanel('suggestions');
       setPanelOpen(true);
@@ -318,7 +435,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   /** Compose a protected formula draft and a chrome command into one history entry. */
   function mutateWithDraft(
-    transform: (base: Workbook) => Workbook,
+    transform: (base: Workbook) => Workbook | WorkbookCommandResult,
     label: string,
     operation?: { sheetId: string; change: StructureChange },
   ): boolean {
@@ -339,12 +456,35 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           at: new Date().toISOString(),
         });
     }
-    if (!mutate(transform(base), label, operation)) return false;
+    const transformed = transform(base);
+    const result =
+      'workbook' in transformed ? transformed : { workbook: transformed, operations: undefined };
+    if (
+      !mutate(
+        result.workbook,
+        label,
+        operation,
+        result.operations
+          ? [...collectCellOperations(workbook, base), ...result.operations]
+          : undefined,
+      )
+    )
+      return false;
     if (draftRef.current === pending && pending?.key === draftKey) setDraft(null);
     return true;
   }
-  function replaceWorkbook(next: Workbook, label: string): boolean {
-    if (!canEdit || !mutate(next, label)) return false;
+  function replaceWorkbook(
+    next: Workbook,
+    label: string,
+    reason: 'import' | 'new-workbook' | 'reset' = 'import',
+  ): boolean {
+    if (
+      !canEdit ||
+      !mutate(next, label, undefined, [
+        { kind: 'replace', reason, before: copyWorkbook(workbook), after: copyWorkbook(next) },
+      ])
+    )
+      return false;
     setDraft(null);
     return true;
   }
@@ -373,8 +513,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function select(range: CellSelection, targetSheetId = sheet.id) {
     const normalized = normalizeSelection(range);
     selectionCells(normalized);
-    if (!workbook.worksheets.some((value) => value.id === targetSheetId) || !applyFormula())
-      return false;
+    if (!workbook.worksheets.some((value) => value.id === targetSheetId)) return false;
+    grid.current?.commitDraft?.();
+    if (!applyFormula()) return false;
+    if (targetSheetId !== sheet.id) rememberSheetView();
     setSheetId(targetSheetId);
     setSelection(normalized);
     setDraft(null);
@@ -383,11 +525,33 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   function activateSheet(id: string) {
     if (id === sheet.id) return true;
-    if (!workbook.worksheets.some((value) => value.id === id) || !applyFormula()) return false;
+    if (!workbook.worksheets.some((value) => value.id === id)) return false;
+    grid.current?.commitDraft?.();
+    if (!applyFormula()) return false;
+    rememberSheetView();
     setSheetId(id);
-    setSelection(INITIAL_SELECTION);
+    setSelection(sheetViews.current.get(id)?.selection ?? INITIAL_SELECTION);
     setDraft(null);
     return true;
+  }
+  function rememberSheetView() {
+    sheetViews.current.set(sheet.id, {
+      selection: { ...selection },
+      viewport: grid.current?.getViewport?.() ?? { left: 0, top: 0 },
+    });
+    grid.current?.releaseKeyboard();
+  }
+  function commitDraft(): Workbook {
+    if (!alive.current) throw new Error('The editor session has ended.');
+    grid.current?.commitDraft?.();
+    if (!applyFormula()) throw new Error('The active cell edit could not be committed.');
+    return copyWorkbook(latestWorkbook.current);
+  }
+  function cancelDraft() {
+    if (!alive.current) throw new Error('The editor session has ended.');
+    grid.current?.cancelDraft?.();
+    setNativeDraft(null);
+    setDraft(null);
   }
   function onGridSelection(range: CellSelection) {
     attempt(() => {
@@ -443,30 +607,45 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   function undo() {
     if (!canWrite) return;
-    setDraft(null);
+    if (props.undo) {
+      attempt(() => props.undo!.undo());
+      return;
+    }
     const previous = currentHistory.past.at(-1);
     if (!previous) return;
+    publish(previous.workbook, invertWorkbookOperations(previous.operations), 'undo');
+    setDraft(null);
     setHistory({
       head: previous.workbook,
       past: currentHistory.past.slice(0, -1),
       future: [
-        { workbook: copyWorkbook(workbook), label: previous.label },
+        {
+          workbook: copyWorkbook(workbook),
+          label: previous.label,
+          operations: previous.operations,
+        },
         ...currentHistory.future,
       ],
     });
-    publish(previous.workbook);
   }
   function redo() {
     if (!canWrite) return;
+    if (props.undo) {
+      attempt(() => props.undo!.redo());
+      return;
+    }
     const next = currentHistory.future[0];
     if (!next) return;
+    publish(next.workbook, next.operations, 'redo');
     setDraft(null);
     setHistory({
       head: next.workbook,
-      past: [...currentHistory.past, { workbook: copyWorkbook(workbook), label: next.label }],
+      past: [
+        ...currentHistory.past,
+        { workbook: copyWorkbook(workbook), label: next.label, operations: next.operations },
+      ],
       future: currentHistory.future.slice(1),
     });
-    publish(next.workbook);
   }
   function applyFormula(): boolean {
     const pending = draftRef.current;
@@ -507,7 +686,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const change = { axis, kind, index: after ? last + 1 : first, count: last - first + 1 };
     const apply = () =>
       mutateWithDraft(
-        (base) => changeWorkbookStructure(base, sheet.id, change),
+        (base) => changeWorkbookStructureWithOperations(base, sheet.id, change, props.idFactory),
         `${kind === 'insert' ? 'Insert' : 'Delete'} ${axis}${last > first ? 's' : ''}`,
         { sheetId: sheet.id, change },
       );
@@ -600,6 +779,23 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       );
   }
   function insert(kind: 'table' | 'spreadsheet') {
+    if (kind === 'table') {
+      if (!calculation.result || draftCell)
+        throw new Error('A document table needs current calculation results.');
+      for (const { x, y } of selectionCells(selection)) {
+        const input = sheet.data[y]?.[x],
+          key = calculationCellKey(sheet.id, x, y);
+        const explicit =
+          props.calculation?.mode === 'external'
+            ? props.calculation.snapshot?.cellStates?.[key]
+            : undefined;
+        if (
+          !readyCells.has(key) &&
+          ((input != null && input !== '') || (explicit ?? calculation.status) !== 'ready')
+        )
+          throw new Error('Every inserted cell must have a current ready result.');
+      }
+    }
     props.onInsert?.(
       createDocumentInsertion(workbook, calculation.result, {
         mode: kind,
@@ -650,7 +846,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       return;
     }
     copied.current = createSpreadsheetCopy(source, sheet.id, selection, text, cut);
-    if (cut) mutateWithDraft((base) => clearSelection(base, sheet.id, selection), 'Cut cells');
   }
   function pasteCells(
     values: import('../model/workbook.js').CellInput[][],
@@ -665,7 +860,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const changed = mutateWithDraft(
       (base) =>
         matching
-          ? pasteSpreadsheetCopy(base, sheet.id, x, y, cached)
+          ? pasteSpreadsheetCopy(base, sheet.id, x, y, cached, selection)
           : writeCells(base, sheet.id, x, y, values),
       'Paste cells',
     );
@@ -696,23 +891,26 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     replaceWorkbook(imported, 'Import Excel workbook');
   }
   async function exportExcel() {
-    if (
-      !props.onExportXlsx ||
-      !calculation.result ||
-      calculation.pending ||
-      calculation.error ||
-      draft?.key === draftKey
-    )
-      return;
+    if (!props.onExportXlsx || !calculation.result || draftCell) return;
+    for (const target of workbook.worksheets)
+      for (let y = 0; y < target.data.length; y++)
+        for (let x = 0; x < target.data[y].length; x++)
+          if (
+            target.data[y][x] != null &&
+            target.data[y][x] !== '' &&
+            !calculation.readyCells.has(calculationCellKey(target.id, x, y))
+          )
+            throw new Error('Excel export requires current ready results for every authored cell.');
     await props.onExportXlsx(copyWorkbook(workbook), structuredClone(calculation.result));
   }
   async function save(kind: 'manual' | 'autosave' = 'manual') {
+    if (!alive.current) throw new Error('The editor session has ended.');
+    if (kind === 'manual') commitDraft();
     if (!live.current.props.onSave) return;
     if (!live.current.canEdit) {
       warn('Saving is available only in Authoring mode.');
       return;
     }
-    if (kind === 'manual' && !applyFormula()) return;
     if (activeSave.current) {
       if (kind === 'manual' && activeSave.current.kind === 'autosave') {
         await activeSave.current.promise;
@@ -722,6 +920,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     }
     const snapshot = latestWorkbook.current,
       controller = new AbortController();
+    const capturedRevision = localRevision.current;
     const context = { signal: controller.signal, kind, requestId: globalThis.crypto.randomUUID() };
     setSaveKind(kind);
     setSavePhase('saving');
@@ -731,7 +930,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       let retry = 500;
       try {
         while (true) {
-          if (controller.signal.aborted || !live.current.canEdit) return;
+          if (controller.signal.aborted || !alive.current || !live.current.canEdit)
+            throw new Error('The editor save was cancelled.');
           try {
             await live.current.props.onSave!(copyWorkbook(snapshot), context);
             break;
@@ -753,8 +953,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
             retry = Math.min(4000, retry * 2);
           }
         }
+        if (controller.signal.aborted || !alive.current)
+          throw new Error('The editor save was cancelled.');
         if (!controller.signal.aborted) {
-          setSavePhase(latestWorkbook.current === snapshot ? 'saved' : 'dirty');
+          persistedRevision.current = Math.max(persistedRevision.current, capturedRevision);
+          setSavePhase(localRevision.current === capturedRevision ? 'saved' : 'dirty');
           setNotice(null);
         }
       } catch (error) {
@@ -763,6 +966,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           setSavePhase('error');
           setNotice(error instanceof Error ? error.message : 'Could not save workbook.');
         }
+        throw error;
       } finally {
         activeSave.current = null;
       }
@@ -775,16 +979,70 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       return;
     if (!Number.isFinite(props.autosaveMs) || props.autosaveMs < 1) return;
     const timer = setTimeout(() => {
-      void save('autosave');
+      autosaveTimer.current = null;
+      void save('autosave').catch(() => {});
     }, props.autosaveMs);
-    return () => clearTimeout(timer);
+    autosaveTimer.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (autosaveTimer.current === timer) autosaveTimer.current = null;
+    };
   }, [workbook, savePhase, canEdit, props.autosaveMs]);
+  async function flush() {
+    if (!alive.current) throw new Error('The editor session has ended.');
+    if (activeFlush.current) return activeFlush.current.promise;
+    commitDraft();
+    const controller = new AbortController();
+    setFlushing(true);
+    const operation = Promise.resolve().then(async () => {
+      try {
+        if (autosaveTimer.current) {
+          clearTimeout(autosaveTimer.current);
+          autosaveTimer.current = null;
+          await save('autosave');
+        }
+        if (activeSave.current) await activeSave.current.promise;
+        if (!alive.current || controller.signal.aborted)
+          throw new Error('The editor flush was cancelled.');
+        const snapshot = copyWorkbook(latestWorkbook.current),
+          revision = localRevision.current;
+        const callback = live.current.props.onFlush;
+        if (callback)
+          await callback(snapshot, {
+            signal: controller.signal,
+            requestId: (live.current.props.idFactory ?? createWorkbookEntityId)('transaction'),
+          });
+        if (!alive.current || controller.signal.aborted)
+          throw new Error('The editor flush was cancelled.');
+        if (callback) {
+          persistedRevision.current = Math.max(persistedRevision.current, revision);
+          setSavePhase(localRevision.current === revision ? 'saved' : 'dirty');
+        }
+        setNotice(null);
+      } catch (error) {
+        if (alive.current) {
+          setSavePhase('error');
+          setNotice(error instanceof Error ? error.message : 'Could not flush workbook.');
+        }
+        throw error;
+      } finally {
+        activeFlush.current = null;
+        if (alive.current) setFlushing(false);
+      }
+    });
+    activeFlush.current = { promise: operation, controller };
+    return operation;
+  }
   async function openHistorical(entry: import('./contracts.js').SpreadsheetHistoryEntry) {
     const pending = draftRef.current,
       hadDraft = pending?.key === draftKey && pending.value !== String(authored);
     if (hadDraft && !applyFormula()) return;
     if (hadDraft || savePhase === 'dirty' || activeSave.current) {
-      await save();
+      try {
+        await save();
+      } catch {
+        return;
+      }
       if (lastSaveError.current) return;
     }
     if (alive.current) await props.history?.onOpen(entry);
@@ -813,6 +1071,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       if (command === 'add' || command === 'insert' || command === 'duplicate') {
         next = appendWorksheet(base);
         const added = next.worksheets.at(-1)!;
+        added.id = (props.idFactory ?? createWorkbookEntityId)('sheet');
         if (command === 'insert') {
           next.worksheets.pop();
           next.worksheets.splice(
@@ -920,21 +1179,38 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   const matches = useMemo(() => {
     if (!query) return [];
-    const matches: { sheetId: string; x: number; y: number }[] = [];
+    const matches: { sheetId: string; x: number; y: number; authored: boolean }[] = [];
     workbook.worksheets.forEach((sheet) =>
       sheet.data.forEach((row, y) =>
         row.forEach((value, x) => {
-          if (
-            String(value ?? '')
-              .toLowerCase()
-              .includes(query.toLowerCase())
-          )
-            matches.push({ sheetId: sheet.id, x, y });
+          const authored = String(value ?? '')
+            .toLowerCase()
+            .includes(query.toLowerCase());
+          const key = calculationCellKey(sheet.id, x, y),
+            ready = readyCells.has(key);
+          const rawResult =
+            visibleCalculation.result?.worksheets.find((entry) => entry.id === sheet.id)?.values[
+              y
+            ]?.[x] ?? null;
+          const cellPresentation = presentation?.cells[key];
+          const text = ready
+            ? (cellPresentation?.text ??
+              formatWorksheetCell(
+                rawResult,
+                sheet.formats?.[formatSpreadsheetAddress(x, y)] ??
+                  (cellPresentation?.defaultUnit
+                    ? { kind: 'unit', unit: cellPresentation.defaultUnit }
+                    : undefined),
+                props.display,
+              ))
+            : '';
+          if (authored || text.toLowerCase().includes(query.toLowerCase()))
+            matches.push({ sheetId: sheet.id, x, y, authored });
         }),
       ),
     );
     return matches;
-  }, [workbook, query]);
+  }, [workbook, query, visibleCalculation.result, readyCells, presentation, props.display]);
   function navigateMatch(direction: number) {
     if (!matches.length) return;
     const index = (matchIndex + direction + matches.length) % matches.length,
@@ -944,11 +1220,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   function replace(all: boolean, text: string) {
     if (!canWrite || !query) return;
-    const targets = all
-      ? matches
-      : matches[matchIndex]
-        ? [matches[matchIndex]]
-        : matches.slice(0, 1);
+    const targets = (
+      all ? matches : matches[matchIndex] ? [matches[matchIndex]] : matches.slice(0, 1)
+    ).filter((match) => match.authored);
+    if (!targets.length) return 0;
     mutateWithDraft(
       (base) => {
         let next = base;
@@ -969,6 +1244,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       },
       all ? 'Replace all matches' : 'Replace match',
     );
+    return targets.length;
   }
   const summary = useMemo(() => {
     const values = selectionCells(selection).map(({ x, y }) => output?.[y]?.[x] ?? null),
@@ -990,6 +1266,118 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       return { count: values.length, sum: '—', average: '—' };
     }
   }, [selection, output, props.display]);
+  const lifecycleState: SpreadsheetEditorState = {
+    dirty: localRevision.current > persistedRevision.current || draftDirty || !!nativeDraft,
+    draftDirty: draftDirty || !!nativeDraft,
+    saving: savePhase === 'saving',
+    flushing,
+    error: noticeTone === 'danger' ? notice : null,
+    calculation: {
+      inputKey: visibleCalculation.inputKey,
+      revision: visibleCalculation.revision,
+      status: visibleCalculation.status,
+    },
+  };
+  const lifecycle = useRef({
+    commitDraft,
+    cancelDraft,
+    save,
+    flush,
+    select,
+    draftTarget: { sheetId: sheet.id, x: selection.x1, y: selection.y1 },
+    state: lifecycleState,
+  });
+  lifecycle.current = {
+    commitDraft,
+    cancelDraft,
+    save,
+    flush,
+    select,
+    draftTarget: { sheetId: sheet.id, x: selection.x1, y: selection.y1 },
+    state: lifecycleState,
+  };
+  const handle = useMemo<SpreadsheetEditorHandle>(() => {
+    const requireSession = () => {
+      if (!alive.current) throw new Error('The editor session has ended.');
+    };
+    return {
+      commitDraft() {
+        requireSession();
+        return lifecycle.current.commitDraft();
+      },
+      cancelDraft() {
+        requireSession();
+        lifecycle.current.cancelDraft();
+      },
+      getSnapshot() {
+        requireSession();
+        return copyWorkbook(latestWorkbook.current);
+      },
+      getState() {
+        requireSession();
+        const pending = draftRef.current;
+        const current = lifecycle.current.state;
+        const target = lifecycle.current.draftTarget;
+        const draftDirty =
+          !!nativeDraftRef.current ||
+          (!!pending &&
+            pending.value !==
+              String(
+                latestWorkbook.current.worksheets.find((value) => value.id === target.sheetId)
+                  ?.data[target.y]?.[target.x] ?? '',
+              ));
+        return structuredClone({
+          ...current,
+          dirty: localRevision.current > persistedRevision.current || draftDirty,
+          draftDirty,
+          saving: !!activeSave.current,
+          flushing: !!activeFlush.current,
+          error: errorNotice.current,
+        });
+      },
+      select(target) {
+        requireSession();
+        const range = parseSpreadsheetRange(target.range);
+        if (!range) throw new TypeError('Invalid selection range.');
+        if (
+          !lifecycle.current.select(
+            { x1: range.start.x, y1: range.start.y, x2: range.end.x, y2: range.end.y },
+            target.sheetId,
+          )
+        )
+          throw new Error('Could not select the requested cell.');
+      },
+      subscribe(listener) {
+        requireSession();
+        listeners.current.add(listener);
+        return () => listeners.current.delete(listener);
+      },
+      async save() {
+        requireSession();
+        await lifecycle.current.save();
+      },
+      async flush() {
+        requireSession();
+        await lifecycle.current.flush();
+      },
+    };
+  }, []);
+  useImperativeHandle(props.editorRef, () => handle, [handle]);
+  const stateIdentity = JSON.stringify(lifecycleState);
+  useLayoutEffect(() => {
+    for (const listener of listeners.current) listener();
+  }, [stateIdentity]);
+  useEffect(() => {
+    if (!workbook.worksheets.some((value) => value.id === sheetId)) {
+      grid.current?.releaseKeyboard();
+      setSheetId(workbook.worksheets[0].id);
+      setSelection(
+        sheetViews.current.get(workbook.worksheets[0].id)?.selection ?? INITIAL_SELECTION,
+      );
+    }
+    const ids = new Set(workbook.worksheets.map((value) => value.id));
+    for (const id of sheetViews.current.keys()) if (!ids.has(id)) sheetViews.current.delete(id);
+  }, [workbook, sheetId]);
   return {
     props,
     workbook,
@@ -1015,12 +1403,20 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     draftKey,
     draftValue,
     setDraftValue,
-    draftDirty: draft?.key === draftKey && draft.value !== String(authored),
+    draftDirty,
+    draftCell,
+    readyCells,
+    presentation,
+    initialViewport: sheetViews.current.get(sheet.id)?.viewport,
+    setNativeDraft,
+    handle,
+    lifecycleState,
     applyFormula,
     flushDraft: applyFormula,
     cancelFormula: () => setDraft(null),
     calculation,
     visibleCalculation,
+    publication,
     previewSheet,
     output,
     style,
@@ -1037,6 +1433,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     undo,
     redo,
     history: currentHistory,
+    canUndo: props.undo?.canUndo ?? !!currentHistory.past.length,
+    canRedo: props.undo?.canRedo ?? !!currentHistory.future.length,
     format,
     toggleFormat,
     border,
@@ -1044,6 +1442,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     copy,
     paste,
     save,
+    flush,
     importExcel,
     refresh,
     exportExcel,

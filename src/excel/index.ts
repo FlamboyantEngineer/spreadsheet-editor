@@ -2,12 +2,22 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { Workbook } from '../model/workbook.js';
 import type { CalculationResult } from '../calculation/evaluator.js';
-import type { XlsxImport } from './contracts.js';
-export type { XlsxImport, XlsxWarning, XlsxReport } from './contracts.js';
+import type { ExcelFormulaCapabilities, XlsxExport, XlsxImport } from './contracts.js';
+import { validateFormulaCapabilities } from './capabilities.js';
+import { encodeImportRequest } from './protocol.js';
+export type {
+  ExcelFormulaCapabilities,
+  ExcelHostFunction,
+  XlsxImport,
+  XlsxWarning,
+  XlsxReport,
+  XlsxExport,
+} from './contracts.js';
 
 export interface ExcelProcessOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  formulaCapabilities?: ExcelFormulaCapabilities;
 }
 let exportsInFlight = 0;
 /** Export the captured workbook and results in a bounded child, without evaluation or live data reads. */
@@ -23,7 +33,17 @@ export async function exportXlsx(
   exportsInFlight++;
   try {
     return new Uint8Array(
-      await runChild('export', Buffer.from(JSON.stringify({ workbook, result })), options),
+      await runChild(
+        'export',
+        Buffer.from(
+          JSON.stringify({
+            workbook,
+            result,
+            formulaCapabilities: validateFormulaCapabilities(options.formulaCapabilities),
+          }),
+        ),
+        options,
+      ),
     );
   } finally {
     exportsInFlight--;
@@ -34,14 +54,50 @@ export async function importXlsx(
   bytes: Uint8Array,
   options: ExcelProcessOptions = {},
 ): Promise<XlsxImport> {
-  return JSON.parse((await runChild('import', bytes, options)).toString()) as XlsxImport;
+  return JSON.parse(
+    (
+      await runChild('import', encodeImportRequest(bytes, options.formulaCapabilities), options)
+    ).toString(),
+  ) as XlsxImport;
+}
+/** Same immutable export with a grouped conversion-loss report. */
+export async function exportXlsxWithReport(
+  workbook: Workbook,
+  result: CalculationResult,
+  options: ExcelProcessOptions = {},
+): Promise<XlsxExport> {
+  if (exportsInFlight >= 2)
+    throw Object.assign(new Error('Two Excel exports are already running. Try again.'), {
+      status: 503,
+    });
+  exportsInFlight++;
+  try {
+    const output = JSON.parse(
+      (
+        await runChild(
+          'export-report',
+          Buffer.from(
+            JSON.stringify({
+              workbook,
+              result,
+              formulaCapabilities: validateFormulaCapabilities(options.formulaCapabilities),
+            }),
+          ),
+          options,
+        )
+      ).toString(),
+    ) as { bytes: string; report: XlsxExport['report'] };
+    return { bytes: new Uint8Array(Buffer.from(output.bytes, 'base64')), report: output.report };
+  } finally {
+    exportsInFlight--;
+  }
 }
 function runChild(
-  operation: 'import' | 'export',
+  operation: 'import' | 'export' | 'export-report',
   bytes: Uint8Array,
   options: ExcelProcessOptions,
 ): Promise<Buffer> {
-  if (bytes.byteLength > (operation === 'import' ? 20 : 100) * 1024 * 1024)
+  if (bytes.byteLength > (operation === 'import' ? 20 * 1024 * 1024 + 65_540 : 100 * 1024 * 1024))
     return Promise.reject(new RangeError('Excel process input exceeds its byte limit.'));
   return new Promise((resolve, reject) => {
     const child = spawn(

@@ -3,11 +3,16 @@ import ExcelJS from 'exceljs';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { convertXlsx } from './convert.js';
 import { inspectXlsx } from './guard.js';
-import { exportXlsx } from './write.js';
+import { exportXlsx, exportXlsxWithReport } from './write.js';
+import { validateFormulaCapabilities } from './capabilities.js';
+import { capturedText } from './captured-text.js';
+import { encodeImportRequest, decodeImportRequest } from './protocol.js';
+import { importNumberFormat, exportNumberFormat } from './styles.js';
+import type { ExcelFormulaCapabilities } from './contracts.js';
 import { calculateWorkbook } from '../calculation/evaluator.js';
 import { createWorkbook } from '../model/workbook.js';
 
-describe('Host SE-XL-1/2: Excel conversion and loss reporting', () => {
+describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
   it('keeps formulas and geometry while discarding caches and reporting unsupported content', async () => {
     const document = new ExcelJS.Workbook(),
       sheet = document.addWorksheet('Inputs');
@@ -78,7 +83,7 @@ describe('Host SE-XL-1/2: Excel conversion and loss reporting', () => {
   });
 });
 
-describe('Host SE-XL-3: bounded OOXML input', () => {
+describe('SE-XL-3: bounded OOXML input', () => {
   it('rejects malformed inputs, XML entities and files over the configured input limit', async () => {
     expect(() => inspectXlsx(new Uint8Array([1, 2, 3]))).toThrow();
     const document = new ExcelJS.Workbook();
@@ -97,10 +102,10 @@ describe('Host SE-XL-3: bounded OOXML input', () => {
   });
 });
 
-it('Host SE-XL-5.2: exports immutable operands, aliases and exact caches without live resolution', async () => {
+it('SE-XL-5.2: exports immutable operands, aliases and exact caches without live resolution', async () => {
   const workbook = createWorkbook([
     [
-      '=WORKITEM.FIELD("mass")+1',
+      '=CAPTURED.VALUE("mass")+1',
       '=(1 m)/(2 m)',
       '=EXPM1(1E-25)',
       '=STDEVS(1,2)',
@@ -116,14 +121,16 @@ it('Host SE-XL-5.2: exports immutable operands, aliases and exact caches without
     {
       callFunction: (name) => {
         reads++;
-        return name === 'WORKITEM.FIELD'
+        return name === 'CAPTURED.VALUE'
           ? { kind: 'number', numerator: '2', denominator: '1', approximate: false }
           : undefined;
       },
     },
   );
   const before = reads;
-  const bytes = await exportXlsx(workbook, result);
+  const bytes = await exportXlsx(workbook, result, {
+    formulaCapabilities: { hostFunctions: [{ name: 'CAPTURED.VALUE' }] },
+  });
   expect(reads).toBe(before);
   const document = new ExcelJS.Workbook();
   await document.xlsx.load(bytes as never);
@@ -139,7 +146,7 @@ it('Host SE-XL-5.2: exports immutable operands, aliases and exact caches without
   expect(sheet.getCell('G1').formula).toBe('"EXPM1("');
 });
 
-it('Host SE-XL-1.2: resolves theme tints and indexed colors to authored hex styles', async () => {
+it('SE-XL-1.2: resolves theme tints and indexed colors to authored hex styles', async () => {
   const document = new ExcelJS.Workbook(),
     sheet = document.addWorksheet('Colors');
   sheet.getCell('A1').value = 1;
@@ -149,4 +156,283 @@ it('Host SE-XL-1.2: resolves theme tints and indexed colors to authored hex styl
   const converted = await convertXlsx(new Uint8Array(await document.xlsx.writeBuffer()));
   expect(converted.workbook.worksheets[0].style!.A1).toMatch(/color:#[0-9a-f]{6}/);
   expect(converted.workbook.worksheets[0].style!.A2).toContain('color:#ff0000');
+});
+
+const fsCapabilities: ExcelFormulaCapabilities = {
+  hostFunctions: [
+    'CAPTURED',
+    'CAPTURED.VALUE',
+    'CAPTURED.VALUE.LABEL',
+    'CAPTURED.VALUE.PROMPT',
+    'RECORD.FIELD',
+    'PROFILE.NAME',
+    'PROFILE.EMAIL',
+    'PROFILE.FIRSTNAME',
+    'PROFILE.LASTNAME',
+  ].map((name) => ({
+    name,
+    capturedText: name.startsWith('CAPTURED') ? 'html-to-text' : 'plain',
+  })),
+};
+
+describe('SE-XLSX-3: explicit serializable host capabilities', () => {
+  it('requires explicit host descriptors during import, including aliases and all FS functions', async () => {
+    const document = new ExcelJS.Workbook(),
+      sheet = document.addWorksheet('Inputs');
+    fsCapabilities.hostFunctions.forEach(({ name }, index) => {
+      sheet.getCell(1, index + 1).value = { formula: `${name}("x")`, result: 999 };
+    });
+    sheet.getCell(2, 1).value = { formula: 'ALIAS("x")', result: 99 };
+    const bytes = new Uint8Array(await document.xlsx.writeBuffer());
+    const undeclared = await convertXlsx(bytes);
+    expect(
+      undeclared.report.warnings.filter((warning) => warning.code.startsWith('formula:')),
+    ).toHaveLength(10);
+    const declared = await convertXlsx(
+      bytes,
+      {},
+      { hostFunctions: [...fsCapabilities.hostFunctions, { name: 'FOO', aliases: ['ALIAS'] }] },
+    );
+    expect(
+      declared.report.warnings.filter((warning) => warning.code.startsWith('formula:')),
+    ).toHaveLength(0);
+    expect(declared.workbook.worksheets[0].data[0][0]).toBe('=CAPTURED("x")');
+  });
+
+  it('inlines repeated generic calls by exact parser span, including dynamic arguments and names', async () => {
+    const workbook = createWorkbook([['=FOO(A2)+BAR("other")+constant', '=FOO(FOO(A2))'], ['4']]);
+    let reads = 0;
+    const result = calculateWorkbook(
+      workbook,
+      {},
+      {
+        callFunction: (name, args) => {
+          reads++;
+          return name === 'FOO'
+            ? args[0]
+            : { kind: 'number', numerator: '7', denominator: '1', approximate: false };
+        },
+        readName: () => ({ kind: 'number', numerator: '3', denominator: '1', approximate: false }),
+      },
+    );
+    const before = reads;
+    const output = await exportXlsxWithReport(workbook, result, {
+      formulaCapabilities: { hostFunctions: [{ name: 'foo', aliases: ['bar'] }] },
+    });
+    expect(reads).toBe(before);
+    expect(output.report.warnings).toEqual([]);
+    const document = new ExcelJS.Workbook();
+    await document.xlsx.load(output.bytes as never);
+    expect(document.worksheets[0].getCell('A1').formula).toBe('4+7+3');
+    expect(document.worksheets[0].getCell('B1').formula).toBe('4');
+  });
+
+  it('keeps plain captured text by default and parses rich text only when explicitly declared', async () => {
+    const workbook = createWorkbook([['=FOO()']]);
+    const html =
+      '<b>A &amp; &quot;B&quot;</b><br>line<script>hidden()</script><style>hide</style><svg><text>omit</text></svg>';
+    const result = calculateWorkbook(workbook, {}, { callFunction: () => html });
+    const plain = await exportXlsx(workbook, result, {
+      formulaCapabilities: { hostFunctions: [{ name: 'FOO' }] },
+    });
+    const rich = await exportXlsx(workbook, result, {
+      formulaCapabilities: { hostFunctions: [{ name: 'FOO', capturedText: 'html-to-text' }] },
+    });
+    const p = new ExcelJS.Workbook(),
+      r = new ExcelJS.Workbook();
+    await p.xlsx.load(plain as never);
+    await r.xlsx.load(rich as never);
+    expect(p.worksheets[0].getCell('A1').formula).toBe('"' + html.replaceAll('"', '""') + '"');
+    expect(r.worksheets[0].getCell('A1').formula).toBe('"A & ""B""\nline"');
+  });
+
+  it('reports unsupported, missing, mismatched and overlong captured values without live lookup', async () => {
+    const workbook = createWorkbook([['=FOO()', '=FOO()', '=FOO()']]);
+    const result = calculateWorkbook(
+      workbook,
+      {},
+      { callFunction: (_name, _args, context) => (context.x === 2 ? 'x'.repeat(256) : 'stored') },
+    );
+    const undeclared = await exportXlsxWithReport(workbook, result);
+    expect(
+      undeclared.report.warnings.find((warning) => warning.code === 'unsupported-formula')?.count,
+    ).toBe(3);
+    const operands = Object.values(result.context!.operands);
+    delete result.context!.operands[Object.keys(result.context!.operands)[0]];
+    operands[1].formula = '=different';
+    const captured = await exportXlsxWithReport(workbook, result, {
+      formulaCapabilities: { hostFunctions: [{ name: 'FOO' }] },
+    });
+    expect(
+      captured.report.warnings.find((warning) => warning.code === 'captured-operand')?.count,
+    ).toBe(2);
+    expect(
+      captured.report.warnings.find((warning) => warning.code === 'captured-text')?.count,
+    ).toBe(1);
+    const document = new ExcelJS.Workbook();
+    await document.xlsx.load(captured.bytes as never);
+    expect(document.worksheets[0].getCell('A1').value).toBe('stored');
+    expect(document.worksheets[0].getCell('C1').value).toBe('x'.repeat(256));
+  });
+
+  it('rejects malformed descriptors at parent and child request boundaries', () => {
+    for (const value of [
+      null,
+      [],
+      { hostFunctions: Array(129).fill({ name: 'FOO' }) },
+      { hostFunctions: [{ name: 'BAD()' }] },
+      { hostFunctions: [{ name: 'FOO', capturedText: 'execute' }] },
+      { hostFunctions: [{ name: 'FOO', aliases: Array(17).fill('bar') }] },
+      { hostFunctions: [{ name: 'FOO' }, { name: 'foo' }] },
+      { hostFunctions: [{ name: 'FOO', aliases: ['SUM'] }] },
+      { hostFunctions: [{ name: 'FOO', resolver: () => 1 }] },
+    ])
+      expect(() => validateFormulaCapabilities(value)).toThrow();
+    const encoded = encodeImportRequest(new Uint8Array([1, 2, 3]), fsCapabilities);
+    const decoded = decodeImportRequest(encoded);
+    expect(decoded.bytes).toEqual(Buffer.from([1, 2, 3]));
+    expect(decoded.formulaCapabilities).toEqual(validateFormulaCapabilities(fsCapabilities));
+    encoded.writeUInt32LE(65_537);
+    expect(() => decodeImportRequest(encoded)).toThrow('header length');
+    expect(() => encodeImportRequest(new Uint8Array(20 * 1024 * 1024 + 1))).toThrow('byte limit');
+  });
+
+  it('bounds established HTML parsing and rejects unrepresentable strings', () => {
+    expect(capturedText('<p>&copy; &#x1F600;<BR/>next</p><!-- ignored -->', 'html-to-text')).toBe(
+      '© 😀\nnext',
+    );
+    expect(capturedText('<div title="x > y">safe</div>', 'html-to-text')).toBe('safe');
+    expect(() => capturedText('x'.repeat(65_537), 'html-to-text')).toThrow('input limit');
+    expect(() =>
+      capturedText('<i>'.repeat(130) + 'x' + '</i>'.repeat(130), 'html-to-text'),
+    ).toThrow('tree limit');
+    expect(() => capturedText('bad\u0001', 'plain')).toThrow('cannot represent');
+  });
+});
+
+describe('SE-XLSX-4: locale, exact decimals and explicit metadata losses', () => {
+  it('round trips EUR/de-DE and USD/en-US format metadata without rounding stored decimals', async () => {
+    const formats = [
+      { kind: 'currency' as const, currency: 'EUR', locale: 'de-DE', decimals: 2 },
+      { kind: 'currency' as const, currency: 'USD', locale: 'en-US', decimals: 2 },
+      { kind: 'percent' as const, locale: 'de-DE', decimals: 3 },
+      { kind: 'date' as const, locale: 'de-DE' },
+    ];
+    for (const format of formats)
+      expect(importNumberFormat(exportNumberFormat(format))).toMatchObject(format);
+    const workbook = createWorkbook([['9007199254740993', '-1234.567', '0.125', '60']]);
+    workbook.worksheets[0].formats = Object.fromEntries(
+      formats.map((format, index) => [String.fromCharCode(65 + index) + '1', format]),
+    );
+    const output = await exportXlsxWithReport(workbook, calculateWorkbook(workbook));
+    expect(output.report.warnings).toEqual([]);
+    const imported = await convertXlsx(output.bytes);
+    expect(imported.workbook.worksheets[0].data[0]).toEqual([
+      '9007199254740993',
+      '-1234.567',
+      '0.125',
+      '60',
+    ]);
+    formats.forEach((format, index) =>
+      expect(
+        imported.workbook.worksheets[0].formats?.[String.fromCharCode(65 + index) + '1'],
+      ).toMatchObject(format),
+    );
+  });
+  it('reports a locale that has no representable Excel LCID rather than inventing one', async () => {
+    const workbook = createWorkbook([['1']]);
+    workbook.worksheets[0].formats = {
+      A1: { kind: 'number', locale: 'en-001' },
+    } as (typeof workbook.worksheets)[0]['formats'];
+    const output = await exportXlsxWithReport(workbook, calculateWorkbook(workbook));
+    expect(output.report.warnings).toContainEqual(
+      expect.objectContaining({ code: 'number-format', disposition: 'not-exported' }),
+    );
+  });
+});
+
+it('SE-XLSX-4: keeps exact numeric text beyond display precision instead of rounding it', async () => {
+  const workbook = createWorkbook([['1']]),
+    result = calculateWorkbook(workbook);
+  const numerator = '1' + '0'.repeat(10000) + '1';
+  result.worksheets[0].values[0][0] = {
+    kind: 'number',
+    numerator,
+    denominator: '1',
+    approximate: false,
+  };
+  const output = await exportXlsx(workbook, result);
+  const opened = new ExcelJS.Workbook();
+  await opened.xlsx.load(output as never);
+  expect(opened.worksheets[0].getCell('A1').value).toBe(numerator);
+});
+
+it('SE-XLSX-4: projects canonical quantities once, preserves temperature differences and reports typed losses', async () => {
+  const workbook = createWorkbook([
+    ['alternate authored text', 'another representation', '2'],
+    ['=30 °C-25 °C'],
+  ]);
+  const sheet = workbook.worksheets[0];
+  sheet.inputValues = {
+    A1: {
+      kind: 'number',
+      numerator: '5',
+      denominator: '1',
+      approximate: false,
+      dimension: [0, 0, 0, 0, 1, 0, 0],
+      temperature: 'difference',
+      provenance: { 'constant-set': 'rev1' },
+    },
+    B1: {
+      kind: 'number',
+      numerator: '27315',
+      denominator: '100',
+      approximate: true,
+      precision: 80,
+      dimension: [0, 0, 0, 0, 1, 0, 0],
+      temperature: 'absolute',
+    },
+    C1: {
+      kind: 'number',
+      numerator: '1',
+      denominator: '1',
+      approximate: false,
+      quantityKind: 'angle',
+    },
+  };
+  sheet.formats = {
+    A1: { kind: 'unit', unit: '°F', inputUnit: '°C' },
+    B1: { kind: 'unit', unit: '°C', inputUnit: '°F' },
+    A2: { kind: 'unit', unit: '°C' },
+  };
+  const result = calculateWorkbook(workbook);
+  const output = await exportXlsxWithReport(workbook, result);
+  const opened = new ExcelJS.Workbook();
+  await opened.xlsx.load(output.bytes as never);
+  expect(opened.worksheets[0].getCell('A1').value).toBe('9 °F');
+  expect(opened.worksheets[0].getCell('B1').value).toBe('≈0 °C');
+  expect(opened.worksheets[0].getCell('C1').value).toBe('1 rad');
+  expect(opened.worksheets[0].getCell('A2').value).toBe('5 °C');
+  expect(output.report.warnings.find((warning) => warning.code === 'canonical-input')?.count).toBe(
+    3,
+  );
+  expect(
+    output.report.warnings.find((warning) => warning.code === 'quantity-metadata')?.count,
+  ).toBe(4);
+  expect(output.report.formulas).toBe(1);
+  const imported = await convertXlsx(output.bytes);
+  expect(imported.workbook.worksheets[0].data[0]).toEqual(['9 °F', '≈0 °C', '1 rad']);
+});
+
+it('SE-XLSX-4: rejects malformed quantity and provenance result metadata at the export boundary', async () => {
+  const workbook = createWorkbook([['1']]);
+  for (const metadata of [
+    { temperature: 'relative' },
+    { provenance: { ns: 3 } },
+    { dimension: [1, 2] },
+  ]) {
+    const result = calculateWorkbook(workbook);
+    Object.assign(result.worksheets[0].values[0][0]!, metadata);
+    await expect(exportXlsx(workbook, result)).rejects.toThrow();
+  }
 });

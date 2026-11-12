@@ -27,6 +27,7 @@ import {
 import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
+import { worksheetExtent } from '../model/extent.js';
 import { parseFormulaReferenceHighlights } from '../model/formula-reference-parser.js';
 import type {
   JSpreadsheetAnchorRect,
@@ -55,6 +56,7 @@ export type {
   SpreadsheetClipboard,
   SpreadsheetHostPanel,
 } from './contracts.js';
+export * from './public-host.js';
 const WorkbookGrid = lazy(() => import('../engine/workbook-grid.js'));
 
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
@@ -255,6 +257,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
       {chrome !== 'minimal' && (
         <EditorFormulaBar
           ref={formulaBar}
+          formulaFunctions={props.formulaFunctions}
           selection={e.selection}
           draftValue={e.draftValue}
           result={formatWorksheetCell(
@@ -332,8 +335,18 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                   key={e.sheet.id}
                   subscribeWindowBlur={props.events?.subscribeWindowBlur}
                   worksheet={e.previewSheet}
+                  logicalExtent={worksheetExtent(e.previewSheet, e.workbook)}
                   zoom={e.zoom}
-                  values={e.draftDirty ? undefined : e.output}
+                  values={e.output}
+                  draft={e.draftCell ?? undefined}
+                  readyCells={e.readyCells}
+                  publication={e.publication}
+                  cellPresentation={e.presentation}
+                  renderCellContent={props.renderCellContent}
+                  formulaFunctions={props.formulaFunctions}
+                  initialViewport={e.initialViewport}
+                  focusOnMount
+                  onNativeDraft={e.setNativeDraft}
                   formulaReferences={references}
                   pickingFormula={(formulaActive || gridEditing) && e.draftValue.startsWith('=')}
                   onFormulaReference={insertReference}
@@ -366,7 +379,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                     if (e.dialog) controller?.releaseKeyboard();
                   }}
                   unavailableText={e.calculation.error ? 'Unavailable' : '…'}
-                  onChange={(next) => e.attempt(() => e.updateSheet(next))}
+                  onChange={(next) => e.updateSheet(next)}
                   onSelectionChange={e.onGridSelection}
                   onContextMenu={openContext}
                   onCommentRequest={(coords) => {
@@ -494,7 +507,9 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
           {e.calculation.error ??
             (e.calculation.pending
               ? 'Calculating…'
-              : `Calculated ${props.calculation?.mode === 'server' ? 'on server' : 'on client'}`)}
+              : props.calculation?.mode === 'external'
+                ? 'Published by host'
+                : `Calculated ${props.calculation?.mode === 'server' ? 'on server' : 'on client'}`)}
         </p>
         <span aria-label="Selection summary">
           Count: {e.summary.count} · Sum: {e.summary.sum} · Average: {e.summary.average}

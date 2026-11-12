@@ -1,4 +1,11 @@
-import { assertWorkbook, copyWorkbook, type Workbook, type Worksheet } from './workbook.js';
+import {
+  assertWorkbook,
+  copyWorkbook,
+  DEFAULT_WORKBOOK_LIMITS,
+  type Workbook,
+  type Worksheet,
+} from './workbook.js';
+import { worksheetExtent, createWorkbookEntityId } from './extent.js';
 import {
   formatSpreadsheetAddress,
   formatSpreadsheetColumnName,
@@ -12,6 +19,8 @@ export interface StructureChange {
   kind: 'insert' | 'delete';
   index: number;
   count: number;
+  /** IDs generated once by the command owner for newly inserted lines. */
+  ids?: readonly string[];
 }
 
 function interval(start: number, end: number, change: StructureChange): [number, number] | null {
@@ -162,46 +171,81 @@ export function changeWorkbookStructure(
   const next = copyWorkbook(workbook),
     sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
   if (!sheet) throw new RangeError('Unknown worksheet.');
-  const width = Math.max(1, ...sheet.data.map((row) => row.length));
+  const extent = worksheetExtent(sheet, next),
+    axisExtent = change.axis === 'row' ? extent.rows : extent.columns;
+  if (change.index > axisExtent || (change.kind === 'delete' && change.index >= axisExtent))
+    throw new RangeError('Structural change is outside the worksheet extent.');
+  if (change.kind === 'delete' && change.index + change.count > axisExtent)
+    throw new RangeError('Structural deletion is outside the worksheet extent.');
+  change = {
+    ...change,
+    count: change.kind === 'delete' ? Math.min(change.count, axisExtent - 1) : change.count,
+  };
+  if (!change.count) return next;
+  const columns =
+      extent.columns +
+      (change.axis === 'column' ? (change.kind === 'insert' ? change.count : -change.count) : 0),
+    rows =
+      extent.rows +
+      (change.axis === 'row' ? (change.kind === 'insert' ? change.count : -change.count) : 0);
+  if (columns > 16384 || rows > 1048576 || columns * rows > DEFAULT_WORKBOOK_LIMITS.maxCells)
+    throw new RangeError('Worksheet exceeds the cell limit.');
+  sheet.minDimensions = [columns, rows];
+  let existingIds = change.axis === 'row' ? sheet.rowIds : sheet.columnIds;
+  if (!existingIds && change.ids) {
+    existingIds = Array.from({ length: axisExtent }, () => createWorkbookEntityId(change.axis));
+    if (change.axis === 'row') sheet.rowIds = existingIds;
+    else sheet.columnIds = existingIds;
+  }
+  if (
+    change.ids !== undefined &&
+    (change.kind !== 'insert' ||
+      change.ids.length !== change.count ||
+      change.ids.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
+      new Set(change.ids).size !== change.ids.length ||
+      change.ids.some((id) => existingIds?.includes(id)))
+  )
+    throw new TypeError('Invalid inserted line identities.');
+  if (existingIds)
+    existingIds.splice(
+      change.index,
+      change.kind === 'delete' ? change.count : 0,
+      ...(change.kind === 'insert'
+        ? (change.ids ??
+          Array.from({ length: change.count }, () => createWorkbookEntityId(change.axis)))
+        : []),
+    );
   if (change.axis === 'row') {
     if (change.kind === 'insert') {
-      if ((Math.max(change.index, sheet.data.length) + change.count) * width > 50_000)
-        throw new RangeError('Worksheet exceeds the cell limit.');
-      while (sheet.data.length < change.index)
-        sheet.data.push(Array.from({ length: width }, () => null));
-      sheet.data.splice(
-        change.index,
-        0,
-        ...Array.from({ length: change.count }, () => Array.from({ length: width }, () => null)),
-      );
+      if (change.index < sheet.data.length)
+        sheet.data.splice(change.index, 0, ...Array.from({ length: change.count }, () => []));
     } else sheet.data.splice(change.index, change.count);
-    const rows: NonNullable<Worksheet['rows']> = {};
+    const rowSettings: NonNullable<Worksheet['rows']> = {};
     for (const [index, settings] of Object.entries(sheet.rows ?? {})) {
       const moved = interval(Number(index), Number(index), change);
-      if (moved) rows[String(moved[0])] = settings;
+      if (moved) rowSettings[String(moved[0])] = settings;
     }
-    sheet.rows = rows;
+    sheet.rows = rowSettings;
   } else {
-    if (
-      change.kind === 'insert' &&
-      (Math.max(width, change.index) + change.count) * Math.max(1, sheet.data.length) > 50_000
-    )
-      throw new RangeError('Worksheet exceeds the cell limit.');
     sheet.data.forEach((row) => {
       if (change.kind === 'insert') {
-        while (row.length < change.index) row.push(null);
-        row.splice(change.index, 0, ...Array.from({ length: change.count }, () => null));
+        if (change.index < row.length)
+          row.splice(change.index, 0, ...Array.from({ length: change.count }, () => null));
       } else row.splice(change.index, change.count);
     });
     if (sheet.columns) {
       if (change.kind === 'insert') {
-        while (sheet.columns.length < change.index) sheet.columns.push({});
-        sheet.columns.splice(change.index, 0, ...Array.from({ length: change.count }, () => ({})));
+        if (change.index < sheet.columns.length)
+          sheet.columns.splice(
+            change.index,
+            0,
+            ...Array.from({ length: change.count }, () => ({})),
+          );
       } else sheet.columns.splice(change.index, change.count);
     }
   }
   if (!sheet.data.length) sheet.data = [['']];
-  if (!sheet.data.some((row) => row.length)) sheet.data.forEach((row) => row.push(null));
+  if (!sheet.data.some((row) => row.length)) sheet.data[0].push(null);
   const remap = <T>(map: Record<string, T> | undefined): Record<string, T> =>
     Object.fromEntries(
       Object.entries(map ?? {}).flatMap(([address, value]) => {
@@ -212,6 +256,7 @@ export function changeWorkbookStructure(
   sheet.style = remap(sheet.style);
   sheet.formats = remap(sheet.formats);
   sheet.cellProvenance = remap(sheet.cellProvenance);
+  sheet.inputValues = remap(sheet.inputValues);
   const merges: NonNullable<Worksheet['mergeCells']> = {};
   for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
     const anchor = parseSpreadsheetAddress(address)!;
@@ -242,27 +287,25 @@ export function changeWorkbookStructure(
       else thread.orphaned = true;
     }
   });
-  next.suggestions
-    ?.filter((item) => item.status === 'pending')
-    .forEach((item) =>
-      item.changes.forEach((cell) => {
-        const current = next.worksheets.find((sheet) => sheet.id === cell.sheetId);
-        if (cell.sheetId === sheetId) {
-          const moved = moveAddress(cell.address, change);
-          if (moved) cell.address = moved;
-          else item.outdated = true;
-        }
-        if (current)
-          for (const field of ['before', 'after'] as const)
-            if (typeof cell[field] === 'string')
-              cell[field] = rewriteStructureReferences(
-                cell[field] as string,
-                current.name,
-                sheet.name,
-                change,
-              );
-      }),
-    );
+  next.suggestions?.forEach((item) =>
+    item.changes.forEach((cell) => {
+      const current = next.worksheets.find((sheet) => sheet.id === cell.sheetId);
+      if (cell.sheetId === sheetId) {
+        const moved = moveAddress(cell.address, change);
+        if (moved) cell.address = moved;
+        else item.outdated = true;
+      }
+      if (current)
+        for (const field of ['before', 'after'] as const)
+          if (typeof cell[field] === 'string')
+            cell[field] = rewriteStructureReferences(
+              cell[field] as string,
+              current.name,
+              sheet.name,
+              change,
+            );
+    }),
+  );
   assertWorkbook(next);
   return next;
 }

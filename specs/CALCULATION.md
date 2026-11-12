@@ -14,9 +14,9 @@ Verification: `src/calculation/evaluator.test.ts`, `e2e/editor.spec.ts` (SE-UI-1
 
 ## SE-CALC-2 — Workbook evaluation
 
-Formulas parse into a syntax tree; no authored formula reaches JavaScript evaluation or code generation. Cross-sheet references are case-insensitive, quoted names and absolute addresses are supported, and whole-row/column ranges are bounded by the used dimensions. Cells are memoized within one calculation. Cycles, invalid references, numerical errors, unknown functions and work-limit failures produce typed error values. IF and IFERROR evaluate only the selected branch. Hosts may resolve names and synchronous custom functions explicitly.
+Formulas parse into a syntax tree; no authored formula reaches JavaScript evaluation or code generation. Cross-sheet references are case-insensitive, quoted names and absolute addresses are supported, and whole-row/column ranges are bounded by calculation extents (authored data, canonical inputs, identities, explicit geometry, merges and unit formats). Visual styles, comments, contributor markers and display-only formats can extend the viewport without changing calculation ranges. Cells are memoized within one calculation. Cycles, invalid references, numerical errors, unknown functions and work-limit failures produce typed error values. IF and IFERROR evaluate only the selected branch. Hosts may resolve names and synchronous custom functions explicitly.
 
-The exported `SUPPORTED_FUNCTIONS` array is the executable catalog. The initial families below are retained; the executable catalog now also covers all 154 supported worksheet names and aliases from the pinned Host registry in [HOST-FUNCTIONS.json](HOST-FUNCTIONS.json). Additions include conditional aggregates, lookups, calendar/text functions, hyperbolic math and stable EXPM1/LOG1P. Pending registry entries remain unsupported. Families:
+The exported `SUPPORTED_FUNCTIONS` array is the executable catalog. The initial families below are retained; the executable catalog now also covers all 154 supported worksheet names and aliases from the pinned registry in [FUNCTION-CATALOG.json](FUNCTION-CATALOG.json). Additions include conditional aggregates, lookups, calendar/text functions, hyperbolic math and stable EXPM1/LOG1P. Pending registry entries remain unsupported. Families:
 
 - Logic: IF, IFERROR, AND, OR, NOT, TRUE, FALSE, ISERROR, NA.
 - Aggregates: SUM, PRODUCT, AVERAGE, MIN, MAX, COUNT, COUNTA, COUNTBLANK, SUMSQ.
@@ -34,7 +34,7 @@ Verification: `src/calculation/evaluator.test.ts`, `src/model/workbook.test.ts`.
 
 ## SE-CALC-3 — Server transport and parity
 
-`CalculationProvider.calculate(workbook, options, signal)` returns a versioned result. The HTTP provider posts a versioned request with a per-provider request id, and validates the response id, workbook dimensions, error tokens and rational fields. Exact numerator/denominator strings must survive transport unchanged.
+`CalculationProvider.calculate(workbook, options, signal)` returns a versioned result. The HTTP provider posts a versioned request with a per-provider request id, and validates the response id, workbook dimensions, error tokens and rational fields. Exact numerator/denominator strings, temperature tags, provenance, captured host JSON and dependency keys survive transport unchanged. Response validation checks every numeric value, captured operand and dependency tuple. Host JSON contains finite primitives, arrays or plain objects, with a depth limit of 32 and transport byte limits.
 
 `handleCalculationRequest` accepts Fetch-standard Requests and returns Responses. It accepts POST JSON only, bounds streaming request bodies (2 MiB by default), validates inputs and caps requested limits at server ceilings. Client response bodies are bounded (16 MiB by default). Authentication and routing are supplied by the host. No server state or global arithmetic context is shared between requests.
 
@@ -44,6 +44,36 @@ Verification: `src/calculation/http.test.ts`, `e2e/editor.spec.ts` (SE-UI-2, SE-
 
 ## SE-CALC-4 — Quantities and calendar values
 
-Numeric values may carry a seven-axis integer SI dimension vector and quantity-kind metadata. The standalone rational kernel converts curated engineering units exactly, checks incompatible dimensions, and preserves input-unit metadata when display units change. Unit parsing is bounded; unknown units return typed errors. The registry is deliberately separate from the full platform constants catalog. Calendar values remain rational serials; date/time display uses UTC calendar fields and preserves Excel day 60. TODAY/NOW capture one clock per pass, in `options.timeZone` (headless default UTC; the editor supplies the viewer zone). Host-defined name/call results are captured with exact parser-span keys and formula text in optional result context for immutable export.
+Numeric values may carry the unchanged seven-axis SI dimension vector, physical `quantityKind`, `temperature: 'absolute' | 'difference'`, and opaque namespace/revision `provenance`. Angle and information remain distinct even with zero SI vectors; their derived powers remain explicit kind metadata. Scalar operations preserve physical kind. Incompatible explicit kinds (including torque/energy) or conflicting revisions in one provenance namespace return `#VALUE!`. Provenance unions across arithmetic, aggregates, rounding and host-derived dependencies.
 
-Verification: `units.test.ts`, `catalog.test.ts`, `parity.test.ts`, HTTP/provider tests and Excel stored-context tests. The [Host comparison](HOST-PARITY.md) records intentional precision and error-token differences.
+The complete pinned unit catalog and decimal/binary prefixes are portable source data in `unit-catalog.ts`. Factors, divisors and affine offsets are strings. Pi-based angle factors use the isolated approximation context. Aliases are case sensitive: literal `C`/`F` mean coulomb/farad; Excel CONVERT has separate temperature-code aliases. Unit-configured cells can interpret C/F as temperatures only when their expected dimension explicitly says Temperature. Expected dimensions accept case-insensitive category names or unit expressions. Word units require the positive bounded integer-string `options.wordSizeBits` (1–100000); no architecture size is assumed.
+
+Standalone pure-temperature literals, including kelvin and authored signed affine literals, are absolute. Absolute minus absolute yields a difference; absolute plus difference and difference plus absolute yield absolute; differences add/subtract as differences. Absolute plus absolute and difference minus absolute are invalid. Calculated absolute temperatures cannot be negated; authored signed temperature literals apply their sign before conversion. AVERAGE/comparison reject mixed absolutes and differences. Averaging absolute values preserves their kind, without illegally summing absolutes. Compound temperatures use scale without affine offset. Difference display converts using scale only. Old version-1 untagged pure temperatures mean absolute at ingress; new outputs carry explicit tags.
+
+Nonformula `Worksheet.inputValues` supply validated authored canonical values before primitive parsing. They bypass `inputUnit` inheritance, preserving stored SI values while the formula bar retains the original edit text. Applying a display format never mutates a canonical input.
+
+Calendar values remain rational serials. DATE resolves month and day overflow in Excel serial space, including fictitious 1900-02-29; EDATE/EOMONTH preserve day 60. Date presentation formats calendar fields in UTC without viewer-zone shifts. TODAY/NOW capture one clock per pass in `options.timeZone` (headless UTC). WEEKDAY supports modes 1–3 and 11–17.
+
+Implementation: `src/calculation/values.ts`, `units.ts`, `unit-catalog.ts`, `calendar.ts`, `evaluator.ts`, `http.ts`.
+
+Verification: `src/calculation/quantity-metadata.test.ts`, `units.test.ts`, `core-numeric-corpus.test.ts`, HTTP/provider tests and Excel stored-context tests.
+
+## SE-CALC-5 — Portable function semantics and dependencies
+
+[NUMERIC-CORPUS.json](NUMERIC-CORPUS.json) records portable formula/quantity cases and their source revision. It supplements catalog membership with semantic aggregate, lookup, text, calendar, quantity and INDEX-shape fixtures. [NUMERIC-INTENTIONAL-DIFFERENCES.json](NUMERIC-INTENTIONAL-DIFFERENCES.json) records individual rational/default-precision/display/limit differences; it grants no family-wide exceptions.
+
+TEXT accepts a bounded explicit set of numeric masks (`0`, `#,##0`, optional 1–100 zero decimals, currency prefix or percent suffix) and calendar masks documented in `text-format.ts`. Unsupported masks and quantities return `#VALUE!`. Windows-1252 CHAR/CODE remain separate from Unicode UNICHAR/UNICODE. INDEX truncates fractional indices, selects either vector axis, and preserves whole row/column/matrix results for zero axes and nested functions. Exact integer LOG results are verified with rational powers before returning, so INT(LOG(8,2)) remains 3.
+
+`CalculationResult.dependencies` records actually-read serialized `[sheetId,x,y]` cell tuples and used-extent worksheet IDs. Lazy untaken branches add no dependencies. Collection shares addressed-cell budgets and resumable evaluation; existing 1,200-cell chains and limits remain supported. FormulaHost name/call callbacks receive the originating formula and cell context. Optional bounded `hostContext` is captured separately from native values in result context and span-keyed operands, for immutable later export.
+
+Implementation: `src/calculation/evaluator.ts`, `extended-functions.ts`, `text-format.ts`, `rational.ts`.
+
+Verification: `src/calculation/core-numeric-corpus.test.ts`, `quantity-metadata.test.ts`, `parity.test.ts`, `catalog.test.ts`.
+
+## SE-CALC-6 — Exact locale and currency formatting
+
+Optional `CellFormat.locale` and `.currency` default to en-US/USD. Unsupported locales or currency codes fail workbook ingress with useful errors. Existing default decimal counts remain unchanged. Currency uses Intl currency codes and locale placement/grouping; percentages and serial calendars use the same requested locale. Fixed/scientific numeric formatting never converts authored values through binary Number arithmetic. Exact decimal-string Intl formatting is used on supporting runtimes, with a tested BigInt/string/format-parts fallback. The fictitious leap date is localized using calendar fields, not converted through a viewer time zone.
+
+Implementation: `src/calculation/cell-format.ts`, `calendar.ts`, `src/model/workbook.ts`.
+
+Verification: `src/calculation/cell-format.test.ts`, `quantity-metadata.test.ts` (EUR/de-DE, USD/en-US, integers beyond 2^53, negative currency, percent, leap day, forced fallback).

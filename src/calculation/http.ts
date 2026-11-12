@@ -5,6 +5,7 @@ import {
   type CalculationResult,
   type FormulaHost,
 } from './evaluator.js';
+import { assertNumericValue, assertJsonValue, type CellValue } from './values.js';
 import type { CalculationProvider } from './provider.js';
 
 interface CalculationRequest {
@@ -82,27 +83,96 @@ export function assertCalculationResult(
           ].includes(cell.code)
         )
           continue;
-        if (
-          cell.kind !== 'number' ||
-          (cell.dimension !== undefined &&
-            (!Array.isArray(cell.dimension) ||
-              cell.dimension.length !== 7 ||
-              cell.dimension.some((n) => !Number.isInteger(n) || Math.abs(n) > 32))) ||
-          (cell.quantityKind !== undefined &&
-            (typeof cell.quantityKind !== 'string' || cell.quantityKind.length > 128)) ||
-          typeof cell.numerator !== 'string' ||
-          typeof cell.denominator !== 'string' ||
-          cell.numerator.length > 100_001 ||
-          cell.denominator.length > 100_000 ||
-          !/^-?(?:0|[1-9]\d*)$/.test(cell.numerator) ||
-          !/^[1-9]\d*$/.test(cell.denominator) ||
-          typeof cell.approximate !== 'boolean' ||
-          (cell.approximate &&
-            (!Number.isInteger(cell.precision) || cell.precision! < 16 || cell.precision! > 1000))
-        )
-          throw new TypeError('Invalid numeric result.');
+        assertNumericValue(cell);
       }
     });
+  }
+  if (result.context !== undefined) {
+    const context = result.context;
+    if (
+      !context ||
+      typeof context !== 'object' ||
+      !context.operands ||
+      typeof context.operands !== 'object' ||
+      Array.isArray(context.operands) ||
+      Object.keys(context.operands).length > 100000
+    )
+      throw new TypeError('Invalid calculation context.');
+    if (context.hostContext !== undefined) assertJsonValue(context.hostContext);
+    for (const operand of Object.values(context.operands)) {
+      if (
+        !operand ||
+        typeof operand !== 'object' ||
+        typeof operand.formula !== 'string' ||
+        operand.formula.length > 200000 ||
+        typeof operand.name !== 'string' ||
+        operand.name.length > 256
+      )
+        throw new TypeError('Invalid captured operand.');
+      validateCell(operand.value);
+      if (operand.hostContext !== undefined) assertJsonValue(operand.hostContext);
+    }
+  }
+  if (result.dependencies !== undefined) {
+    const dependencies = result.dependencies;
+    if (
+      !dependencies ||
+      typeof dependencies !== 'object' ||
+      !dependencies.cells ||
+      typeof dependencies.cells !== 'object' ||
+      Array.isArray(dependencies.cells)
+    )
+      throw new TypeError('Invalid calculation dependencies.');
+    const sheets = new Set(workbook.worksheets.map((sheet) => sheet.id));
+    const cellKey = (key: string) => {
+      let tuple: unknown;
+      try {
+        tuple = JSON.parse(key);
+      } catch {
+        throw new TypeError('Invalid dependency cell key.');
+      }
+      if (
+        !Array.isArray(tuple) ||
+        tuple.length !== 3 ||
+        typeof tuple[0] !== 'string' ||
+        !sheets.has(tuple[0]) ||
+        !Number.isSafeInteger(tuple[1]) ||
+        !Number.isSafeInteger(tuple[2]) ||
+        tuple[1] < 0 ||
+        tuple[1] > 16383 ||
+        tuple[2] < 0 ||
+        tuple[2] > 1048575
+      )
+        throw new TypeError('Invalid dependency cell key.');
+    };
+    if (Object.keys(dependencies.cells).length > 250000)
+      throw new RangeError('Too many calculation dependencies.');
+    for (const [key, reads] of Object.entries(dependencies.cells)) {
+      cellKey(key);
+      if (!Array.isArray(reads) || reads.length > 10000)
+        throw new TypeError('Invalid dependency reads.');
+      reads.forEach((read) => {
+        if (typeof read !== 'string') throw new TypeError('Invalid dependency cell key.');
+        cellKey(read);
+      });
+    }
+    if (dependencies.extents !== undefined) {
+      if (
+        !dependencies.extents ||
+        typeof dependencies.extents !== 'object' ||
+        Array.isArray(dependencies.extents)
+      )
+        throw new TypeError('Invalid extent dependencies.');
+      for (const [key, extents] of Object.entries(dependencies.extents)) {
+        cellKey(key);
+        if (
+          !Array.isArray(extents) ||
+          extents.length > 200 ||
+          extents.some((sheet) => typeof sheet !== 'string' || !sheets.has(sheet))
+        )
+          throw new TypeError('Invalid extent dependency.');
+      }
+    }
   }
 }
 
@@ -168,7 +238,7 @@ function boundedOptions(requested: unknown, ceilings: CalculationOptions = {}): 
     throw new TypeError('Invalid calculation options.');
   const options = requested as Record<string, unknown> | undefined;
   const result: Record<string, number> = {};
-  const defaults: Required<Omit<CalculationOptions, 'timeZone'>> = {
+  const defaults: Required<Omit<CalculationOptions, 'timeZone' | 'wordSizeBits'>> = {
     maxCells: 250_000,
     maxCellLength: 10_000,
     maxWorksheets: 200,
@@ -177,7 +247,10 @@ function boundedOptions(requested: unknown, ceilings: CalculationOptions = {}): 
     maxIntegerDigits: 10_000,
     precision: 80,
   };
-  for (const key of Object.keys(defaults) as (keyof Omit<CalculationOptions, 'timeZone'>)[]) {
+  for (const key of Object.keys(defaults) as (keyof Omit<
+    CalculationOptions,
+    'timeZone' | 'wordSizeBits'
+  >)[]) {
     const value = options?.[key];
     if (
       value !== undefined &&
@@ -192,7 +265,15 @@ function boundedOptions(requested: unknown, ceilings: CalculationOptions = {}): 
   if (typeof timeZone !== 'string' || timeZone.length > 100)
     throw new TypeError('Invalid calendar time zone.');
   new Intl.DateTimeFormat('en-US', { timeZone });
-  return { ...result, timeZone };
+  const wordSizeBits = ceilings.wordSizeBits ?? options?.wordSizeBits;
+  if (
+    wordSizeBits !== undefined &&
+    (typeof wordSizeBits !== 'string' ||
+      !/^[1-9]\d{0,5}$/.test(wordSizeBits) ||
+      BigInt(wordSizeBits) > 100000n)
+  )
+    throw new TypeError('Invalid wordSizeBits context.');
+  return { ...result, timeZone, ...(wordSizeBits === undefined ? {} : { wordSizeBits }) };
 }
 
 /** Fetch-standard route handler: mount behind the host's own routing and authorization. */
@@ -232,4 +313,26 @@ export async function handleCalculationRequest(
       { status: error instanceof RangeError ? 413 : 400 },
     );
   }
+}
+
+function validateCell(value: CellValue): void {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+  if (
+    value &&
+    typeof value === 'object' &&
+    value.kind === 'error' &&
+    [
+      '#DIV/0!',
+      '#VALUE!',
+      '#REF!',
+      '#NAME?',
+      '#NUM!',
+      '#N/A',
+      '#ERROR!',
+      '#LIMIT!',
+      '#CYCLE!',
+    ].includes(value.code)
+  )
+    return;
+  assertNumericValue(value);
 }

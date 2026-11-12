@@ -107,7 +107,9 @@ describe('SE-CHROME-4: public formula bar editing surface', () => {
     fireEvent.change(formula(), {
       target: { value: '=suMsq', selectionStart: 6, selectionEnd: 6 },
     });
-    await waitFor(() => expect(screen.queryByRole('option', { name: 'SUMSQ' })).not.toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole('option', { name: 'SUMSQ SUMSQ function' })).not.toBeNull(),
+    );
     // The public list becomes actionable on its next paint, once the reader can see it.
     await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     fireEvent.keyDown(formula(), { key: 'Enter' });
@@ -124,7 +126,9 @@ describe('SE-CHROME-4: public formula bar editing surface', () => {
     fireEvent.change(formula(), {
       target: { value: '=suMsq', selectionStart: 6, selectionEnd: 6 },
     });
-    await waitFor(() => expect(screen.queryByRole('option', { name: 'SUMSQ' })).not.toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole('option', { name: 'SUMSQ SUMSQ function' })).not.toBeNull(),
+    );
     fireEvent.keyDown(formula(), { key: 'Escape' });
     expect(props.onCancel).not.toHaveBeenCalled();
     fireEvent.keyDown(formula(), { key: 'Escape' });

@@ -25,16 +25,80 @@ test('SE-LABS-3: stylesheet and theme choices follow navigation', async ({ page 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('link', { name: 'Minimal', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: /Stylesheet/ }).click();
-  await page.getByRole('option', { name: 'Unstyled', exact: true }).click();
-  expect(
-    await page.locator('#lab-reference').evaluate((link) => (link as HTMLLinkElement).disabled),
-  ).toBe(true);
+  await page.getByRole('combobox', { name: 'Stylesheet', exact: true }).selectOption('none');
+  await expect(page.locator('html')).toHaveAttribute('data-lab-stylesheet', 'none');
+  await expect(page.locator('#ui-lab-stylesheet')).toHaveCount(0);
   const cell = page.locator('td[data-x="1"][data-y="1"]').first();
   await cell.dblclick();
   await cell.getByRole('textbox').fill('8');
   await cell.getByRole('textbox').press('Enter');
   await expect(page.locator('td[data-x="3"][data-y="1"]').first()).toHaveText('4');
+});
+
+test('SE-LABS-4: shared shadow-root bar applies and remembers custom styles and theme attributes', async ({
+  page,
+}) => {
+  await page.route('**/custom-lab.css', (route) =>
+    route.fulfill({
+      contentType: 'text/css',
+      body: 'select, button, input { display: none !important; }',
+    }),
+  );
+  await page.goto('/full.html?theme=dark');
+  const bar = page.locator('#lab-chrome');
+  expect(await bar.evaluate((host) => !!host.shadowRoot)).toBe(true);
+  await bar.getByRole('combobox', { name: 'Stylesheet', exact: true }).selectOption('custom');
+  await bar.getByRole('textbox', { name: 'Stylesheet URL', exact: true }).fill('/custom-lab.css');
+  await bar.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-lab-stylesheet-state', 'loaded');
+  await expect(bar.getByRole('combobox', { name: 'Stylesheet', exact: true })).toBeVisible();
+  await bar.getByRole('radio', { name: 'Custom', exact: true }).click();
+  await bar.getByRole('textbox', { name: 'Theme value', exact: true }).fill('night');
+  await bar.getByRole('textbox', { name: 'on', exact: true }).fill('data-appearance');
+  await bar.getByRole('textbox', { name: 'on', exact: true }).press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('data-appearance', 'night');
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme');
+  await bar.getByRole('link', { name: 'All labs', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Minimal', exact: true })).toHaveAttribute(
+    'href',
+    /themeAttribute=data-appearance/,
+  );
+  await page.goto('/minimal.html');
+  await expect(page.locator('html')).toHaveAttribute('data-appearance', 'night');
+  await expect(page.locator('#ui-lab-stylesheet')).toHaveAttribute('href', '/custom-lab.css');
+  await expect(bar.getByRole('textbox', { name: 'Theme value', exact: true })).toHaveValue('night');
+});
+
+test('SE-LABS-4: system theme follows browser changes and labs work when storage is refused', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(window, 'localStorage', {
+      get() {
+        throw new DOMException('Storage unavailable', 'SecurityError');
+      },
+    }),
+  );
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/minimal.html');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('radio', { name: 'Dark', exact: true }).click();
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('td[data-x="0"][data-y="1"]').first()).toHaveText('Apples');
+});
+
+test('SE-LABS-4: the head bootstrap applies settings without waiting for the editor bundle', async ({
+  page,
+}) => {
+  await page.route('**/labs.js', (route) => route.abort());
+  await page.goto('/minimal.html?stylesheet=unstyled&theme=dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-lab-stylesheet', 'none');
+  await expect(page.locator('#ui-lab-stylesheet')).toHaveCount(0);
+  await expect(page).toHaveURL(/stylesheet=none/);
 });
 
 for (const width of [1440, 768, 390]) {
@@ -112,10 +176,10 @@ test('SE-LABS-3: dark grid uses the active theme and compact controls show their
     'background-color',
     'rgb(21, 27, 35)',
   );
-  await expect(editor.getByRole('button', { name: '12 Font size', exact: true })).toBeVisible();
+  await expect(editor.getByRole('textbox', { name: 'Font size', exact: true })).toHaveValue('12');
   expect(
     await editor
-      .locator('.se-editor__font-size .ui-select-field__value')
+      .locator('.se-editor__font-size .ui-number-field__input')
       .evaluate((element) => element.clientWidth),
   ).toBeGreaterThan(14);
 });

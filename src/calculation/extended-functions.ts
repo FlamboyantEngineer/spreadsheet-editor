@@ -1,7 +1,7 @@
 import { Decimal } from 'decimal.js';
 import { createQuantityArithmetic, makeQuantity, quantityInUnit } from './units.js';
 import { formatCellValue } from './format.js';
-import { formatWorksheetCell } from './cell-format.js';
+import { formatTextMask, char1252, code1252 } from './text-format.js';
 import { calendarParts, calendarSerial } from './calendar.js';
 import {
   CalculationError,
@@ -225,8 +225,7 @@ export function evaluateExtendedFunction(
         (a, b) => (compare(a, b) > 0 === name.startsWith('MAX') ? a : b),
         numbers[0] ?? zero,
       );
-    const sum = numbers.reduce(math.add, zero);
-    return name.startsWith('AVERAGE') ? math.divide(sum, math.parse(String(numbers.length))) : sum;
+    return name.startsWith('AVERAGE') ? math.average(numbers) : numbers.reduce(math.add, zero);
   }
   if (name === 'SUMPRODUCT') {
     arity(1, 255);
@@ -254,9 +253,7 @@ export function evaluateExtendedFunction(
     if (!values.length) fail('#NUM!');
     if (name === 'MEDIAN') {
       const mid = Math.floor(values.length / 2);
-      return values.length % 2
-        ? values[mid]
-        : math.divide(math.add(values[mid - 1], values[mid]), math.parse('2'));
+      return values.length % 2 ? values[mid] : math.average([values[mid - 1], values[mid]]);
     }
     if (!rank) {
       const k = integer(args[1], 1, values.length);
@@ -287,9 +284,26 @@ export function evaluateExtendedFunction(
   if (name === 'INDEX') {
     arity(2, 3);
     const rows = matrix(args[0]),
-      y = integer(args[1], 1, 1048576) - 1,
-      x = args[2] === undefined ? 0 : integer(args[2], 1, 16384) - 1;
-    return rows[y]?.[x] ?? fail('#REF!');
+      height = rows.length,
+      width = rows[0]?.length ?? 0;
+    const index = (value: Value) => {
+      const numeric = number(value);
+      if (numeric.dimension || numeric.quantityKind) fail();
+      const integer = BigInt(numeric.numerator) / BigInt(numeric.denominator);
+      if (integer < 0n || integer > 1048576n) fail('#REF!');
+      return Number(integer);
+    };
+    let row = index(args[1]),
+      column = args[2] === undefined ? 1 : index(args[2]);
+    if (args[2] === undefined && height === 1) {
+      column = row;
+      row = 1;
+    }
+    if (row > height || column > width || !height || !width) fail('#REF!');
+    if (row === 0 && column === 0) return rows;
+    if (row === 0) return rows.map((values) => [values[column - 1] ?? null]);
+    if (column === 0) return [rows[row - 1]];
+    return rows[row - 1][column - 1] ?? null;
   }
   if (['MATCH', 'LOOKUP', 'VLOOKUP', 'HLOOKUP'].includes(name)) {
     arity(
@@ -401,13 +415,13 @@ export function evaluateExtendedFunction(
       arity(1);
       const code = integer(args[0], 1, name === 'CHAR' ? 255 : 1114111);
       if (code >= 55296 && code <= 57343) fail();
-      return String.fromCodePoint(code);
+      return name === 'CHAR' ? char1252(code) : String.fromCodePoint(code);
     }
     if (name === 'CODE' || name === 'UNICODE') {
       arity(1);
       const value = text(args[0]);
       if (!value) fail();
-      return math.parse(String(name === 'CODE' ? value.charCodeAt(0) : value.codePointAt(0)));
+      return math.parse(String(name === 'CODE' ? code1252(value) : value.codePointAt(0)));
     }
     if (name === 'REPLACE') {
       arity(4);
@@ -443,20 +457,7 @@ export function evaluateExtendedFunction(
     }
     if (name === 'TEXT') {
       arity(2);
-      const format = text(args[1]),
-        value = number(args[0]);
-      const decimals = /\.(0+)/.exec(format)?.[1].length ?? 0;
-      const kind = /[dy]/i.test(format)
-        ? 'date'
-        : /[hs]/i.test(format)
-          ? 'time'
-          : format.includes('%')
-            ? 'percent'
-            : format.includes('$')
-              ? 'currency'
-              : 'number';
-      if (!/[0#dyhms]/i.test(format)) fail();
-      return formatWorksheetCell(value, { kind, decimals });
+      return formatTextMask(number(args[0]), text(args[1]));
     }
   }
   if (['ISLOGICAL', 'ISNONTEXT', 'XOR', 'N'].includes(name)) {
@@ -470,8 +471,19 @@ export function evaluateExtendedFunction(
   }
   if (name === 'CONVERT') {
     arity(3);
-    const value = makeQuantity(number(args[0]), text(args[1]));
-    return quantityInUnit(value, text(args[2]));
+    const codes: Record<string, string> = {
+      C: '°C',
+      F: '°F',
+      K: 'K',
+      hr: 'h',
+      mn: 'min',
+      sec: 's',
+      lbm: 'lb',
+    };
+    const from = text(args[1]),
+      to = text(args[2]);
+    const value = makeQuantity(number(args[0]), codes[from] ?? from);
+    return quantityInUnit(value, codes[to] ?? to);
   }
   if (name === 'RADIANS' || name === 'DEGREES') {
     arity(1);
@@ -486,7 +498,8 @@ export function evaluateExtendedFunction(
     const D = Decimal.clone({ precision: math.precision }),
       a = number(args[0]),
       b = number(args[1]);
-    if (a.dimension || b.dimension) fail();
+    if (a.dimension || b.dimension || a.quantityKind || b.quantityKind) fail();
+    if (a.numerator === '0' && b.numerator === '0') fail('#DIV/0!');
     return math.parse(
       D.atan2(
         new D(b.numerator).div(b.denominator),
@@ -545,20 +558,24 @@ export function evaluateExtendedFunction(
     const value = number(args[0]),
       parts = calendarParts(value);
     if (name === 'WEEKDAY') {
-      const mode = args[1] === undefined ? 1 : integer(args[1], 1, 3),
-        day = parts.date.getUTCDay();
-      return math.parse(
-        String(mode === 1 ? day + 1 : mode === 2 ? ((day + 6) % 7) + 1 : (day + 6) % 7),
-      );
+      const mode = args[1] === undefined ? 1 : integer(args[1], 1, 17);
+      if (![1, 2, 3, 11, 12, 13, 14, 15, 16, 17].includes(mode)) fail('#NUM!');
+      const serial = Number(BigInt(value.numerator) / BigInt(value.denominator)),
+        day = (serial + 6) % 7;
+      const first = mode === 1 ? 0 : mode === 2 || mode === 3 || mode === 11 ? 1 : mode - 10;
+      return math.parse(String(((day - first + 7) % 7) + (mode === 3 ? 0 : 1)));
     }
     arity(2);
-    const months = integer(args[1], -120000, 120000),
-      date = new Date(Date.UTC(parts.year, parts.month - 1 + months + 1, 0));
-    return calendarSerial(
-      date.getUTCFullYear(),
-      date.getUTCMonth() + 1,
-      name === 'EOMONTH' ? date.getUTCDate() : Math.min(parts.day, date.getUTCDate()),
-    );
+    const months = integer(args[1], -120000, 120000);
+    const monthIndex = parts.year * 12 + parts.month - 1 + months;
+    const year = Math.floor(monthIndex / 12),
+      month = (((monthIndex % 12) + 12) % 12) + 1;
+    const next = calendarSerial(year, month + 1, 1),
+      last = math.subtract(next, one),
+      lastParts = calendarParts(last);
+    return name === 'EOMONTH'
+      ? last
+      : calendarSerial(year, month, Math.min(parts.day, lastParts.day));
   }
   return undefined;
 }
