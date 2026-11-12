@@ -311,6 +311,14 @@ export async function exportXlsxWithReport(
           try {
             const formula = raw.trimStart().slice(1),
               node = parseFormula(formula);
+            // A direct rich host call has the same display projection in its
+            // frozen cache and its expanded formula; Excel does not recalculate.
+            const projected =
+              node.kind === 'call' &&
+              functions.get(node.name)?.capturedText === 'html-to-text' &&
+              typeof value === 'string'
+                ? capturedText(value, 'html-to-text', 32767)
+                : value;
             const inlined = inlineHostOperands(
               node,
               formula,
@@ -326,7 +334,7 @@ export async function exportXlsxWithReport(
               (isNumeric(value) && value.dimension) ||
               (isError(value) && ['#CYCLE!', '#LIMIT!', '#ERROR!'].includes(value.code))
             ) {
-              cell.value = excelValue(value);
+              cell.value = excelValue(projected);
               if (isError(value) && ['#CYCLE!', '#LIMIT!', '#ERROR!'].includes(value.code))
                 warn(
                   'formula-error',
@@ -334,7 +342,7 @@ export async function exportXlsxWithReport(
                   location,
                 );
             } else {
-              const cache = excelValue(value),
+              const cache = excelValue(projected),
                 unsupported = unsupportedCall(node, functions);
               if (unsupported)
                 warn(

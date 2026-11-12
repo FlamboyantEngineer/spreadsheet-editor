@@ -33,6 +33,7 @@ export type WorksheetGeometry = Pick<
   'minDimensions' | 'columns' | 'rows' | 'freezeColumns'
 >;
 export type WorkbookOperation =
+  | { kind: 'workbook-metadata'; before: Pick<Workbook, 'name'>; after: Pick<Workbook, 'name'> }
   | { kind: 'cells'; sheetId: string; changes: WorkbookCellChange[] }
   | {
       kind: 'lines';
@@ -123,6 +124,35 @@ function authoredAddresses(sheet: Worksheet): Set<string> {
     for (const address of Object.keys(map ?? {})) addresses.add(address);
   return addresses;
 }
+/** Ordinary writes can append identified lines before their cell targets are introduced. */
+export function collectLineGrowthOperations(
+  before: Worksheet,
+  after: Worksheet,
+): WorkbookOperation[] {
+  const operations: WorkbookOperation[] = [];
+  for (const axis of ['row', 'column'] as const) {
+    const previous = axis === 'row' ? before.rowIds : before.columnIds;
+    const current = axis === 'row' ? after.rowIds : after.columnIds;
+    if (
+      !previous ||
+      !current ||
+      current.length <= previous.length ||
+      previous.some((id, index) => current[index] !== id)
+    )
+      continue;
+    operations.push({
+      kind: 'lines',
+      sheetId: before.id,
+      axis,
+      action: 'insert',
+      index: previous.length,
+      count: current.length - previous.length,
+      ids: current.slice(previous.length),
+      beforeId: previous.at(-1),
+    });
+  }
+  return operations;
+}
 /** Only authored/metadata positions are visited, never an implicit blank matrix. Structure comes from the original command. */
 export function collectCellOperations(
   before: Workbook,
@@ -144,8 +174,8 @@ export function collectCellOperations(
       const cell = parseSpreadsheetAddress(address)!;
       changes.push({
         address,
-        rowId: sheet.rowIds?.[cell.y],
-        columnId: sheet.columnIds?.[cell.x],
+        rowId: sheet.rowIds?.[cell.y] ?? next.rowIds?.[cell.y],
+        columnId: sheet.columnIds?.[cell.x] ?? next.columnIds?.[cell.x],
         before: previous,
         after: current,
       });
@@ -160,14 +190,21 @@ export function writeCellsWithOperations(
   x: number,
   y: number,
   values: CellInput[][],
+  idFactory?: WorkbookIdFactory,
 ): WorkbookCommandResult {
-  const next = writeCells(workbook, sheetId, x, y, values),
+  const next = writeCells(workbook, sheetId, x, y, values, idFactory),
     addresses = values.flatMap((row, dy) =>
       row.map((_cell, dx) => formatSpreadsheetAddress(x + dx, y + dy)),
     );
   return {
     workbook: next,
-    operations: collectCellOperations(workbook, next, new Map([[sheetId, addresses]])),
+    operations: [
+      ...collectLineGrowthOperations(
+        workbook.worksheets.find((sheet) => sheet.id === sheetId)!,
+        next.worksheets.find((sheet) => sheet.id === sheetId)!,
+      ),
+      ...collectCellOperations(workbook, next, new Map([[sheetId, addresses]])),
+    ],
   };
 }
 
@@ -344,20 +381,37 @@ export function invertWorkbookOperations(
   operations: readonly WorkbookOperation[],
 ): WorkbookOperation[] {
   const inverse: WorkbookOperation[] = [];
+  const inserted = new Map<string, { row: Set<string>; column: Set<string> }>();
+  for (const operation of operations) {
+    if (operation.kind !== 'lines' || operation.action !== 'insert') continue;
+    let axes = inserted.get(operation.sheetId);
+    if (!axes) {
+      axes = { row: new Set(), column: new Set() };
+      inserted.set(operation.sheetId, axes);
+    }
+    for (const id of operation.ids) axes[operation.axis].add(id);
+  }
   for (const operation of [...operations].reverse()) {
     switch (operation.kind) {
-      case 'cells':
-        inverse.push({
-          ...operation,
-          changes: operation.changes.map((change) => ({
+      case 'cells': {
+        // Removing inserted lines removes their new cells too; do not write to those identities
+        // after the inverse line command has removed them.
+        const axes = inserted.get(operation.sheetId);
+        const changes = operation.changes
+          .filter(
+            (change) =>
+              !axes?.row.has(change.rowId ?? '') && !axes?.column.has(change.columnId ?? ''),
+          )
+          .map((change) => ({
             ...change,
             address: change.beforeAddress ?? change.address,
             beforeAddress: change.address,
             before: structuredClone(change.after),
             after: structuredClone(change.before),
-          })),
-        });
+          }));
+        if (changes.length) inverse.push({ ...operation, changes });
         break;
+      }
       case 'lines': {
         const line: WorkbookOperation = {
           ...operation,

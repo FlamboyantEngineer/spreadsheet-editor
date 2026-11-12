@@ -24,7 +24,7 @@ export function calendarSerial(year: number, month: number, day: number): Numeri
   return createArithmetic().parse(String(days));
 }
 export function calendarParts(value: NumericValue) {
-  if (value.dimension) throw new CalculationError('#VALUE!');
+  if (value.dimension || value.quantityKind) throw new CalculationError('#VALUE!');
   const n = BigInt(value.numerator),
     d = BigInt(value.denominator);
   if (n < 0n || n / d > 2958465n) throw new CalculationError('#NUM!');

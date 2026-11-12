@@ -14,6 +14,8 @@ import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { ContextMenu, useMenuController } from '@flamboyantengineer/ui-components/context-menu';
 import { DockPanel, DockPanelPane } from '@flamboyantengineer/ui-components/dock-panel';
 import { FindBar } from '@flamboyantengineer/ui-components/find-bar';
+import { Banner } from '@flamboyantengineer/ui-components/banner';
+import { InlineError } from '@flamboyantengineer/ui-components/inline-error';
 import { ZoomControl } from '@flamboyantengineer/ui-components/zoom-control';
 import { Popover } from '@flamboyantengineer/ui-components/popover';
 import { findOpenComment } from '../model/review.js';
@@ -73,6 +75,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
   const chrome = props.chrome ?? 'full';
   const context = useMenuController(),
     root = useRef<HTMLElement | null>(null);
+  const hasMountedGrid = useRef(false);
   const [contextKind, setContextKind] = useState<'cell' | 'row' | 'column'>('cell');
   const contextItems = () => {
     const menus = editorMenus(e);
@@ -241,18 +244,25 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
     >
       <EditorToolbar editor={e} />
       {props.historical && (
-        <div className="se-editor__historical" role="status">
-          <span>
-            You are viewing a historical version from{' '}
-            {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'long' }).format(
-              new Date(props.historical.timestamp),
-            )}
-            .
-          </span>
-          <Button size="sm" onPress={() => e.attempt(() => props.historical!.onReturnCurrent())}>
-            View Current Version
-          </Button>
-        </div>
+        <Banner
+          className="se-editor__historical"
+          tone="info"
+          description={
+            <span>
+              You are viewing a historical version from{' '}
+              {new Intl.DateTimeFormat(undefined, {
+                dateStyle: 'medium',
+                timeStyle: 'long',
+              }).format(new Date(props.historical.timestamp))}
+              .
+            </span>
+          }
+          actions={
+            <Button size="sm" onPress={() => e.attempt(() => props.historical!.onReturnCurrent())}>
+              View Current Version
+            </Button>
+          }
+        />
       )}
       {chrome !== 'minimal' && (
         <EditorFormulaBar
@@ -309,8 +319,8 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
             onReplacementChange={e.setReplacement}
             onReplace={(text) => e.attempt(() => e.replace(false, text))}
             onReplaceAll={(text) => e.attempt(() => e.replace(true, text))}
-            isReplaceDisabled={!e.canWrite}
-            isReplaceAllDisabled={!e.canWrite}
+            isReplaceDisabled={!e.canWrite || !(e.matches[e.matchIndex] ?? e.matches[0])?.authored}
+            isReplaceAllDisabled={!e.canWrite || !e.matches.some((match) => match.authored)}
             onClose={() => e.setShowFind(false)}
           />
         </div>
@@ -344,9 +354,15 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                   cellPresentation={e.presentation}
                   renderCellContent={props.renderCellContent}
                   formulaFunctions={props.formulaFunctions}
+                  idFactory={props.idFactory}
                   initialViewport={e.initialViewport}
-                  focusOnMount
+                  focusOnMount={hasMountedGrid.current}
                   onNativeDraft={e.setNativeDraft}
+                  onError={(error) =>
+                    e.attempt(() => {
+                      throw error;
+                    })
+                  }
                   formulaReferences={references}
                   pickingFormula={(formulaActive || gridEditing) && e.draftValue.startsWith('=')}
                   onFormulaReference={insertReference}
@@ -376,6 +392,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                   selection={e.selection}
                   onController={(controller) => {
                     e.grid.current = controller;
+                    if (controller) hasMountedGrid.current = true;
                     if (e.dialog) controller?.releaseKeyboard();
                   }}
                   unavailableText={e.calculation.error ? 'Unavailable' : '…'}
@@ -516,20 +533,17 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
         </span>
       </VisuallyHidden>
       {e.calculation.error && (
-        <p className="se-editor__notice" role="alert">
-          {e.calculation.error}
-        </p>
+        <InlineError className="se-editor__notice">{e.calculation.error}</InlineError>
       )}
       {e.notice && (
-        <div
+        <Banner
           className="se-editor__notice"
-          data-tone={e.noticeTone}
+          tone={e.noticeTone}
           key={e.noticeRevision}
-          role="alert"
-        >
-          <p>{e.notice}</p>
-          <Button onPress={() => e.setNotice(null)}>Dismiss</Button>
-        </div>
+          description={e.notice}
+          onDismiss={() => e.setNotice(null)}
+          dismissLabel="Dismiss"
+        />
       )}
       <span
         ref={bubbleTrigger}

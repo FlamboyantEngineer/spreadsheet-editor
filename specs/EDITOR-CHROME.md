@@ -6,6 +6,8 @@ The editor shall provide File, Edit, Insert, Format, View and Review menus; a sc
 
 Formatting shall support bold, italic, strikethrough, font family/size, text/fill colors, numeric formats and decimal places, horizontal/vertical alignment, borders, wrapping and merge/unmerge. Numeric formats round only display text, preserving exact rational calculations. Undo/redo includes formatting and review state. A frozen-column setting and display toggles expose grid integration without adding application services.
 
+History controls follow host-delegated undo/redo capabilities when configured. Properties follow accepted workbook-title changes until a local title draft is entered; rejected updates retain that draft and report an error. Notices and historical messages compose the public Banner and InlineError controls, retaining the editor's `se-*` root hooks. Danger messages are assertive alerts; nonblocking warnings and historical notices are polite statuses.
+
 Authoring writes canonical data; Reviewing stages cell/format proposals and privately previews the local reviewer’s pending values; Reading refuses mutation. `readOnly` forces Reading, and host permissions independently gate editing, commenting, proposing and deciding suggestions in controls, commands and native engine callbacks. Optional host callbacks expose Save and Refresh; extra host panes extend the built-in panel set. Save errors are visible and edits made during a save remain dirty.
 
 Implementation: `src/editor/contracts.ts`, `src/editor/editor-toolbar.tsx`, `src/editor/editor-menus.ts`, `src/editor/spreadsheet-editor.tsx`, `src/editor/use-editor.ts`, `src/calculation/cell-format.ts`.
@@ -24,9 +26,11 @@ Verification: `src/model/structure.test.ts`, `e2e/full-editor.spec.ts` (SE-CONTE
 
 Find/replace shall search raw values/formulas and current formatted result text across worksheets, deduplicate cells, navigate to matches and replace authored matches one/all through the normal author/review mutation path. Result-only matches are navigable and never replace formulas. Pending or stale result text is excluded. Case-insensitive literal queries must not execute as regular expressions. Typed search/comment/dialog content must never reach the vendor grid's document keyboard handler. Each instance owns its selection, menus and panels. Clipboard text preserves numeric strings and quoting; a host may supply clipboard adapters.
 
+The first Previous command selects the last match. Changing the query resets its active result, and navigation advances only after a protected draft successfully commits. Replace is disabled for result-only targets; Replace all is disabled when no authored match can change. Copying while results are pending or unavailable uses authored inputs for those cells rather than blank or stale displayed values.
+
 Implementation: `src/editor/use-editor.ts`, `src/engine/workbook-grid.tsx`, `src/model/editing.ts`.
 
-Verification: `e2e/full-editor.spec.ts` (SE-CHROME-3, SE-REVIEW-6), `src/model/structure.test.ts`.
+Verification: `e2e/full-editor.spec.ts` (SE-CHROME-3, SE-REVIEW-6), `e2e/host-integration.spec.ts`, `src/editor/editor-search.test.tsx`, `src/editor/review-panels.test.tsx`, `src/model/structure.test.ts`.
 
 ## SE-CONTEXT-1 — Shared React context menu
 
@@ -43,6 +47,8 @@ Verification: `e2e/full-editor.spec.ts` (SE-CONTEXT-1, SE-CHROME-2, SE-REVIEW-5)
 The engine root remains mounted through cell/style/geometry changes. Protected edits defer data/presentation replacement until commit/cancel. Fractional header resize previews only engine measure channels and commits one immutable workbook change on release; Escape, blur, pointer cancellation, permission loss and teardown restore original measures. Optional host blur subscriptions avoid requiring a global application event bus. Row/column header menus and header Delete/Backspace use canonical structural commands; changes intersecting merges require shared-modal confirmation. Worksheets support insert-before and wraparound left/right moves.
 
 Native text entry shall fit inside the existing cell or complete merged span without changing row heights, column widths or neighboring cell positions. Its input stays out of table sizing, inherits the cell's font, padding and text color, and restores temporary positioning on commit/cancel. Frozen anchors retain sticky positioning. Text and formula-reference highlighting remain visible in both themes; the formula mirror follows single-line input alignment instead of moving merged-cell text to the top of its span.
+
+Initial engine adoption must not steal keyboard focus from chrome controls already being used. Later worksheet switches restore grid focus. Reference presentation reserves the fixed viewport's space during lazy engine loading, so adopting the grid cannot move the worksheet controls between pointer press and release. Hosts retain ownership of viewport sizing through the public grid hook.
 
 `onSave` receives a cancellation signal, stable request id and manual/autosave kind. `autosaveMs` opts in. Saving never starts merely from viewing or selecting. Manual saves coalesce and queue after autosave; later edits remain dirty. Only autosave 503 errors retry quietly with bounded backoff. Historical views force Reading and keep the host-controlled banner until the host restores the current version. The full preset keeps an additional dedicated Suggestions pane; hosts may replace built-in panels.
 

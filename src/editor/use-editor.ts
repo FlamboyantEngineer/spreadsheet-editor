@@ -34,8 +34,7 @@ import {
   formatSpreadsheetAddress,
 } from '../model/spreadsheet-addressing.js';
 import { formatCellValue } from '../calculation/format.js';
-import { createArithmetic } from '../calculation/rational.js';
-import { isNumeric } from '../calculation/values.js';
+import { summarizeCellValues } from '../calculation/summary.js';
 import {
   appendWorksheet,
   assertWorkbook,
@@ -157,9 +156,13 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [showContributors, setShowContributors] = useState(false);
   const [showFind, setShowFind] = useState(false),
-    [query, setQuery] = useState(''),
+    [query, setQueryState] = useState(''),
     [replacement, setReplacement] = useState('');
-  const [matchIndex, setMatchIndex] = useState(-1);
+  const [activeMatch, setActiveMatch] = useState<string | null>(null);
+  function setQuery(value: string) {
+    setQueryState(value);
+    setActiveMatch(null);
+  }
   const [zoom, setZoom] = useState(100),
     [showGridlines, setShowGridlines] = useState(true),
     [showFormulas, setShowFormulas] = useState(false);
@@ -194,7 +197,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     persistedRevision = useRef(0);
   const listeners = useRef(new Set<() => void>());
   const [flushing, setFlushing] = useState(false);
-  const activeFlush = useRef<{ promise: Promise<void>; controller: AbortController } | null>(null);
+  const activeFlush = useRef<{
+    promise: Promise<void>;
+    controller: AbortController;
+    revision: number;
+  } | null>(null);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sheetViews = useRef(
     new Map<string, { selection: CellSelection; viewport: { left: number; top: number } }>(),
@@ -228,11 +235,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     controller: AbortController;
     kind: 'manual' | 'autosave';
   } | null>(null);
-  const lastSaveError = useRef<unknown>(null);
   const [saveKind, setSaveKind] = useState<'manual' | 'autosave'>('manual');
   useEffect(() => {
     if (!canEdit) {
       activeSave.current?.controller.abort();
+      activeFlush.current?.controller.abort();
       setSavePhase((phase) => (phase === 'saving' ? 'dirty' : phase));
     }
     return () => {
@@ -442,7 +449,14 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const pending = draftRef.current;
     let base = workbook;
     if (pending?.key === draftKey && pending.value !== String(authored)) {
-      base = writeCells(base, sheet.id, selection.x1, selection.y1, [[pending.value]]);
+      base = writeCells(
+        base,
+        sheet.id,
+        selection.x1,
+        selection.y1,
+        [[pending.value]],
+        props.idFactory,
+      );
       const locked = lockedChange(workbook, base, peers);
       if (locked) {
         warn(`${locked.name} is editing a cell in this selection. Try again after they finish.`);
@@ -660,7 +674,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     x: number,
     y: number,
   ) {
-    const changed = mutate(writeCells(workbook, sheet.id, x, y, values), 'Edit cells');
+    const changed = mutate(
+      writeCells(workbook, sheet.id, x, y, values, props.idFactory),
+      'Edit cells',
+    );
     if (changed) setDraft(null);
     return changed;
   }
@@ -821,14 +838,22 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const pending = draftRef.current,
       hasDraft = pending?.key === draftKey && pending.value !== String(authored),
       source = hasDraft
-        ? writeCells(previewWorkbook, sheet.id, selection.x1, selection.y1, [[pending.value]])
+        ? writeCells(
+            previewWorkbook,
+            sheet.id,
+            selection.x1,
+            selection.y1,
+            [[pending.value]],
+            props.idFactory,
+          )
         : previewWorkbook;
     const cells = readSelection(source, sheet.id, selection);
     const displayed = cells.map((row, dy) =>
-      row.map((_cell, dx) => {
+      row.map((cell, dx) => {
         const x = selection.x1 + dx,
           y = selection.y1 + dy;
         if (hasDraft && x === selection.x1 && y === selection.y1) return pending.value;
+        if (!readyCells.has(calculationCellKey(sheet.id, x, y))) return cell;
         return formatWorksheetCell(
           visibleCalculation.result?.worksheets.find((item) => item.id === sheet.id)?.values[y]?.[
             x
@@ -860,8 +885,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const changed = mutateWithDraft(
       (base) =>
         matching
-          ? pasteSpreadsheetCopy(base, sheet.id, x, y, cached, selection)
-          : writeCells(base, sheet.id, x, y, values),
+          ? pasteSpreadsheetCopy(base, sheet.id, x, y, cached, selection, props.idFactory)
+          : writeCells(base, sheet.id, x, y, values, props.idFactory),
       'Paste cells',
     );
     if (changed && cached?.cut && matching) copied.current = null;
@@ -905,7 +930,13 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   async function save(kind: 'manual' | 'autosave' = 'manual') {
     if (!alive.current) throw new Error('The editor session has ended.');
-    if (kind === 'manual') commitDraft();
+    if (kind === 'manual') {
+      commitDraft();
+      if (autosaveTimer.current) {
+        clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = null;
+      }
+    }
     if (!live.current.props.onSave) return;
     if (!live.current.canEdit) {
       warn('Saving is available only in Authoring mode.');
@@ -924,7 +955,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const context = { signal: controller.signal, kind, requestId: globalThis.crypto.randomUUID() };
     setSaveKind(kind);
     setSavePhase('saving');
-    lastSaveError.current = null;
     const operation = Promise.resolve().then(async () => {
       const started = Date.now();
       let retry = 500;
@@ -962,7 +992,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         }
       } catch (error) {
         if (!controller.signal.aborted) {
-          lastSaveError.current = error;
           setSavePhase('error');
           setNotice(error instanceof Error ? error.message : 'Could not save workbook.');
         }
@@ -988,11 +1017,17 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       if (autosaveTimer.current === timer) autosaveTimer.current = null;
     };
   }, [workbook, savePhase, canEdit, props.autosaveMs]);
-  async function flush() {
+  async function flush(): Promise<void> {
     if (!alive.current) throw new Error('The editor session has ended.');
-    if (activeFlush.current) return activeFlush.current.promise;
     commitDraft();
+    if (activeFlush.current) {
+      const current = activeFlush.current;
+      return current.revision >= localRevision.current
+        ? current.promise
+        : current.promise.then(() => lifecycle.current.flush());
+    }
     const controller = new AbortController();
+    const requestedRevision = localRevision.current;
     setFlushing(true);
     const operation = Promise.resolve().then(async () => {
       try {
@@ -1006,6 +1041,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           throw new Error('The editor flush was cancelled.');
         const snapshot = copyWorkbook(latestWorkbook.current),
           revision = localRevision.current;
+        if (activeFlush.current) activeFlush.current.revision = revision;
         const callback = live.current.props.onFlush;
         if (callback)
           await callback(snapshot, {
@@ -1030,20 +1066,27 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         if (alive.current) setFlushing(false);
       }
     });
-    activeFlush.current = { promise: operation, controller };
+    activeFlush.current = { promise: operation, controller, revision: requestedRevision };
     return operation;
   }
   async function openHistorical(entry: import('./contracts.js').SpreadsheetHistoryEntry) {
-    const pending = draftRef.current,
-      hadDraft = pending?.key === draftKey && pending.value !== String(authored);
-    if (hadDraft && !applyFormula()) return;
-    if (hadDraft || savePhase === 'dirty' || activeSave.current) {
-      try {
-        await save();
-      } catch {
-        return;
+    if (!props.history) return;
+    try {
+      commitDraft();
+      if (
+        localRevision.current > persistedRevision.current ||
+        activeSave.current ||
+        activeFlush.current
+      ) {
+        if (live.current.props.onSave) await lifecycle.current.save();
+        await lifecycle.current.flush();
+        if (localRevision.current > persistedRevision.current)
+          throw new Error('Changes are not saved. Save or discard them before opening history.');
       }
-      if (lastSaveError.current) return;
+    } catch (error) {
+      if (alive.current)
+        setNotice(error instanceof Error ? error.message : 'Could not open history.');
+      return;
     }
     if (alive.current) await props.history?.onOpen(entry);
   }
@@ -1211,12 +1254,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     );
     return matches;
   }, [workbook, query, visibleCalculation.result, readyCells, presentation, props.display]);
+  const matchIndex =
+    activeMatch === null
+      ? -1
+      : matches.findIndex(
+          (match) => calculationCellKey(match.sheetId, match.x, match.y) === activeMatch,
+        );
   function navigateMatch(direction: number) {
     if (!matches.length) return;
-    const index = (matchIndex + direction + matches.length) % matches.length,
+    const current = matchIndex >= 0 ? matchIndex : direction < 0 ? 0 : -1;
+    const index = (current + direction + matches.length) % matches.length,
       match = matches[index];
-    setMatchIndex(index);
-    select({ x1: match.x, x2: match.x, y1: match.y, y2: match.y }, match.sheetId);
+    if (select({ x1: match.x, x2: match.x, y1: match.y, y2: match.y }, match.sheetId))
+      setActiveMatch(calculationCellKey(match.sheetId, match.x, match.y));
   }
   function replace(all: boolean, text: string) {
     if (!canWrite || !query) return;
@@ -1236,9 +1286,14 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
             query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
             all ? 'gi' : 'i',
           );
-          next = writeCells(next, match.sheetId, match.x, match.y, [
-            [value.replace(pattern, () => text)],
-          ]);
+          next = writeCells(
+            next,
+            match.sheetId,
+            match.x,
+            match.y,
+            [[value.replace(pattern, () => text)]],
+            props.idFactory,
+          );
         }
         return next;
       },
@@ -1247,24 +1302,13 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     return targets.length;
   }
   const summary = useMemo(() => {
-    const values = selectionCells(selection).map(({ x, y }) => output?.[y]?.[x] ?? null),
-      numeric = values.filter(isNumeric);
-    const arithmetic = createArithmetic();
-    try {
-      const sum = numeric.reduce(arithmetic.add, arithmetic.parse('0'));
-      return {
-        count: values.filter((value) => value !== null && value !== '').length,
-        sum: formatCellValue(sum, props.display),
-        average: numeric.length
-          ? formatCellValue(
-              arithmetic.divide(sum, arithmetic.parse(String(numeric.length))),
-              props.display,
-            )
-          : '—',
-      };
-    } catch {
-      return { count: values.length, sum: '—', average: '—' };
-    }
+    const values = selectionCells(selection).map(({ x, y }) => output?.[y]?.[x] ?? null);
+    const { count, sum, average } = summarizeCellValues(values);
+    return {
+      count,
+      sum: sum ? formatCellValue(sum, props.display) : '—',
+      average: average ? formatCellValue(average, props.display) : '—',
+    };
   }, [selection, output, props.display]);
   const lifecycleState: SpreadsheetEditorState = {
     dirty: localRevision.current > persistedRevision.current || draftDirty || !!nativeDraft,

@@ -24,11 +24,13 @@ Import/export accept `options.formulaCapabilities: ExcelFormulaCapabilities`, co
 
 Captured external calls use their exact parser span and matching authored formula, including repeated calls and dynamic/nested arguments. Declared aliases follow the same captured-operand path. Names retain their existing captured behavior. Conversion never resolves a missing operand or invokes a host function. Undeclared/unsupported functions remain formulas without caches and receive an explicit warning; unavailable/unrepresentable captured operands use stored-result fallback with a warning.
 
+For a direct declared `html-to-text` host call, its frozen cached result receives the same plain-text projection as its inlined operand. When the plain result exceeds the 255-character formula-literal bound, the exporter retains it as ordinary stored cell text up to 32,767 characters and reports the formula loss. Derived formula results remain the supplied captured results; export does not evaluate an expanded formula.
+
 `html-to-text` uses parse5's HTML parser and entity decoder. Script/style, embedded/interactive and other nontext subtrees are omitted, BR becomes newline, and formula quotes are escaped after extraction. Parsing is bounded to 65,536 input characters, 8,192 tree nodes and depth 128. Formula string literals remain limited to 255 characters, complete formulas to 8,192, and cell strings to 32,767. XML control characters and unpaired surrogates reject literal representation. A representability failure uses the existing captured stored-value fallback and an explicit loss outcome; no markup executes.
 
 The child receives capability data inside the bounded request. Imports use a bounded length-prefixed JSON header followed by the original binary bytes, preserving the 20 MiB XLSX limit without base64 expansion. Export requests remain bounded JSON. Process cancellation, heap/RSS/time/output limits, two-export concurrency and discarded import caches remain unchanged.
 
-Verification: `src/excel/excel.test.ts` (generic FOO, aliases, repeated/dynamic/nested calls, nine explicitly supplied FS descriptors, default absence, HTML/entities/BR/unsafe markup, missing context, limits and request validation).
+Verification: `src/excel/excel.test.ts` (generic FOO, aliases, repeated/dynamic/nested calls, explicitly supplied example descriptors, default absence, HTML/entities/BR/unsafe markup, projected caches and long stored-text fallback, missing context, limits and request validation).
 
 ## SE-XLSX-4 — Exact projection, format metadata and conversion reports
 

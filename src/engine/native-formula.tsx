@@ -148,7 +148,7 @@ export function useNativeFormula(
       items={options.map((item) => ({
         id: item.name,
         label: item.name,
-        description: item.signature,
+        description: `${item.signature} — ${item.description}`,
       }))}
       activeKey={options[index]?.name ?? null}
       onActiveKeyChange={(key) => setIndex(options.findIndex((item) => item.name === key))}

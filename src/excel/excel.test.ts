@@ -158,7 +158,7 @@ it('SE-XL-1.2: resolves theme tints and indexed colors to authored hex styles', 
   expect(converted.workbook.worksheets[0].style!.A2).toContain('color:#ff0000');
 });
 
-const fsCapabilities: ExcelFormulaCapabilities = {
+const exampleCapabilities: ExcelFormulaCapabilities = {
   hostFunctions: [
     'CAPTURED',
     'CAPTURED.VALUE',
@@ -176,10 +176,10 @@ const fsCapabilities: ExcelFormulaCapabilities = {
 };
 
 describe('SE-XLSX-3: explicit serializable host capabilities', () => {
-  it('requires explicit host descriptors during import, including aliases and all FS functions', async () => {
+  it('requires explicit host descriptors during import, including aliases and every example function', async () => {
     const document = new ExcelJS.Workbook(),
       sheet = document.addWorksheet('Inputs');
-    fsCapabilities.hostFunctions.forEach(({ name }, index) => {
+    exampleCapabilities.hostFunctions.forEach(({ name }, index) => {
       sheet.getCell(1, index + 1).value = { formula: `${name}("x")`, result: 999 };
     });
     sheet.getCell(2, 1).value = { formula: 'ALIAS("x")', result: 99 };
@@ -191,7 +191,9 @@ describe('SE-XLSX-3: explicit serializable host capabilities', () => {
     const declared = await convertXlsx(
       bytes,
       {},
-      { hostFunctions: [...fsCapabilities.hostFunctions, { name: 'FOO', aliases: ['ALIAS'] }] },
+      {
+        hostFunctions: [...exampleCapabilities.hostFunctions, { name: 'FOO', aliases: ['ALIAS'] }],
+      },
     );
     expect(
       declared.report.warnings.filter((warning) => warning.code.startsWith('formula:')),
@@ -244,6 +246,30 @@ describe('SE-XLSX-3: explicit serializable host capabilities', () => {
     await r.xlsx.load(rich as never);
     expect(p.worksheets[0].getCell('A1').formula).toBe('"' + html.replaceAll('"', '""') + '"');
     expect(r.worksheets[0].getCell('A1').formula).toBe('"A & ""B""\nline"');
+    expect(r.worksheets[0].getCell('A1').result).toBe('A & "B"\nline');
+  });
+
+  it('projects long direct rich-call results as plain stored text when a formula literal cannot fit', async () => {
+    const workbook = createWorkbook([['=ALIAS()']]);
+    const expected = 'readable '.repeat(40) + '\nnext';
+    const result = calculateWorkbook(
+      workbook,
+      {},
+      {
+        callFunction: () => `<b>${'readable '.repeat(40)}</b><br>next<script>omitted</script>`,
+      },
+    );
+    const output = await exportXlsxWithReport(workbook, result, {
+      formulaCapabilities: {
+        hostFunctions: [{ name: 'FOO', aliases: ['ALIAS'], capturedText: 'html-to-text' }],
+      },
+    });
+    const document = new ExcelJS.Workbook();
+    await document.xlsx.load(output.bytes as never);
+    expect(document.worksheets[0].getCell('A1').value).toBe(expected);
+    expect(output.report.warnings).toContainEqual(
+      expect.objectContaining({ code: 'captured-text', disposition: 'stored-value' }),
+    );
   });
 
   it('reports unsupported, missing, mismatched and overlong captured values without live lookup', async () => {
@@ -288,10 +314,10 @@ describe('SE-XLSX-3: explicit serializable host capabilities', () => {
       { hostFunctions: [{ name: 'FOO', resolver: () => 1 }] },
     ])
       expect(() => validateFormulaCapabilities(value)).toThrow();
-    const encoded = encodeImportRequest(new Uint8Array([1, 2, 3]), fsCapabilities);
+    const encoded = encodeImportRequest(new Uint8Array([1, 2, 3]), exampleCapabilities);
     const decoded = decodeImportRequest(encoded);
     expect(decoded.bytes).toEqual(Buffer.from([1, 2, 3]));
-    expect(decoded.formulaCapabilities).toEqual(validateFormulaCapabilities(fsCapabilities));
+    expect(decoded.formulaCapabilities).toEqual(validateFormulaCapabilities(exampleCapabilities));
     encoded.writeUInt32LE(65_537);
     expect(() => decodeImportRequest(encoded)).toThrow('header length');
     expect(() => encodeImportRequest(new Uint8Array(20 * 1024 * 1024 + 1))).toThrow('byte limit');

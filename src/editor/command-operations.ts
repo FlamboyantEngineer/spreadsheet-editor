@@ -2,6 +2,7 @@ import type { Workbook } from '../model/workbook.js';
 import {
   annotationOperation,
   collectCellOperations,
+  collectLineGrowthOperations,
   geometryOperation,
   mergeOperation,
   sheetOperation,
@@ -11,7 +12,18 @@ import { orderedJson } from '../calculation/publication.js';
 
 /** Sparse cell/layout patches complement commands which carry their own line operations. */
 export function commandOperations(before: Workbook, after: Workbook): WorkbookOperation[] {
-  const operations = collectCellOperations(before, after);
+  const operations: WorkbookOperation[] = [];
+  for (const sheet of before.worksheets) {
+    const next = after.worksheets.find((value) => value.id === sheet.id);
+    if (next) operations.push(...collectLineGrowthOperations(sheet, next));
+  }
+  operations.push(...collectCellOperations(before, after));
+  if (before.name !== after.name)
+    operations.push({
+      kind: 'workbook-metadata',
+      before: { name: before.name },
+      after: { name: after.name },
+    });
   for (const sheet of before.worksheets) {
     const next = after.worksheets.find((value) => value.id === sheet.id);
     if (!next) {

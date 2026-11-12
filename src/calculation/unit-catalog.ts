@@ -382,6 +382,14 @@ export const UNIT_DEFINITIONS = Object.freeze({
         description: 'SI base unit of length',
       },
       {
+        name: 'angstrom',
+        input: ['Å', 'Å', 'angstrom'],
+        display: 'Å',
+        conversion: { unit: 'm', numerator: '1', denominator: '10000000000' },
+        conversionText: '1e-10 m',
+        description: '1 angstrom is exactly one ten-billionth of a meter',
+      },
+      {
         name: 'foot',
         input: ['ft'],
         display: 'ft',

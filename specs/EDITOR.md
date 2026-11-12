@@ -20,9 +20,13 @@ Verification: `src/editor/use-calculation.test.ts`, `src/calculation/http.test.t
 
 The grid receives a copy of authored data and preserves formula text and decimal/scientific literals. Rendering calculated text never changes raw data. Multiple instances may coexist; live document insertions and undo snapshots do not mutate their source workbooks.
 
+Native multi-cell commands publish one accepted workbook transaction and one undo step, including Delete, Backspace and fill operations. Capturing those commands preserves sparse authored data and untouched canonical inputs. A host refusal restores the vendor display to accepted state. Active single-cell drafts retain preflight before the native editor closes. Finishing an unchanged native edit preserves the authored primitive type and canonical input; opening a logical cell and pressing Enter cannot turn it into text.
+
+The initial asynchronous grid mount does not move focus away from editor or host controls. Later worksheet mounts may restore grid focus after a deliberate switch. Mount focus intent is captured for that grid instance so later parent renders cannot turn initial adoption into an autofocus request.
+
 Implementation: `src/engine/workbook-grid.tsx`, `src/engine/cell-renderer.ts`, `src/document/insertion.ts`.
 
-Verification: `e2e/editor.spec.ts` (SE-UI-3, SE-DOC-2), `src/document/insertion.test.ts`, `src/model/workbook.test.ts`.
+Verification: `e2e/editor.spec.ts` (SE-UI-3, SE-DOC-2), `e2e/core-engine.spec.ts`, `src/engine/worksheet-data.test.ts`, `src/document/insertion.test.ts`, `src/model/workbook.test.ts`.
 
 ## SE-LABS-1 — One-command labs
 

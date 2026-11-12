@@ -132,7 +132,7 @@
   isolation: isolate;
   flex: 1;
   min-width: 0;
-  min-height: 0;
+  min-height: 400px;
   overflow: hidden;
 }
 .se-editor__sidebar {

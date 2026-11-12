@@ -26,4 +26,21 @@ describe('SE-CR-2.3: authored clipboard references', () => {
     );
     expect(workbook.worksheets[0].data).toEqual([['1', '=A1*2']]);
   });
+  it('SE-HOST-MODEL-3: uses the host factory when pasted data extends tracked lines', () => {
+    const workbook = createWorkbook([['1']]);
+    workbook.worksheets[0].rowIds = ['row-1'];
+    workbook.worksheets[0].columnIds = ['column-1'];
+    const copy = createSpreadsheetCopy(workbook, 'sheet-1', { x1: 0, x2: 0, y1: 0, y2: 0 }, '1');
+    const next = pasteSpreadsheetCopy(
+      workbook,
+      'sheet-1',
+      1,
+      1,
+      copy,
+      undefined,
+      (kind) => `host-${kind}`,
+    );
+    expect(next.worksheets[0].rowIds).toEqual(['row-1', 'host-row']);
+    expect(next.worksheets[0].columnIds).toEqual(['column-1', 'host-column']);
+  });
 });

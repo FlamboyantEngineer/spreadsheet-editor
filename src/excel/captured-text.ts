@@ -19,7 +19,11 @@ const OMIT = new Set([
   'button',
 ]);
 /** parse5 decodes HTML entities without executing markup; work and output remain explicitly bounded. */
-export function capturedText(value: string, policy: 'plain' | 'html-to-text'): string {
+export function capturedText(
+  value: string,
+  policy: 'plain' | 'html-to-text',
+  maxLength: 255 | 32767 = 255,
+): string {
   if (value.length > 65_536) throw new RangeError('Captured text exceeds the HTML input limit.');
   let output = value;
   if (policy === 'html-to-text') {
@@ -54,7 +58,11 @@ export function capturedText(value: string, policy: 'plain' | 'html-to-text'): s
     })
   )
     throw new TypeError('Captured text contains characters Excel cannot represent.');
-  if (output.length > 255)
-    throw new RangeError('Excel formula strings have a 255-character limit.');
+  if (output.length > maxLength)
+    throw new RangeError(
+      maxLength === 255
+        ? 'Excel formula strings have a 255-character limit.'
+        : 'Excel cell strings have a 32767-character limit.',
+    );
   return output;
 }

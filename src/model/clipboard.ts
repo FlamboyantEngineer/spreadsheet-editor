@@ -14,7 +14,7 @@ import {
 import { translateFormulaReferences } from './structure.js';
 import { authoredCellState, type AuthoredCellState } from './operations.js';
 import { formatSpreadsheetAddress } from './spreadsheet-addressing.js';
-import { extendWorksheetIdentities } from './extent.js';
+import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
 
 export interface SpreadsheetCopy {
   text: string;
@@ -58,6 +58,7 @@ export function pasteSpreadsheetCopy(
   y: number,
   copy: SpreadsheetCopy,
   destination: CellSelection = { x1: x, y1: y, x2: x, y2: y },
+  idFactory?: WorkbookIdFactory,
 ): Workbook {
   const sourceWidth = Math.max(0, ...copy.cells.map((row) => row.length)),
     sourceHeight = copy.cells.length;
@@ -134,7 +135,7 @@ export function pasteSpreadsheetCopy(
       }
     }
   }
-  extendWorksheetIdentities(sheet);
+  extendWorksheetIdentities(sheet, idFactory);
   assertWorkbook(next);
   return next;
 }

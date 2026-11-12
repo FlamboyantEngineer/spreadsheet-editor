@@ -52,6 +52,8 @@ import { SpreadsheetEditor, createWorkbook } from '@flamboyantengineer/spreadshe
 
 Use `editorRef` for the session's public `SpreadsheetEditorHandle`: `commitDraft`, `cancelDraft`, detached `getSnapshot`, `select`, `getState`, `subscribe`, `save` and `flush`. `onFlush(snapshot, { signal, requestId })` supplies the host durability barrier; Flush commits active native/formula-bar input and drains scheduled saves without creating an extra manual snapshot. Failed barriers reject and retain dirty state. `undo` delegates every undo/redo surface to a host-owned history manager. `idFactory(kind)` makes new row, column, worksheet and transaction identities deterministic when needed. See the [public host example](examples/host-integration.tsx) and [host contract](specs/HOST-INTEGRATION.md).
 
+Concurrent flushes share a receipt only when it covers all edits requested by that call; newer drafts queue a newer barrier. History navigation uses configured save/flush adapters and stays in the current session on failure. Pure presentation or title changes preserve current calculations. Bulk native edits publish one transaction, with rollback on synchronous host rejection. See [the core editor review](docs/CORE-EDITOR-REVIEW.md) for regression coverage and shared UI responsibilities.
+
 `mode` / `onModeChange` controls Authoring, Reviewing or Reading; `defaultMode` sets an uncontrolled instance's initial mode. `currentUser` supplies the comment/suggestion actor. Optional `permissions` independently controls `edit`, `comment`, `suggest` and `decideSuggestions` in the UI; the host enforces authorization at its persistence boundary.
 
 ```tsx

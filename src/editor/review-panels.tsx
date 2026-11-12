@@ -8,6 +8,7 @@ import {
 } from '@flamboyantengineer/ui-components/core';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { Spinner } from '@flamboyantengineer/ui-components/progress-bar';
+import { InlineError } from '@flamboyantengineer/ui-components/inline-error';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import {
@@ -445,14 +446,25 @@ export function SuggestionsPanel({ editor: e }: { editor: SpreadsheetEditorContr
 }
 
 export function PropertiesPanel({ editor: e }: { editor: SpreadsheetEditorController }) {
-  const [title, setTitle] = useState(e.workbook.name ?? 'Untitled spreadsheet');
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const title = titleDraft ?? e.workbook.name ?? 'Untitled spreadsheet';
   return (
     <div className="se-properties">
       <h3>Workbook properties</h3>
-      <TextField label="Workbook title" value={title} onChange={setTitle} isReadOnly={!e.canEdit} />
+      <TextField
+        label="Workbook title"
+        value={title}
+        onChange={setTitleDraft}
+        isReadOnly={!e.canEdit}
+      />
       <Button
         isDisabled={!e.canEdit || !title.trim()}
-        onPress={() => e.commit({ ...e.workbook, name: title.trim() }, 'Rename workbook')}
+        onPress={() =>
+          e.attempt(() => {
+            e.commit({ ...e.workbook, name: title.trim() }, 'Rename workbook');
+            setTitleDraft(null);
+          })
+        }
       >
         Update title
       </Button>
@@ -484,7 +496,7 @@ export function HistoryPanel({ editor: e }: { editor: SpreadsheetEditorControlle
           </Button>
         )}
         {stored.loading && <Spinner label="Loading history" />}
-        {stored.error && <p role="alert">{stored.error}</p>}
+        {stored.error && <InlineError>{stored.error}</InlineError>}
         {!stored.loading && !stored.entries.length && <p>No saved versions.</p>}
         <ol>
           {[...stored.entries]
@@ -524,10 +536,10 @@ export function HistoryPanel({ editor: e }: { editor: SpreadsheetEditorControlle
           <li key={index}>{entry.label}</li>
         ))}
       </ol>
-      <Button isDisabled={!e.canWrite || !e.history.past.length} onPress={e.undo}>
+      <Button isDisabled={!e.canWrite || !e.canUndo} onPress={e.undo}>
         Undo last change
       </Button>
-      <Button isDisabled={!e.canWrite || !e.history.future.length} onPress={e.redo}>
+      <Button isDisabled={!e.canWrite || !e.canRedo} onPress={e.redo}>
         Redo last change
       </Button>
     </div>

@@ -2,7 +2,7 @@ import type { NumericValue } from '../calculation/values.js';
 import { assertNumericValue } from '../calculation/values.js';
 import { assertCellFormat } from './cell-format.js';
 import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
-import { worksheetExtent, extendWorksheetIdentities } from './extent.js';
+import { worksheetExtent, extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
 import {
   assertReviewData,
   type CellFormat,
@@ -312,6 +312,7 @@ export function setWorkbookCell(
   x: number,
   y: number,
   value: CellInput,
+  idFactory?: WorkbookIdFactory,
 ): Workbook {
   if (
     !Number.isSafeInteger(x) ||
@@ -333,7 +334,7 @@ export function setWorkbookCell(
   while (sheet.data[y].length <= x) sheet.data[y].push(null);
   sheet.data[y][x] = value;
   if (sheet.inputValues) delete sheet.inputValues[formatSpreadsheetAddress(x, y)];
-  extendWorksheetIdentities(sheet);
+  extendWorksheetIdentities(sheet, idFactory);
   assertWorkbook(next);
   return next;
 }

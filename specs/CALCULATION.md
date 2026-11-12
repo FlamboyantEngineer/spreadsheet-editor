@@ -52,11 +52,15 @@ Standalone pure-temperature literals, including kelvin and authored signed affin
 
 Nonformula `Worksheet.inputValues` supply validated authored canonical values before primitive parsing. They bypass `inputUnit` inheritance, preserving stored SI values while the formula bar retains the original edit text. Applying a display format never mutates a canonical input.
 
-Calendar values remain rational serials. DATE resolves month and day overflow in Excel serial space, including fictitious 1900-02-29; EDATE/EOMONTH preserve day 60. Date presentation formats calendar fields in UTC without viewer-zone shifts. TODAY/NOW capture one clock per pass in `options.timeZone` (headless UTC). WEEKDAY supports modes 1–3 and 11–17.
+Scalar function arguments (text counts, choice indices, rounding places, calendar fields and serials, and CONVERT magnitudes) reject SI quantities and zero-axis angle/information kinds instead of discarding their units. ATAN2 accepts compatible coordinate dimensions/kinds and retains their unioned provenance; incompatible coordinates return `#VALUE!`. Unit formatting validates normalized dimensions and non-SI kinds, so authored/canonical radian and information values retain their meaning.
+
+Selection statistics reuse the same exact quantity kernel. Count includes nonempty values; sum and average are independently unavailable when their physical-kind, revision or temperature rules prohibit the operation. Absolute temperatures can have a valid average even when their sum is undefined. Mixed dimensions never produce a unitless statistic.
+
+Calendar values remain rational serials. DATE resolves month and day overflow in Excel serial space, including fictitious 1900-02-29; EDATE/EOMONTH preserve day 60 and valid boundaries from serial zero through December 9999. Internal calendar fields never reapply DATE's short-year convention, and out-of-domain month shifts return `#NUM!`. Date presentation formats calendar fields in UTC without viewer-zone shifts. TODAY/NOW capture one clock per pass in `options.timeZone` (headless UTC). WEEKDAY supports modes 1–3 and 11–17.
 
 Implementation: `src/calculation/values.ts`, `units.ts`, `unit-catalog.ts`, `calendar.ts`, `evaluator.ts`, `http.ts`.
 
-Verification: `src/calculation/quantity-metadata.test.ts`, `units.test.ts`, `core-numeric-corpus.test.ts`, HTTP/provider tests and Excel stored-context tests.
+Verification: `src/calculation/quantity-metadata.test.ts`, `units.test.ts`, `dimensional-arguments.test.ts`, `calendar-boundaries.test.ts`, `summary.test.ts`, `core-numeric-corpus.test.ts`, HTTP/provider tests and Excel stored-context tests.
 
 ## SE-CALC-5 — Portable function semantics and dependencies
 

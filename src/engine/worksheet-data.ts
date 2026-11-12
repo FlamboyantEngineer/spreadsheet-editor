@@ -1,6 +1,61 @@
-import type { Worksheet } from '../model/workbook.js';
-import { worksheetExtent, type WorksheetExtent } from '../model/extent.js';
+import { DEFAULT_WORKBOOK_LIMITS, type Worksheet } from '../model/workbook.js';
+import {
+  extendWorksheetIdentities,
+  worksheetExtent,
+  type WorkbookIdFactory,
+  type WorksheetExtent,
+} from '../model/extent.js';
+import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
+import type { CellInput } from '../model/workbook.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+
+/** Capture a vendor batch without turning its padded blank viewport into authored data. */
+export function captureWorksheetCellChanges(
+  sheet: Worksheet,
+  changes: readonly { x: number; y: number; value: CellInput | undefined }[],
+  idFactory?: WorkbookIdFactory,
+): Worksheet {
+  if (changes.length > DEFAULT_WORKBOOK_LIMITS.maxCells)
+    throw new RangeError('Grid changes exceed the cell limit.');
+  const empty = (input: CellInput | undefined) => input == null || input === '';
+  const extent = worksheetExtent(sheet);
+  const normalized = changes.map((change) => {
+    const x = Number(change.x),
+      y = Number(change.y),
+      value = change.value;
+    if (
+      !Number.isSafeInteger(x) ||
+      !Number.isSafeInteger(y) ||
+      x < 0 ||
+      y < 0 ||
+      x > 16_383 ||
+      y > 1_048_575
+    )
+      throw new RangeError('Invalid grid cell coordinates.');
+    if (typeof value === 'string' && value.length > DEFAULT_WORKBOOK_LIMITS.maxCellLength)
+      throw new RangeError('Grid input exceeds the cell length limit.');
+    const previous = sheet.data[y]?.[x];
+    if (value !== previous && !(empty(value) && empty(previous))) {
+      extent.columns = Math.max(extent.columns, x + 1);
+      extent.rows = Math.max(extent.rows, y + 1);
+    }
+    if (extent.columns * extent.rows > DEFAULT_WORKBOOK_LIMITS.maxCells)
+      throw new RangeError('Grid changes exceed the cell limit.');
+    return { x, y, value };
+  });
+  const next = { ...sheet, data: sheet.data.map((row) => [...row]) };
+  if (sheet.inputValues) next.inputValues = { ...sheet.inputValues };
+  for (const { x, y, value } of normalized) {
+    const previous = next.data[y]?.[x];
+    if (Object.is(previous, value) || (empty(previous) && empty(value))) continue;
+    while (next.data.length <= y) next.data.push([]);
+    while (next.data[y].length <= x) next.data[y].push(null);
+    next.data[y][x] = value ?? null;
+    if (next.inputValues) delete next.inputValues[formatSpreadsheetAddress(x, y)];
+  }
+  extendWorksheetIdentities(next, idFactory);
+  return next;
+}
 
 export function gridWorksheetExtent(
   sheet: Worksheet,
