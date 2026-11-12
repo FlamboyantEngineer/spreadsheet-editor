@@ -22,11 +22,13 @@ Use Node 24 (recommended), or Node 22.13 or newer within Node 22, and Git. The c
 npm run labs
 ```
 
-Open **http://127.0.0.1:4173/**. On a fresh checkout, the command installs the locked dependencies, including development tools and the public UI library, then builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, Full editor and Host integration labs, using the public ui-components lab bar in an isolated shadow root. The shared controls offer Reference, Unstyled and Custom URL stylesheets; System, Light, Dark and custom themes; and a configurable root theme attribute. Settings follow navigation and reloads through a safe lab-only storage adapter. A page-head bootstrap applies them before the editor bundle loads. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
+Open the URL printed in the terminal, normally **http://127.0.0.1:4173/**. If that port is busy, the launcher tries the next available port, up to 20 ports including the requested one, following ui-components' lab policy. On a fresh checkout, the command installs the locked dependencies, including development tools and the public UI library, then builds the browser assets and starts a static server plus a real `/api/calculate` endpoint. It needs no database or application backend. The index links to Minimal, Embedded in an app, Full editor and Host integration labs, using the public ui-components lab bar in an isolated shadow root. The shared controls offer Reference, Unstyled and Custom URL stylesheets; System, Light, Dark and custom themes; and a configurable root theme attribute. Settings follow navigation and reloads through a safe lab-only storage adapter. A page-head bootstrap applies them before the editor bundle loads. The full lab includes client/server calculation, review permissions, collaborator locks, autosave/history, Excel preview/export, precision examples and both document insertion modes.
 
 ```sh
 npm run labs -- --port 4200 --host 0.0.0.0
 ```
+
+Use `--strict-port` to fail when the requested port is occupied; browser tests use this mode to retain their fixed URL. `--port 0` requests an operating-system-assigned port. `LABS_PORT` and `LABS_HOST` supply defaults when the corresponding flags are absent. Port fallback preserves the calculation and Excel endpoints and the server's browser-only asset restrictions.
 
 The included server is a local development harness. Mount `handleCalculationRequest` behind your application's routing and authorization for a deployed server.
 

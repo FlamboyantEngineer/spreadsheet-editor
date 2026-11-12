@@ -32,9 +32,11 @@ Verification: `e2e/editor.spec.ts` (SE-UI-3, SE-DOC-2), `e2e/core-engine.spec.ts
 
 `npm run labs` installs any missing or stale locked dependencies, then builds and serves labs plus a real server calculation endpoint. It requires no application server, database or consumer repository checkout. Host and port are configurable. The harness serves only browser assets and bounds request bodies. CI must exercise actual browser edits, HTTP calculation and both insertion modes.
 
-Implementation: `scripts/labs.mjs`, `scripts/build-labs.mjs`, `labs/src/main.tsx`.
+Following ui-components' lab policy, the launcher shall try the requested port and up to 19 subsequent ports on `EADDRINUSE`, without exceeding port 65535. It shall bind the actual API-capable server rather than probing and releasing a port, and print the selected URL. Other listen errors fail immediately. `--strict-port` shall disable fallback, including in the Playwright web-server command; `--port 0` shall use one operating-system-assigned port. CLI host/port flags override `LABS_HOST`/`LABS_PORT` defaults. Retrying must preserve request handlers and remove temporary listen/error listeners on every attempt. The static ui-components launcher is not used here because the harness also owns calculation/Excel endpoints and must keep server bundles private.
 
-Verification: `e2e/editor.spec.ts`, launched by the Playwright web-server configuration through `npm run labs`.
+Implementation: `scripts/labs.mjs`, `scripts/lib/labs-server.mjs`, `scripts/build-labs.mjs`, `labs/src/main.tsx`.
+
+Verification: `src/tooling/labs-server.test.ts`, `e2e/editor.spec.ts`, launched by the Playwright web-server configuration through `npm run labs -- --strict-port`.
 
 ## SE-LABS-2 — Installation diagnostics and portable startup
 
