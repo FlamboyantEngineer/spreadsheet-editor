@@ -176,10 +176,10 @@ test('SE-LABS-3: dark grid uses the active theme and compact controls show their
     'background-color',
     'rgb(21, 27, 35)',
   );
-  await expect(editor.getByRole('button', { name: '12 Font size', exact: true })).toBeVisible();
+  await expect(editor.getByRole('textbox', { name: 'Font size', exact: true })).toHaveValue('12');
   expect(
     await editor
-      .locator('.se-editor__font-size .ui-select-field__value')
+      .locator('.se-editor__font-size .ui-number-field__input')
       .evaluate((element) => element.clientWidth),
   ).toBeGreaterThan(14);
 });

@@ -12,7 +12,6 @@ import type { MenuEntry } from '@flamboyantengineer/ui-components/menu';
 import { Menubar, MenubarMenu } from '@flamboyantengineer/ui-components/menubar';
 import { AvatarGroup } from '@flamboyantengineer/ui-components/avatar-group';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
-import { ColorField } from '@flamboyantengineer/ui-components/color-field';
 import { SaveStatus } from '@flamboyantengineer/ui-components/save-status';
 import { Tooltip } from '@flamboyantengineer/ui-components/tooltip';
 import { collaboratorColorIndex } from '../model/presence.js';
@@ -20,6 +19,7 @@ import type { SpreadsheetEditorController } from './use-editor.js';
 import { UNIT_PRESETS } from '../calculation/units.js';
 import { editorCommandMetadata, editorGlyphs, numberFormatGlyphs } from './editor-commands.js';
 import { editorMenus } from './editor-menus.js';
+import { EditorColorControl, EditorFontSize } from './text-format-controls.js';
 
 function MenuButton({
   label,
@@ -319,47 +319,28 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             )}
             onChange={(value) => e.attempt(() => e.format({ 'font-family': value }))}
           />
-          <FormatSelector
+          <EditorFontSize
             embedded={embedded}
-            label="Font size"
-            className="se-editor__font-size"
             value={e.style['font-size'] ?? '12px'}
             disabled={disabled}
-            icon={editorGlyphs.fontSize}
-            options={[10, 11, 12, 14, 16, 18, 24, 32].map((size) => ({
-              id: `${size}px`,
-              label: String(size),
-            }))}
             onChange={(value) => e.attempt(() => e.format({ 'font-size': value }))}
           />
-          {!embedded && (
-            <>
-              <ColorField
-                tracksChanges={false}
-                menu={['clear']}
-                density="compact"
-                labelLayout="control-only"
-                size="sm"
-                label="Text color"
-                value={e.style.color ?? null}
-                isDisabled={disabled}
-                swatches={['#172b3a', '#b42318', '#175cd3', '#067647']}
-                onChange={(value) => e.attempt(() => e.format({ color: value }))}
-              />
-              <ColorField
-                tracksChanges={false}
-                menu={['clear']}
-                density="compact"
-                labelLayout="control-only"
-                size="sm"
-                label="Cell fill"
-                value={e.style['background-color'] ?? null}
-                isDisabled={disabled}
-                swatches={['#ffffff', '#fef0c7', '#d1e9ff', '#d1fadf']}
-                onChange={(value) => e.attempt(() => e.format({ 'background-color': value }))}
-              />
-            </>
-          )}
+          <EditorColorControl
+            label="Text color"
+            icon={editorGlyphs.textColor}
+            value={e.style.color ?? null}
+            disabled={disabled}
+            swatches={['#172b3a', '#b42318', '#175cd3', '#067647']}
+            onChange={(value) => e.attempt(() => e.format({ color: value }))}
+          />
+          <EditorColorControl
+            label="Cell fill"
+            icon={editorGlyphs.fillColor}
+            value={e.style['background-color'] ?? null}
+            disabled={disabled}
+            swatches={['#ffffff', '#fef0c7', '#d1e9ff', '#d1fadf']}
+            onChange={(value) => e.attempt(() => e.format({ 'background-color': value }))}
+          />
         </ToolbarRowGroup>
         <ToolbarRowSeparator />
         <ToolbarRowGroup className="se-editor__tool-group" aria-label="Number formatting">

@@ -186,7 +186,7 @@ test('SE-CHROME-6: the full toolbar has one row and icon actions, with readable 
     expect((await button.innerText()).trim()).toBe('');
   }
   await expect(toolbar.getByRole('button', { name: /Font family$/ })).toBeVisible();
-  await expect(toolbar.getByRole('button', { name: /Font size$/ })).toBeVisible();
+  await expect(toolbar.getByRole('textbox', { name: 'Font size', exact: true })).toBeVisible();
 });
 
 test('SE-CHROME-6: the embedded menu uses the public three-line glyph with an intact button border', async ({

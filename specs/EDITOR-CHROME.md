@@ -69,3 +69,15 @@ Unstyled cells use the library canvas token (white in light mode); row and colum
 Add Worksheet sits immediately after the last worksheet inside the scrolling tab list, including when tabs overflow. Zoom remains separate at the trailing end or on a second mobile row. The grid reserves its own vertical scrollbar gutter and confines overlays to its viewport; a collapsed or expanded dock panel cannot cover the scrollbar.
 
 Verification: `e2e/chrome-layout.spec.ts`, `src/editor/editor-toolbar.test.tsx`, existing editor and lab browser suites.
+
+## SE-CHROME-7 — Text size and color controls
+
+The full toolbar shall use the public NumberField for font size, with IncreaseFontSizeGlyph and DecreaseFontSizeGlyph step buttons. Buttons and plain arrow keys move to the nearest larger or smaller preset; an arbitrary size, including a fractional size, remains valid between presets. Sizes are CSS pixels, with a visible px suffix, bounded from 1 to 400. Embedded mode opens the same field from its named font-size icon, preserving the icon-only toolbar. Field edits apply on Enter, blur or a step, without restore/apply/cancel controls.
+
+Both full and embedded toolbars shall expose public ColorSwatchButton controls for Text color and Cell fill. FontColorGlyph and BackgroundColorGlyph sit above a bar showing the authored color, or an empty bar when unset. Each button opens a public Popover with ColorSwatchPicker presets, a ColorField for custom entry and its full picker, and a Clear command that removes only that color property. Picking a preset or clearing closes the palette and restores focus to its trigger. The controls retain provider glyph overrides and the library's default appearance. The reference stylesheet owns only editor layout and sizing.
+
+These controls use the existing formatting transaction path: they format the selected range, compose pending formula input atomically, support undo/redo and stage review suggestions. Disabled editing prevents changes and closes open formatting popovers. No calculation or serialized workbook contract changes.
+
+Implementation: `src/editor/text-format-controls.tsx`, `src/editor/editor-toolbar.tsx`, `src/editor/editor-commands.ts`.
+
+Verification: `src/editor/editor-toolbar.test.tsx`, `e2e/text-format-controls.spec.ts`, `e2e/labs.spec.ts`, `e2e/chrome-layout.spec.ts`.

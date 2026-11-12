@@ -59,7 +59,12 @@
   width: 116px;
 }
 .se-editor__font-size {
-  width: 58px;
+  width: 128px;
+}
+.se-editor__color-palette {
+  display: grid;
+  gap: 8px;
+  min-width: 200px;
 }
 .se-editor__number-format {
   width: 110px;
