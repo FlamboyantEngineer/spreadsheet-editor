@@ -17,7 +17,7 @@ import type {
   FormulaHost,
 } from '../calculation/evaluator.js';
 import type { Workbook } from '../model/workbook.js';
-import type { ReviewActor } from '../model/review.js';
+import type { ReviewActor, CellFormat } from '../model/review.js';
 import type { DocumentInsertion } from '../document/insertion.js';
 import type { SpreadsheetCollaborator, SpreadsheetPresence } from '../model/presence.js';
 import type { CellSelection } from '../model/editing.js';
@@ -63,6 +63,8 @@ export interface SpreadsheetHistory {
   onOpen(entry: SpreadsheetHistoryEntry): void | Promise<void>;
 }
 export interface SpreadsheetFeatures {
+  newWorkbook?: boolean;
+  import?: boolean;
   comments?: boolean;
   suggestions?: boolean;
   search?: boolean;
@@ -83,6 +85,9 @@ export interface SpreadsheetEditorProps {
     redo(): void | Promise<void>;
   };
   formulaFunctions?: readonly FormulaFunctionDescriptor[];
+  /** An authoritative host may supply its complete supported formula catalog. */
+  includeBuiltinFormulaFunctions?: boolean;
+  formatting?: { kinds?: readonly CellFormat['kind'][]; decimalPlaces?: boolean };
   cellPresentation?: CellPresentationSnapshot;
   renderCellContent?: RenderCellContent;
   onFlush?(
@@ -105,6 +110,10 @@ export interface SpreadsheetEditorProps {
   defaultValue?: Workbook;
   onChange?(workbook: Workbook, context: WorkbookChangeContext): void;
   calculation?: CalculationMode;
+  /** Authoritative results for this actor's suggestion projection, with its own input key. */
+  reviewCalculation?: ExternalCalculationSnapshot | null;
+  /** Draft notifications let the host retain uncommitted input independently of accepted data. */
+  onDraftChange?(draft: { sheetId: string; x: number; y: number; text: string } | null): void;
   display?: DisplayOptions;
   readOnly?: boolean;
   mode?: SpreadsheetMode;
@@ -120,6 +129,10 @@ export interface SpreadsheetEditorProps {
   onExportXlsx?(workbook: Workbook, result: CalculationResult): void | Promise<void>;
   clipboard?: SpreadsheetClipboard;
   panels?: readonly SpreadsheetHostPanel[];
+  panelRef?: Ref<HTMLDivElement>;
+  panelId?: string;
+  panelData?: Readonly<Record<`data-${string}`, string | undefined>>;
+  onPanelChange?(state: { id: string | null; expanded: boolean }): void;
   className?: string;
   'aria-label'?: string;
   onInsert?(insertion: DocumentInsertion): void;

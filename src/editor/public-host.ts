@@ -18,10 +18,13 @@ export const BUILTIN_FORMULA_FUNCTIONS: readonly FormulaFunctionDescriptor[] =
     description: `${name} function`,
   }));
 
-export function formulaFunctionCatalog(host: readonly FormulaFunctionDescriptor[] = []) {
+export function formulaFunctionCatalog(
+  host: readonly FormulaFunctionDescriptor[] = [],
+  includeBuiltins = true,
+) {
   if (host.length > 1024) throw new RangeError('Too many host formula descriptors.');
   const seen = new Set<string>();
-  return [...BUILTIN_FORMULA_FUNCTIONS, ...host].map((descriptor) => {
+  return [...(includeBuiltins ? BUILTIN_FORMULA_FUNCTIONS : []), ...host].map((descriptor) => {
     if ((descriptor.aliases?.length ?? 0) > 32) throw new RangeError('Too many formula aliases.');
     const names = [descriptor.name, ...(descriptor.aliases ?? [])].map((name) =>
       name.toUpperCase(),
@@ -79,6 +82,8 @@ export interface SpreadsheetEditorState {
   calculation: { inputKey: string; revision: number; status: CalculationCellState } | null;
 }
 export interface SpreadsheetEditorHandle {
+  setPanel(id: string | null): void;
+  restoreDraft(draft: { sheetId: string; x: number; y: number; text: string }): void;
   commitDraft(): Workbook;
   cancelDraft(): void;
   getSnapshot(): Workbook;

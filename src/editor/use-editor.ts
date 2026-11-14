@@ -108,7 +108,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const mode: SpreadsheetMode = props.readOnly
     ? 'read'
     : props.permissions?.edit === false
-      ? props.permissions.suggest === false || props.features?.suggestions === false
+      ? (props.permissions.suggest === false || props.features?.suggestions === false) &&
+        (props.permissions.comment === false || props.features?.comments === false)
         ? 'read'
         : 'review'
       : requestedMode;
@@ -146,11 +147,20 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function setDraft(next: typeof draft) {
     draftRef.current = next;
     setDraftState(next);
+    const target = next && /^(.*):(\d+):(\d+)$/.exec(next.key);
+    props.onDraftChange?.(
+      next && target
+        ? { sheetId: target[1], x: Number(target[2]), y: Number(target[3]), text: next.value }
+        : null,
+    );
   }
   const grid = useRef<GridController | null>(null);
   const copied = useRef<SpreadsheetCopy | null>(null);
   const [panel, setPanel] = useState<string | null>(props.historical ? 'history' : null),
     [panelOpen, setPanelOpen] = useState(!!props.historical);
+  useEffect(() => {
+    props.onPanelChange?.({ id: panel, expanded: panelOpen });
+  }, [panel, panelOpen, props.onPanelChange]);
   const [commentComposer, setCommentComposer] = useState(false);
   const [commentScope, setCommentScope] = useState<'range' | 'workbook'>('range');
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
@@ -208,6 +218,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function setNativeDraft(next: typeof nativeDraft) {
     nativeDraftRef.current = next;
     setNativeDraftState(next);
+    props.onDraftChange?.(next ? { sheetId: sheet.id, ...next } : null);
   }
   const alive = useRef(true);
   useEffect(() => {
@@ -269,7 +280,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   );
   const previewCalculation = usePublication(
     previewWorkbook,
-    props.calculation,
+    props.calculation?.mode === 'external'
+      ? { mode: 'external', snapshot: props.reviewCalculation ?? null }
+      : props.calculation,
     provider,
     calculationOptions,
     previewWorkbook !== workbook,
@@ -479,6 +492,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     reason: 'import' | 'new-workbook' | 'reset' = 'import',
   ): boolean {
     if (
+      (reason === 'import' && props.features?.import === false) ||
+      (reason === 'new-workbook' && props.features?.newWorkbook === false)
+    )
+      return false;
+    if (
       !canEdit ||
       !mutate(next, label, undefined, [
         { kind: 'replace', reason, before: copyWorkbook(workbook), after: copyWorkbook(next) },
@@ -498,12 +516,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     }
   }
   function setMode(next: SpreadsheetMode) {
-    if (
-      props.readOnly ||
-      (props.permissions?.edit === false &&
-        next !== (props.permissions.suggest === false ? 'read' : 'review'))
-    )
-      return;
+    if (props.readOnly || (props.permissions?.edit === false && next !== mode)) return;
     if (!applyFormula()) return;
     setLocalMode(next);
     props.onModeChange?.(next);
@@ -665,6 +678,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     return changed;
   }
   function format(properties: Record<string, string | null>, format?: CellFormat | null) {
+    if (format && props.formatting?.kinds && !props.formatting.kinds.includes(format.kind))
+      throw new Error('The host does not support this number format.');
+    if (format?.decimals !== undefined && props.formatting?.decimalPlaces === false)
+      throw new Error('The host does not support decimal-place overrides.');
     mutateWithDraft(
       (base) => formatCells(base, sheet.id, selection, properties, format),
       `Format ${selectionAddress(selection)}`,
@@ -710,6 +727,26 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     setPanelOpen(true);
     if (id === 'history') attempt(() => props.history?.onRefresh?.());
     grid.current?.releaseKeyboard();
+  }
+  function setHostPanel(id: string | null) {
+    if (id === null) setPanelOpen(false);
+    else openPanel(id);
+  }
+  function restoreDraft(value: { sheetId: string; x: number; y: number; text: string }) {
+    if (
+      !canWrite ||
+      !Number.isSafeInteger(value.x) ||
+      !Number.isSafeInteger(value.y) ||
+      value.x < 0 ||
+      value.y < 0 ||
+      value.x > 16383 ||
+      value.y > 1048575 ||
+      value.text.length > 10000
+    )
+      throw new Error('The draft cannot be restored in this session.');
+    if (!select({ x1: value.x, x2: value.x, y1: value.y, y2: value.y }, value.sheetId))
+      throw new Error('The draft target is unavailable.');
+    setDraft({ key: `${value.sheetId}:${value.x}:${value.y}`, value: value.text });
   }
   function openComment(id: string) {
     const thread = workbook.comments?.find((thread) => thread.id === id);
@@ -1279,6 +1316,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     },
   };
   const lifecycle = useRef({
+    setHostPanel,
+    restoreDraft,
     commitDraft,
     cancelDraft,
     save,
@@ -1288,6 +1327,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     state: lifecycleState,
   });
   lifecycle.current = {
+    setHostPanel,
+    restoreDraft,
     commitDraft,
     cancelDraft,
     save,
@@ -1301,6 +1342,14 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       if (!alive.current) throw new Error('The editor session has ended.');
     };
     return {
+      setPanel(id) {
+        requireSession();
+        lifecycle.current.setHostPanel(id);
+      },
+      restoreDraft(draft) {
+        requireSession();
+        lifecycle.current.restoreDraft(draft);
+      },
       commitDraft() {
         requireSession();
         return lifecycle.current.commitDraft();

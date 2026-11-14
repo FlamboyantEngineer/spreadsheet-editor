@@ -72,6 +72,7 @@ export interface WorkbookGridProps {
   cellPresentation?: CellPresentationSnapshot;
   renderCellContent?: RenderCellContent;
   formulaFunctions?: readonly FormulaFunctionDescriptor[];
+  includeBuiltinFormulaFunctions?: boolean;
   initialViewport?: { left: number; top: number };
   focusOnMount?: boolean;
   display?: DisplayOptions;
@@ -137,6 +138,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     },
     surface,
     props.formulaFunctions,
+    props.includeBuiltinFormulaFunctions,
   );
   const [portals, setPortals] = useState<CellPortal[]>([]);
   const [frames, setFrames] = useState<
@@ -854,9 +856,17 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           if (latest.current.initialViewport)
             controller.restoreViewport?.(latest.current.initialViewport);
           if (latest.current.focusOnMount) {
-            // Tabs finish restoring their trigger focus after a pointer switch.
-            // Return focus to the newly adopted grid after that event settles.
-            focusRequest.current = requestAnimationFrame(() => controller.focus());
+            // A lazy grid mount must not interrupt a press or draft in the chrome.
+            focusRequest.current = requestAnimationFrame(() => {
+              const active = document.activeElement;
+              const editor = surface.current?.closest('.se-editor');
+              if (
+                active === document.body ||
+                (active && surface.current?.contains(active)) ||
+                (active?.getAttribute('role') === 'tab' && active.closest('.se-editor') === editor)
+              )
+                controller.focus();
+            });
           }
           scheduleReferences();
         }}
