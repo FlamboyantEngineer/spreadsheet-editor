@@ -52,6 +52,7 @@ export interface SpreadsheetHistoryEntry {
   id: string;
   timestamp: string;
   author: ReviewActor;
+  message?: string;
   state?: string;
   revision?: string;
 }
