@@ -98,7 +98,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@flamboyantengineer/ui-components": "github:FlamboyantEngineer/ui-components#d85a044a7c2466902cc0b88acbd9dd3b8260f03a",
+    "@flamboyantengineer/ui-components": "git+https://github.com/FlamboyantEngineer/ui-components.git#db0b330f7e517b6fc3e40432f2bbd1fb0ccfef04",
     "@playwright/test": "^1.61.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

@@ -89,7 +89,7 @@ test('SE-CHROME-5: embedded chrome uses accessible icon actions and public formu
     expect((await button.innerText()).trim()).toBe('');
   }
   await expect(toolbar).toHaveClass(/ui-toolbar-row/);
-  await expect(editor.locator('.ui-formula-bar')).toHaveCount(1);
+  await expect(editor.locator('.se-editor__formula-widget')).toHaveCount(1);
   await expect(editor.locator('.se-editor__formula-input textarea')).toHaveCount(1);
   await expect(editor.locator('.se-editor__formula-overlay')).toHaveCount(0);
   for (const name of ['Apply', 'Cancel cell edit', 'Restore', 'All worksheets'])

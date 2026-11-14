@@ -46,6 +46,7 @@ export function EditorFontSize({
       value={Number.isFinite(parsed) ? parsed : 12}
       minValue={1}
       maxValue={400}
+      showStepper
       stepValues={fontSizes}
       decrementIcon={editorGlyphs.decreaseFontSize}
       incrementIcon={editorGlyphs.increaseFontSize}
