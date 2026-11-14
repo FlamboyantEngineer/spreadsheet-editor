@@ -70,15 +70,12 @@
   width: 110px;
 }
 .se-editor__formula-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--ref-border);
   min-width: 0;
   min-height: 40px;
 }
-.se-editor__formula-bar .ui-formula-bar {
+.se-editor__formula-widget {
   flex: 1 1 0;
   min-width: 0;
   border: 0;
@@ -411,9 +408,8 @@
   }
   .se-editor__formula-bar {
     flex-wrap: wrap;
-    gap: 4px;
   }
-  .se-editor__formula-bar .ui-formula-bar {
+  .se-editor__formula-widget {
     flex-basis: 100%;
   }
   .se-editor__formula-bar output {
@@ -482,7 +478,6 @@
     justify-self: end;
   }
   .se-editor[data-chrome='embedded'] .se-editor__header {
-    gap: 4px;
   }
 }
 .se-editor__grid-surface {

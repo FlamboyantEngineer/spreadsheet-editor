@@ -7,7 +7,7 @@ import {
   ToolbarRow,
   ToolbarRowGroup,
   ToolbarRowSeparator,
-} from '@flamboyantengineer/ui-components/layout';
+} from '@flamboyantengineer/ui-components/toolbar-row';
 import type { MenuEntry } from '@flamboyantengineer/ui-components/menu';
 import { Menubar, MenubarMenu } from '@flamboyantengineer/ui-components/menubar';
 import { AvatarGroup } from '@flamboyantengineer/ui-components/avatar-group';
