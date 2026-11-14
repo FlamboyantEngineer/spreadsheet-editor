@@ -494,6 +494,7 @@ export function HistoryPanel({ editor: e }: { editor: SpreadsheetEditorControlle
                 <ContextMenuTrigger>
                   <Button variant="ghost" content="parts">
                     <Attribution person={{ name: entry.author.name }} time={entry.timestamp} />
+                    {entry.message && <span>{entry.message}</span>}
                     {entry.state && <span>State: {entry.state}</span>}
                     {entry.revision && <span>Revision: {entry.revision}</span>}
                   </Button>

@@ -271,3 +271,24 @@ test('SE-REVIEW-7: server calculations retain comments and accepted exact sugges
   expect(response.request().postDataJSON().workbook.suggestions.at(-1).status).toBe('accepted');
   await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveText('2e-25');
 });
+
+test('SE-CHROME-1: saved history retains host messages and opens captured versions', async ({
+  page,
+}) => {
+  await openLab(page);
+  const editor = source(page);
+  await editor.getByRole('button', { name: 'Save', exact: true }).click();
+  await editor.getByRole('button', { name: 'History', exact: true }).click();
+  const message = editor.getByText('Saved workbook version', { exact: true });
+  await expect(message).toBeVisible();
+  await message.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'View historical version', exact: true }).click();
+  await expect(editor.getByText(/You are viewing a historical version/)).toBeVisible();
+  await expect(
+    editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }),
+  ).not.toBeEditable();
+  await editor.getByRole('button', { name: 'View Current Version', exact: true }).click();
+  await expect(
+    editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }),
+  ).toBeEditable();
+});

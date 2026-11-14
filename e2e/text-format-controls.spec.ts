@@ -6,7 +6,15 @@ async function open(page: Page, chrome: 'full' | 'embedded') {
     name: chrome === 'embedded' ? 'Embedded spreadsheet' : 'Spreadsheet editor',
     exact: true,
   });
-  await editor.getByRole('button', { name: 'Add worksheet', exact: true }).click();
+  const sheets = editor.locator('.se-editor__sheets').getByRole('tab');
+  await expect(sheets.first()).toBeVisible();
+  const count = await sheets.count();
+  await editor.getByRole('button', { name: 'Add worksheet', exact: true }).press('Enter');
+  await expect(sheets).toHaveCount(count + 1);
+  await expect(sheets.last()).toHaveAttribute('aria-selected', 'true');
+  await expect(
+    editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }),
+  ).toHaveValue('');
   await editor.locator('td[data-x="0"][data-y="0"]').first().click();
   await page.keyboard.down('Shift');
   await editor.locator('td[data-x="1"][data-y="1"]').first().click();

@@ -41,6 +41,7 @@ export interface EditorFormulaBarHandle {
 
 export interface EditorFormulaBarProps {
   formulaFunctions?: readonly FormulaFunctionDescriptor[];
+  includeBuiltinFormulaFunctions?: boolean;
   ref?: Ref<EditorFormulaBarHandle>;
   selection: CellSelection;
   /** The host owns the protected draft, including updates while the same cell is edited. */
@@ -72,7 +73,10 @@ function addressSelection(value: string): CellSelection | null {
 /** Caller-owned drafts and transactions with the base library's formula layout and code surface. */
 export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
   const completeFormula = useMemo<CompletionSource>(() => {
-    const catalog = formulaFunctionCatalog(props.formulaFunctions);
+    const catalog = formulaFunctionCatalog(
+      props.formulaFunctions,
+      props.includeBuiltinFormulaFunctions,
+    );
     return ({ value, query, isExplicit }) => {
       if (!value.trimStart().startsWith('=')) return [];
       if (!query && value.trim() !== '=' && !isExplicit) return [];
@@ -92,7 +96,7 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
             a.label.localeCompare(b.label),
         );
     };
-  }, [props.formulaFunctions]);
+  }, [props.formulaFunctions, props.includeBuiltinFormulaFunctions]);
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const editing = useRef(false);

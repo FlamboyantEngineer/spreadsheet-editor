@@ -104,15 +104,28 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     item('row-height', 'Row height…', () => e.openDialog('row-height'), structureBlocked),
   ];
   const file: MenuEntry[] = [
-    item(
-      'new',
-      'New workbook',
-      () => e.replaceWorkbook(createWorkbook(), 'New workbook', 'new-workbook'),
-      structureBlocked,
-    ),
-    item('import', 'Import CSV or workbook JSON…', () => e.openDialog('import'), structureBlocked),
+    ...(e.props.features?.newWorkbook === false
+      ? []
+      : [
+          item(
+            'new',
+            'New workbook',
+            () => e.replaceWorkbook(createWorkbook(), 'New workbook', 'new-workbook'),
+            structureBlocked,
+          ),
+        ]),
+    ...(e.props.features?.import === false
+      ? []
+      : [
+          item(
+            'import',
+            'Import CSV or workbook JSON…',
+            () => e.openDialog('import'),
+            structureBlocked,
+          ),
+        ]),
     item('export', 'Export workbook JSON…', () => e.openDialog('export')),
-    ...(e.props.onImportXlsx
+    ...(e.props.onImportXlsx && e.props.features?.import !== false
       ? [item('import-excel', 'Import Excel…', e.importExcel, structureBlocked)]
       : []),
     ...(e.props.onExportXlsx
