@@ -607,7 +607,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const change = { axis, kind, index: after ? last + 1 : first, count: last - first + 1 };
     const apply = () =>
       mutateWithDraft(
-        (base) => changeWorkbookStructureWithOperations(base, sheet.id, change, props.idFactory),
+        (base) =>
+          changeWorkbookStructureWithOperations(
+            base,
+            { sheetId: sheet.id, idFactory: props.idFactory },
+            change,
+          ),
         `${kind === 'insert' ? 'Insert' : 'Delete'} ${axis}${last > first ? 's' : ''}`,
         { sheetId: sheet.id, change },
       );

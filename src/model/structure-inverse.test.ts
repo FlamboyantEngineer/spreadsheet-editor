@@ -45,7 +45,11 @@ function rich(): Workbook {
 function lines(workbook: Workbook, change: StructureChange) {
   const ids = Array.from({ length: change.count }, (_, index) => `new-${change.axis}-${index}`);
   let next = 0;
-  return changeWorkbookStructureWithOperations(workbook, 'sheet-1', change, () => ids[next++]);
+  return changeWorkbookStructureWithOperations(
+    workbook,
+    { sheetId: 'sheet-1', idFactory: () => ids[next++] },
+    change,
+  );
 }
 function sheetChange(before: Workbook, after: Workbook) {
   return { workbook: after, operations: commandOperations(before, after) };

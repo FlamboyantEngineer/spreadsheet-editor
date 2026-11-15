@@ -34,11 +34,11 @@ export function commandOperations(
   for (const sheet of before.worksheets) {
     const next = after.worksheets.find((value) => value.id === sheet.id);
     if (!next) {
-      operations.push(sheetOperation('sheet-delete', before, after, sheet.id));
+      operations.push(sheetOperation({ kind: 'sheet-delete', sheetId: sheet.id }, before, after));
       continue;
     }
     if (next.name !== sheet.name)
-      operations.push(sheetOperation('sheet-rename', before, after, sheet.id));
+      operations.push(sheetOperation({ kind: 'sheet-rename', sheetId: sheet.id }, before, after));
     const geometry = geometryOperation(sheet, next);
     if (
       geometry.kind === 'geometry' &&
@@ -50,13 +50,13 @@ export function commandOperations(
   }
   for (const sheet of after.worksheets)
     if (!before.worksheets.some((value) => value.id === sheet.id))
-      operations.push(sheetOperation('sheet-add', before, after, sheet.id));
+      operations.push(sheetOperation({ kind: 'sheet-add', sheetId: sheet.id }, before, after));
   if (
     before.worksheets.length === after.worksheets.length &&
     before.worksheets.every((sheet) => after.worksheets.some((value) => value.id === sheet.id)) &&
     before.worksheets.some((sheet, index) => after.worksheets[index].id !== sheet.id)
   )
-    operations.push(sheetOperation('sheet-reorder', before, after));
+    operations.push(sheetOperation({ kind: 'sheet-reorder' }, before, after));
   if (
     orderedJson(before.comments) !== orderedJson(after.comments) ||
     orderedJson(before.suggestions) !== orderedJson(after.suggestions)

@@ -311,7 +311,11 @@ export function editorMenus(editor: SpreadsheetEditorController) {
       } as const;
       e.mutateWithDraft(
         (base) =>
-          changeWorkbookStructureWithOperations(base, e.sheet.id, change, e.props.idFactory),
+          changeWorkbookStructureWithOperations(
+            base,
+            { sheetId: e.sheet.id, idFactory: e.props.idFactory },
+            change,
+          ),
         'Add row',
         {
           sheetId: e.sheet.id,
@@ -334,7 +338,11 @@ export function editorMenus(editor: SpreadsheetEditorController) {
       } as const;
       e.mutateWithDraft(
         (base) =>
-          changeWorkbookStructureWithOperations(base, e.sheet.id, change, e.props.idFactory),
+          changeWorkbookStructureWithOperations(
+            base,
+            { sheetId: e.sheet.id, idFactory: e.props.idFactory },
+            change,
+          ),
         'Add column',
         {
           sheetId: e.sheet.id,

@@ -142,17 +142,15 @@ describe('SE-HOST-MODEL-1.1: structure commands on a tall, narrow sheet', () => 
     ] as const) {
       const { workbook: next } = changeWorkbookStructureWithOperations(
         workbook,
-        'sheet-1',
+        { sheetId: 'sheet-1', idFactory: ids },
         { axis, kind: 'insert', index: 1, count: 1 },
-        ids,
       );
       expect(worksheetExtent(next.worksheets[0], next)).toEqual(size);
     }
     const small = changeWorkbookStructureWithOperations(
       createWorkbook([['1']]),
-      'sheet-1',
+      { sheetId: 'sheet-1', idFactory: ids },
       { axis: 'row', kind: 'insert', index: 0, count: 1 },
-      ids,
     ).workbook;
     expect(worksheetExtent(small.worksheets[0], small)).toEqual({ columns: 26, rows: 101 });
   });
@@ -194,7 +192,12 @@ describe('SE-HOST-MODEL-2.1: semantic transactions', () => {
     workbook.worksheets[0].columnIds = ['column-original'];
     let sequence = 0;
     const factory = (kind: string) => `${kind}-host-${++sequence}`;
-    const result = writeCellsWithOperations(workbook, 'sheet-1', 1, 1, [['new']], factory);
+    const result = writeCellsWithOperations(workbook, [['new']], {
+      sheetId: 'sheet-1',
+      x: 1,
+      y: 1,
+      idFactory: factory,
+    });
     expect(result.workbook.worksheets[0].rowIds).toEqual(['row-original', 'row-host-1']);
     expect(result.workbook.worksheets[0].columnIds).toEqual(['column-original', 'column-host-2']);
     expect(result.operations).toMatchObject([
@@ -220,9 +223,8 @@ describe('SE-HOST-MODEL-2.1: semantic transactions', () => {
     let sequence = 0;
     const result = changeWorkbookStructureWithOperations(
       workbook,
-      'sheet-1',
+      { sheetId: 'sheet-1', idFactory: () => `new-${sequence++}` },
       { axis: 'row', kind: 'insert', index: 99, count: 1 },
-      () => `new-${sequence++}`,
     );
     expect(result.workbook.worksheets[0].minDimensions).toEqual([26, 101]);
     expect(result.operations[0]).toMatchObject({
@@ -241,13 +243,17 @@ describe('SE-HOST-MODEL-2.1: semantic transactions', () => {
     workbook.worksheets[0].minDimensions = [1, 2];
     workbook.worksheets[0].rowIds = ['r1', 'r2'];
     workbook.worksheets.push({ id: 'other', name: 'Other', data: [['=Sheet1!A2']] });
-    const result = changeWorkbookStructureWithOperations(workbook, 'sheet-1', {
-      axis: 'row',
-      kind: 'insert',
-      index: 1,
-      count: 1,
-      ids: ['fresh'],
-    });
+    const result = changeWorkbookStructureWithOperations(
+      workbook,
+      { sheetId: 'sheet-1' },
+      {
+        axis: 'row',
+        kind: 'insert',
+        index: 1,
+        count: 1,
+        ids: ['fresh'],
+      },
+    );
     expect(result.operations).toHaveLength(2);
     expect(result.operations[0]).toMatchObject({
       kind: 'lines',
@@ -264,7 +270,11 @@ describe('SE-HOST-MODEL-2.1: semantic transactions', () => {
   it('records bounded targeted cell metadata before and after, including canonical replacement', () => {
     const workbook = createWorkbook([['tiny']]);
     workbook.worksheets[0].inputValues = { A1: rational };
-    const result = writeCellsWithOperations(workbook, 'sheet-1', 0, 0, [['replacement']]);
+    const result = writeCellsWithOperations(workbook, [['replacement']], {
+      sheetId: 'sheet-1',
+      x: 0,
+      y: 0,
+    });
     expect(result.operations).toMatchObject([
       {
         kind: 'cells',
@@ -293,12 +303,16 @@ describe('SE-HOST-MODEL-2.1: inverse command metadata and bounded foreign input'
     sheet.rowIds = ['r0', 'r1', 'r2'];
     sheet.inputValues = { A2: rational };
     sheet.rows = { '1': { height: 45 } };
-    const deleted = changeWorkbookStructureWithOperations(workbook, sheet.id, {
-      axis: 'row',
-      kind: 'delete',
-      index: 1,
-      count: 1,
-    });
+    const deleted = changeWorkbookStructureWithOperations(
+      workbook,
+      { sheetId: sheet.id },
+      {
+        axis: 'row',
+        kind: 'delete',
+        index: 1,
+        count: 1,
+      },
+    );
     const inverse = invertWorkbookOperations(deleted.operations);
     expect(inverse[0]).toMatchObject({
       kind: 'lines',
