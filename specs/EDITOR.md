@@ -54,9 +54,25 @@ This stage extracts reusable grid and parser modules and provides an independent
 
 ## SE-LABS-3 — Independent configurations
 
-The labs index shall link to minimal, embedded, full editor and host integration pages. Each page uses the public ui-components lab bar and settings controls; selections follow navigation. Minimal provides the editable grid and worksheet strip, embedded provides compact tools inside an application-owned workspace, full provides all menus and review commands, and host integration demonstrates lifecycle and authoritative result contracts. Reference presentation must keep formula entry, address and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
+The labs index shall link to minimal, embedded, full editor, host integration and large worksheet pages. Each page uses the public ui-components lab bar and settings controls; selections follow navigation. Minimal provides the editable grid and worksheet strip, embedded provides compact tools inside an application-owned workspace, full provides all menus and review commands, host integration demonstrates lifecycle and authoritative result contracts, and the large worksheet holds 10,000 cells (or `?rows=` rows of 25 columns) for the grid budgets in SE-PERF-1. Reference presentation must keep formula entry, address and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
 
 Verification: `e2e/labs.spec.ts` at 1440, 768 and 390 pixels, plus `e2e/editor.spec.ts`.
+
+## SE-PERF-1 — Grid work scales with what changed
+
+A worksheet of 10,000 cells stays smooth to type into and edit, and one of 50,000 cells stays usable. The grid's per-edit work is limited to the cells that changed:
+
+- Typing in a cell rewrites only the draft cell and the cells whose value or readiness changed; unchanged cells keep their text, presentation and DOM nodes.
+- Committing an edit updates changed values in place. The grid rebuilds its rows only when its extent changes or more than 2,000 cells change at once.
+- Zoom and authored styles are applied to every cell only when zoom changes; otherwise only to cells whose authored style changed and cells the engine has newly created. At 100% the stylesheet's own text metrics apply without inline copies.
+- Shared-border reconciliation visits only cells with an inline border or a clipboard edge and their right and bottom neighbors. Unchanged column, row and frozen-column measures are not rewritten.
+- Native change capture compares cell data directly instead of serializing the worksheet.
+
+The grid does not window its rows; that is decided once the model's own per-edit work is reduced and these budgets are measured again.
+
+Implementation: `src/engine/cell-renderer.ts`, `src/engine/worksheet-presentation.ts`, `src/engine/shared-grid-borders.ts`, `src/engine/worksheet-data.ts`, `src/engine/grid-geometry.ts`, `src/engine/workbook-grid.tsx`, `labs/src/large-lab.tsx`.
+
+Verification: `e2e/grid-budget.spec.ts` (mutation and time budgets on the large worksheet), `src/engine/cell-renderer.test.ts`, `src/engine/shared-grid-borders.test.ts`, `src/engine/worksheet-data.test.ts`, `src/engine/grid-geometry.test.ts`.
 
 ## SE-LABS-4 — Shared lab shell
 
