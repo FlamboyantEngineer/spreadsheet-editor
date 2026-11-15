@@ -21,73 +21,119 @@ const reject = (): never => {
   );
 };
 
-/** Inspect the central directory and authored XML before ExcelJS receives any workbook. */
-export function inspectXlsx(input: Uint8Array, limits: XlsxLimits = {}) {
-  const bounds = { ...XLSX_LIMITS, ...limits };
-  if (input.length < 22 || input.length > bounds.maxBytes) reject();
+type Bounds = Required<XlsxLimits>;
+
+/** Little-endian reads over the archive bytes. */
+function archive(input: Uint8Array) {
   const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
-  const uint16 = (offset: number) => view.getUint16(offset, true),
-    uint32 = (offset: number) => view.getUint32(offset, true);
-  if (uint32(0) !== 0x04034b50) reject();
-  let end = -1;
+  return {
+    input,
+    uint16: (offset: number) => view.getUint16(offset, true),
+    uint32: (offset: number) => view.getUint32(offset, true),
+  };
+}
+type Archive = ReturnType<typeof archive>;
+
+/** The offset of the end-of-central-directory record, whose comment reaches the end. */
+function directoryEnd({ input, uint16, uint32 }: Archive): number {
   for (let i = input.length - 22; i >= Math.max(0, input.length - 65557); i--)
-    if (uint32(i) === 0x06054b50 && i + 22 + uint16(i + 20) === input.length) {
-      end = i;
-      break;
-    }
+    if (uint32(i) === 0x06054b50 && i + 22 + uint16(i + 20) === input.length) return i;
+  return -1;
+}
+
+/** Absolute, normalized names only; no macro project and no binary workbook. */
+function unsafeName(name: string, entries: Map<string, number>): boolean {
+  return (
+    !name ||
+    name.startsWith('/') ||
+    name.includes('\\') ||
+    name.includes('\0') ||
+    name.split('/').some((part) => part === '..' || part === '.') ||
+    entries.has(name) ||
+    /(?:vbaProject\.bin|\.xlsb$)/i.test(name)
+  );
+}
+
+/** One central directory record: its name and expanded size, and where the next one starts. */
+function directoryEntry(
+  zip: Archive,
+  offset: number,
+  { end, centralOffset }: Record<string, number>,
+) {
+  const { uint16, uint32 } = zip;
+  if (offset + 46 > end || uint32(offset) !== 0x02014b50) reject();
+  const flags = uint16(offset + 8),
+    method = uint16(offset + 10),
+    size = uint32(offset + 24),
+    nameLength = uint16(offset + 28),
+    next = offset + 46 + nameLength + uint16(offset + 30) + uint16(offset + 32);
+  if (
+    flags & 1 ||
+    ![0, 8].includes(method) ||
+    size === 0xffffffff ||
+    uint32(offset + 42) >= centralOffset ||
+    next > end
+  )
+    reject();
+  const name = decoder.decode(zip.input.subarray(offset + 46, offset + 46 + nameLength));
+  return { name, size, next };
+}
+
+/** The archive's entries and their expanded sizes, read from a bounded central directory. */
+function directory(zip: Archive, bounds: Bounds): Map<string, number> {
+  const { uint16, uint32 } = zip;
+  if (uint32(0) !== 0x04034b50) reject();
+  const end = directoryEnd(zip);
   if (end < 0 || uint16(end + 4) !== 0 || uint16(end + 6) !== 0) reject();
   const count = uint16(end + 10),
     centralSize = uint32(end + 12),
     centralOffset = uint32(end + 16);
-  if (
-    !count ||
-    count > bounds.maxEntries ||
-    uint16(end + 8) !== count ||
-    centralOffset + centralSize !== end
-  )
-    reject();
+  if (!count || count > bounds.maxEntries || uint16(end + 8) !== count) reject();
+  if (centralOffset + centralSize !== end) reject();
   const entries = new Map<string, number>();
   let expanded = 0,
     offset = centralOffset;
   for (let i = 0; i < count; i++) {
-    if (offset + 46 > end || uint32(offset) !== 0x02014b50) reject();
-    const flags = uint16(offset + 8),
-      method = uint16(offset + 10),
-      size = uint32(offset + 24),
-      nameLength = uint16(offset + 28),
-      extra = uint16(offset + 30),
-      comment = uint16(offset + 32),
-      local = uint32(offset + 42);
-    if (
-      flags & 1 ||
-      ![0, 8].includes(method) ||
-      size === 0xffffffff ||
-      local >= centralOffset ||
-      offset + 46 + nameLength + extra + comment > end
-    )
-      reject();
-    const name = decoder.decode(input.subarray(offset + 46, offset + 46 + nameLength));
-    if (
-      !name ||
-      name.startsWith('/') ||
-      name.includes('\\') ||
-      name.includes('\0') ||
-      name.split('/').some((part) => part === '..' || part === '.') ||
-      entries.has(name) ||
-      /(?:vbaProject\.bin|\.xlsb$)/i.test(name)
-    )
-      reject();
+    const { name, size, next } = directoryEntry(zip, offset, { end, centralOffset });
+    if (unsafeName(name, entries)) reject();
     expanded += size;
     if (expanded > bounds.maxExpandedBytes || size > 32 * 1024 * 1024) reject();
     entries.set(name, size);
-    offset += 46 + nameLength + extra + comment;
+    offset = next;
   }
+  if (offset !== end) reject();
+  return entries;
+}
+
+/** Rejects XML whose element nesting is unbalanced or deeper than 128. */
+function checkNesting(xml: string) {
+  let depth = 0;
+  for (const token of xml.matchAll(/<([^>]+)>/g)) {
+    const value = token[1];
+    if (value.startsWith('?') || value.startsWith('!')) continue;
+    if (value.startsWith('/')) depth--;
+    else if (!value.endsWith('/')) depth++;
+    if (depth < 0 || depth > 128) reject();
+  }
+  if (depth !== 0) reject();
+}
+
+/** Rejects a content-types part that is not an ordinary, macro-free workbook. */
+function checkContentTypes(name: string, xml: string) {
+  if (name !== '[Content_Types].xml') return;
   if (
-    offset !== end ||
-    !entries.has('[Content_Types].xml') ||
-    !entries.has('xl/workbook.xml') ||
-    !entries.has('_rels/.rels')
+    !xml.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml') ||
+    /macroEnabled|vbaProject|spreadsheetml\.sheet\.binary/i.test(xml)
   )
+    reject();
+}
+
+/** Inspect the central directory and authored XML before ExcelJS receives any workbook. */
+export function inspectXlsx(input: Uint8Array, limits: XlsxLimits = {}) {
+  const bounds = { ...XLSX_LIMITS, ...limits };
+  if (input.length < 22 || input.length > bounds.maxBytes) reject();
+  const entries = directory(archive(input), bounds);
+  if (['[Content_Types].xml', 'xl/workbook.xml', '_rels/.rels'].some((name) => !entries.has(name)))
     reject();
   const worksheets = [...entries.keys()].filter((name) =>
     /^xl\/worksheets\/sheet[1-9]\d*\.xml$/.test(name),
@@ -100,27 +146,10 @@ export function inspectXlsx(input: Uint8Array, limits: XlsxLimits = {}) {
     if (!/\.(xml|rels)$/.test(name)) continue;
     const xml = decoder.decode(bytes);
     if (/<!DOCTYPE|<!ENTITY/i.test(xml)) reject();
-    let depth = 0;
-    for (const token of xml.matchAll(/<([^>]+)>/g)) {
-      const value = token[1];
-      if (value.startsWith('?') || value.startsWith('!')) continue;
-      if (value.startsWith('/')) depth--;
-      else if (!value.endsWith('/')) depth++;
-      if (depth < 0 || depth > 128) reject();
-    }
-    if (depth !== 0) reject();
-    if (worksheets.includes(name)) {
-      cells += [...xml.matchAll(/<(?:\w+:)?c(?:\s|>)/g)].length;
-      if (cells > bounds.maxCells) reject();
-    }
-    if (
-      name === '[Content_Types].xml' &&
-      (!xml.includes(
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
-      ) ||
-        /macroEnabled|vbaProject|spreadsheetml\.sheet\.binary/i.test(xml))
-    )
-      reject();
+    checkNesting(xml);
+    if (worksheets.includes(name)) cells += [...xml.matchAll(/<(?:\w+:)?c(?:\s|>)/g)].length;
+    if (cells > bounds.maxCells) reject();
+    checkContentTypes(name, xml);
   }
   return { parts, worksheets: worksheets.length, cells };
 }

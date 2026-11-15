@@ -1,18 +1,14 @@
 import ExcelJS from 'exceljs';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
-import {
-  type CalculationResult,
-  formulaOperandKey,
-  SUPPORTED_FUNCTIONS,
-} from '../calculation/evaluator.js';
+import type { CalculationResult } from '../calculation/evaluator.js';
 import { formatCellValue } from '../calculation/format.js';
 import { assertCalculationResult } from '../calculation/http.js';
-import { createArithmetic } from '../calculation/rational.js';
 import { type CellValue, isError, isNumeric } from '../calculation/values.js';
 import { parseCellStyle } from '../model/editing.js';
 import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
 import { requireDefined } from '../model/require-defined.js';
+import type { CellFormat } from '../model/review.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetAddress,
@@ -24,178 +20,222 @@ import type {
   ExcelFormulaCapabilities,
   ExcelHostFunction,
   XlsxExport,
-  XlsxWarning,
+  XlsxReport,
 } from './contracts.js';
+import { excelValue, unsupportedCall } from './export-values.js';
+import { inlineHostOperands } from './inline-operands.js';
 import { exportCellStyle, exportNumberFormat, numberFormatLoss } from './styles.js';
+import { createWarnings, type ReportedWarning } from './warnings.js';
 
-const exact = createArithmetic({ maxIntegerDigits: 100000 });
-function excelValue(value: CellValue): ExcelJS.CellValue {
-  if (isError(value))
-    return ['#DIV/0!', '#VALUE!', '#REF!', '#NAME?', '#NUM!', '#N/A'].includes(value.code)
-      ? { error: value.code as ExcelJS.CellErrorValue['error'] }
-      : value.code;
-  if (!isNumeric(value)) return value;
-  if (value.dimension) return formatCellValue(value, { significantDigits: 10000 });
-  const rendered = formatCellValue(value, { significantDigits: 10000, approximationMarker: false }),
-    native = Number(rendered);
-  if (Number.isFinite(native) && exact.compare(exact.parse(String(native)), value) === 0)
-    return native;
-  let denominator = BigInt(value.denominator);
-  while (denominator % 2n === 0n) denominator /= 2n;
-  while (denominator % 5n === 0n) denominator /= 5n;
-  if (denominator === 1n && exact.compare(exact.parse(rendered), value) === 0) return rendered;
-  return value.denominator === '1'
-    ? value.numerator
-    : formatCellValue(value, { notation: 'fraction', approximationMarker: false });
+type Sheet = Workbook['worksheets'][number];
+type Warn = (warning: ReportedWarning) => void;
+
+/** What every worksheet of one export shares. */
+interface ExportContext {
+  warn: Warn;
+  report: XlsxReport;
+  result: CalculationResult;
+  functions: ReadonlyMap<string, ExcelHostFunction>;
 }
-function inlineHostOperands(
-  node: FormulaNode,
-  formula: string,
-  sheetId: string,
-  x: number,
-  y: number,
-  result: CalculationResult,
-  functions: ReadonlyMap<string, ExcelHostFunction>,
-  loss: (code: string, message: string) => void,
-): string | null {
-  const replacements: { start: number; end: number; text: string }[] = [];
-  let unavailable = false;
-  const visit = (node: FormulaNode) => {
-    const host = node.kind === 'name' || (node.kind === 'call' && functions.has(node.name));
-    if (
-      node.kind === 'quantity' ||
-      (node.kind === 'call' && ['EXPM1', 'LOG1P'].includes(node.name))
-    ) {
-      unavailable = true;
-      loss(
-        'formula-stored-value',
-        'Excel has no equivalent for this quantity or numerical extension; the stored result is exported.',
-      );
-      return;
-    }
-    if (node.kind === 'literal' && typeof node.value === 'string' && node.value.length > 255) {
-      unavailable = true;
-      loss(
-        'formula-string-limit',
-        'A formula string exceeds Excel’s 255-character limit; the stored result is exported.',
-      );
-      return;
-    }
-    if (host) {
-      const stored = node.span
-        ? result.context?.operands[formulaOperandKey({ sheetId, x, y }, node.span)]
-        : undefined;
-      if (
-        !stored ||
-        stored.formula !== '=' + formula ||
-        !node.span ||
-        (isNumeric(stored.value) && (stored.value.dimension || stored.value.quantityKind))
-      ) {
-        unavailable = true;
-        loss(
-          'captured-operand',
-          'A matching representable captured operand is unavailable; the stored result is exported.',
-        );
-        return;
-      }
-      let value = stored.value;
-      if (typeof value === 'string') {
-        try {
-          value = capturedText(
-            value,
-            node.kind === 'call' ? (functions.get(node.name)?.capturedText ?? 'plain') : 'plain',
-          );
-        } catch (error) {
-          unavailable = true;
-          loss(
-            'captured-text',
-            (error instanceof Error ? error.message : 'Captured text cannot be represented.') +
-              ' The stored result is exported.',
-          );
-          return;
-        }
-      }
-      if (
-        (typeof value === 'string' && value.length > 255) ||
-        (isError(value) &&
-          !['#DIV/0!', '#VALUE!', '#REF!', '#NAME?', '#NUM!', '#N/A'].includes(value.code))
-      ) {
-        unavailable = true;
-        loss(
-          'captured-operand',
-          'Excel cannot represent the captured operand; the stored result is exported.',
-        );
-        return;
-      }
-      const text = isNumeric(value)
-        ? value.denominator === '1'
-          ? value.numerator
-          : `(${value.numerator}/${value.denominator})`
-        : typeof value === 'string'
-          ? '"' + value.replaceAll('"', '""') + '"'
-          : value === null
-            ? '""'
-            : typeof value === 'boolean'
-              ? value
-                ? 'TRUE'
-                : 'FALSE'
-              : isError(value)
-                ? value.code
-                : '""';
-      replacements.push({ ...node.span, text });
-      return;
-    }
-    if (node.kind === 'call') {
-      const aliases: Record<string, string> = {
-        AVG: 'AVERAGE',
-        CEILINGMATH: 'CEILING.MATH',
-        CEILINGPRECISE: 'CEILING.PRECISE',
-        FLOORMATH: 'FLOOR.MATH',
-        FLOORPRECISE: 'FLOOR.PRECISE',
-        RANKAVG: 'RANK.AVG',
-        RANKEQ: 'RANK.EQ',
-        STDEVS: 'STDEV.S',
-        VARS: 'VAR.S',
-      };
-      if (node.span && Object.hasOwn(aliases, node.name))
-        replacements.push({
-          start: node.span.start,
-          end: node.span.start + node.name.length,
-          text: aliases[node.name],
-        });
-      node.args.forEach(visit);
-    } else if (node.kind === 'binary') {
-      visit(node.left);
-      visit(node.right);
-    } else if (node.kind === 'unary') visit(node.operand);
-  };
-  visit(node);
-  if (unavailable) return null;
-  let output = formula;
-  for (const replacement of replacements.sort((a, b) => b.start - a.start))
-    output = output.slice(0, replacement.start) + replacement.text + output.slice(replacement.end);
-  if (output.length > 8192) {
-    loss(
-      'formula-length',
-      'The expanded formula exceeds Excel’s 8192-character limit; the stored result is exported.',
-    );
-    return null;
+
+/** One authored cell being exported, with its stored value and number format. */
+interface ExportCell {
+  sheet: Sheet;
+  cell: ExcelJS.Cell;
+  x: number;
+  y: number;
+  value: CellValue;
+  format: CellFormat | undefined;
+  location: string;
+}
+
+const unrepresentableError = (value: CellValue) =>
+  isError(value) && ['#CYCLE!', '#LIMIT!', '#ERROR!'].includes(value.code);
+
+/** Metadata XLSX cannot keep for a cell, reported before the cell is written. */
+function metadataLosses(context: ExportContext, target: ExportCell) {
+  const { format, value, location, sheet } = target;
+  const formattingLoss = numberFormatLoss(format);
+  if (formattingLoss)
+    context.warn({
+      code: 'number-format',
+      message: formattingLoss,
+      location,
+      disposition: 'not-exported',
+    });
+  const address = formatSpreadsheetAddress(target.x, target.y);
+  const canonical = (sheet as Sheet & { inputValues?: Record<string, unknown> }).inputValues?.[
+    address
+  ];
+  if (canonical)
+    context.warn({
+      code: 'canonical-input',
+      message:
+        'Canonical numeric metadata is projected as the stored value; XLSX does not retain the canonical override or its provenance.',
+      location,
+      disposition: 'not-exported',
+    });
+  if (isNumeric(value) && ('temperature' in value || value.quantityKind || 'provenance' in value))
+    context.warn({
+      code: 'quantity-metadata',
+      message:
+        'Quantity and provenance metadata are retained in displayed stored text where applicable, but XLSX does not retain the typed metadata.',
+      location,
+      disposition: 'not-exported',
+    });
+}
+
+/** A frozen formula result: Excel keeps the stored value, or the formula with its cache. */
+function writeParsedFormula(
+  context: ExportContext,
+  target: ExportCell,
+  { formula, node }: { formula: string; node: FormulaNode },
+) {
+  const { cell, value, location } = target;
+  const { functions } = context;
+  // A direct rich host call has the same display projection in its
+  // frozen cache and its expanded formula; Excel does not recalculate.
+  const projected =
+    node.kind === 'call' &&
+    functions.get(node.name)?.capturedText === 'html-to-text' &&
+    typeof value === 'string'
+      ? capturedText(value, 'html-to-text', 32767)
+      : value;
+  const inlined = inlineHostOperands(node, {
+    formula,
+    sheetId: target.sheet.id,
+    x: target.x,
+    y: target.y,
+    result: context.result,
+    functions,
+    loss: (code, message) => context.warn({ code, message, location }),
+  });
+  if (inlined === null || (isNumeric(value) && value.dimension) || unrepresentableError(value)) {
+    cell.value = excelValue(projected);
+    if (unrepresentableError(value))
+      context.warn({
+        code: 'formula-error',
+        message:
+          'Excel cannot represent this calculation error; its stored error text is exported.',
+        location,
+      });
+    return;
   }
-  return output;
+  const cache = excelValue(projected),
+    unsupported = unsupportedCall(node, functions);
+  if (unsupported)
+    context.warn({
+      code: 'unsupported-formula',
+      message: 'An unsupported or undeclared host formula is retained without a cache.',
+      location,
+      disposition: 'not-exported',
+    });
+  cell.value = {
+    formula: inlined,
+    result:
+      cache === null || unsupported ? undefined : (cache as ExcelJS.CellFormulaValue['result']),
+  };
 }
-function unsupportedCall(
-  node: FormulaNode,
-  functions: ReadonlyMap<string, ExcelHostFunction>,
-): boolean {
-  if (node.kind === 'call')
-    return (
-      (!SUPPORTED_FUNCTIONS.includes(node.name) && !functions.has(node.name)) ||
-      (!functions.has(node.name) && node.args.some((arg) => unsupportedCall(arg, functions)))
-    );
-  if (node.kind === 'binary')
-    return unsupportedCall(node.left, functions) || unsupportedCall(node.right, functions);
-  return node.kind === 'unary' ? unsupportedCall(node.operand, functions) : false;
+
+function writeFormula(context: ExportContext, target: ExportCell, raw: string) {
+  try {
+    const formula = raw.trimStart().slice(1);
+    writeParsedFormula(context, target, { formula, node: parseFormula(formula) });
+  } catch {
+    context.warn({
+      code: 'malformed-formula',
+      message: 'The formula is exported as authored text because it cannot be parsed.',
+      location: target.location,
+      disposition: 'not-exported',
+    });
+    target.cell.value = raw;
+  }
 }
+
+/** Quantities become stored text, formulas keep their frozen results, other values export as-is. */
+function writeContent(context: ExportContext, target: ExportCell, input: unknown) {
+  const { cell, value, format, location } = target;
+  const raw = typeof input === 'string' ? input : null;
+  const formula = raw?.trimStart().startsWith('=') ? raw : null;
+  if (formula) context.report.formulas++;
+  if (format?.kind === 'unit' || (isNumeric(value) && (value.dimension || value.quantityKind))) {
+    cell.value =
+      format?.kind === 'unit'
+        ? formatWorksheetCell(value, format, { significantDigits: 10000 })
+        : formatCellValue(value, { significantDigits: 10000 });
+    context.warn({
+      code: 'quantity-text',
+      message:
+        'A quantity is exported as stored text to preserve its units and temperature meaning.',
+      location,
+    });
+  } else if (formula) writeFormula(context, target, formula);
+  else cell.value = typeof value === 'string' ? value : excelValue(value);
+}
+
+function writeCell(
+  context: ExportContext,
+  { sheet, output, values }: { sheet: Sheet; output: ExcelJS.Worksheet; values: CellValue[][] },
+  { input, x, y }: { input: unknown; x: number; y: number },
+) {
+  const address = formatSpreadsheetAddress(x, y),
+    location = `${sheet.name}!${address}`;
+  const target: ExportCell = {
+    sheet,
+    cell: output.getCell(y + 1, x + 1),
+    x,
+    y,
+    value: values[y][x],
+    format: sheet.formats?.[address],
+    location,
+  };
+  context.report.cells++;
+  metadataLosses(context, target);
+  writeContent(context, target, input);
+  const { cell } = target;
+  if (typeof cell.value === 'string' && cell.value.length > 32767)
+    throw new RangeError(`${location}: Excel cell strings have a 32767-character limit.`);
+  cell.style = {
+    ...exportCellStyle(parseCellStyle(sheet.style?.[address])),
+    numFmt: exportNumberFormat(target.format),
+  };
+}
+
+function checkSheetName(name: string, names: Set<string>) {
+  const key = name.toLowerCase();
+  if (!name || name.length > 31 || /[[\]:*?/\\]/.test(name) || key === 'history' || names.has(key))
+    throw new TypeError('Worksheet names must follow Excel naming rules.');
+  names.add(key);
+}
+
+function writeLayout(context: ExportContext, sheet: Sheet, output: ExcelJS.Worksheet) {
+  for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
+    context.report.mergedRanges++;
+    const anchor = requireDefined(parseSpreadsheetAddress(address));
+    output.mergeCells(anchor.y + 1, anchor.x + 1, anchor.y + rows, anchor.x + columns);
+  }
+  if (sheet.freezeColumns)
+    output.views = [{ state: 'frozen', xSplit: sheet.freezeColumns, ySplit: 0 }];
+}
+
+function writeWorksheet(
+  context: ExportContext,
+  document: ExcelJS.Workbook,
+  { sheet, values }: { sheet: Sheet; values: CellValue[][] },
+) {
+  const output = document.addWorksheet(sheet.name);
+  sheet.columns?.forEach((column, x) => {
+    output.getColumn(x + 1).width = Math.max(1, ((column.width ?? 100) - 5) / 7);
+  });
+  for (const [row, geometry] of Object.entries(sheet.rows ?? {}))
+    output.getRow(Number(row) + 1).height = (geometry.height * 3) / 4;
+  const place = { sheet, output, values };
+  sheet.data.forEach((row, y) =>
+    row.forEach((input, x) => writeCell(context, place, { input, x, y })),
+  );
+  writeLayout(context, sheet, output);
+}
+
 /** Exports a captured authored workbook and its existing results. It never evaluates formulas. */
 export async function exportXlsx(
   workbook: Workbook,
@@ -205,6 +245,19 @@ export async function exportXlsx(
   return (await exportXlsxWithReport(workbook, result, options)).bytes;
 }
 
+/** The written archive with manual calculation, so Excel shows the frozen results. */
+async function manualCalculation(document: ExcelJS.Workbook): Promise<Uint8Array> {
+  const files = unzipSync(new Uint8Array(await document.xlsx.writeBuffer()));
+  const xml = strFromU8(files['xl/workbook.xml']);
+  files['xl/workbook.xml'] = strToU8(
+    xml.replace(
+      /<calcPr\b[^>]*\/?\s*>/,
+      '<calcPr calcMode="manual" fullCalcOnLoad="0" forceFullCalc="0" calcOnSave="0"/>',
+    ),
+  );
+  return zipSync(files);
+}
+
 /** Captured-result export with explicit grouped losses; no live resolver is available. */
 export async function exportXlsxWithReport(
   workbook: Workbook,
@@ -212,25 +265,13 @@ export async function exportXlsxWithReport(
   options: { formulaCapabilities?: ExcelFormulaCapabilities } = {},
 ): Promise<XlsxExport> {
   const functions = hostFunctionMap(validateFormulaCapabilities(options.formulaCapabilities));
-  const warnings = new Map<string, XlsxWarning>();
-  const warn = (
-    code: string,
-    message: string,
-    location: string,
-    disposition: XlsxWarning['disposition'] = 'stored-value',
-  ) => {
-    const entry = warnings.get(code) ?? { code, message, disposition, count: 0, locations: [] };
-    entry.count++;
-    if (entry.locations.length < 5 && !entry.locations.includes(location))
-      entry.locations.push(location);
-    warnings.set(code, entry);
-  };
-  const report = {
+  const warnings = createWarnings('stored-value');
+  const report: XlsxReport = {
     worksheets: workbook.worksheets.length,
     cells: 0,
     formulas: 0,
     mergedRanges: 0,
-    warnings: [] as XlsxWarning[],
+    warnings: [],
   };
   assertWorkbook(workbook, { maxCells: 250000, maxWorksheets: 200 });
   assertCalculationResult(result, workbook);
@@ -241,16 +282,9 @@ export async function exportXlsxWithReport(
     forceFullCalc: false,
     calcMode: 'manual',
   } as ExcelJS.CalculationProperties;
+  const context = { warn: warnings.warn, report, result, functions };
   workbook.worksheets.forEach((sheet, index) => {
-    if (
-      !sheet.name ||
-      sheet.name.length > 31 ||
-      /[[\]:*?/\\]/.test(sheet.name) ||
-      sheet.name.toLowerCase() === 'history' ||
-      names.has(sheet.name.toLowerCase())
-    )
-      throw new TypeError('Worksheet names must follow Excel naming rules.');
-    names.add(sheet.name.toLowerCase());
+    checkSheetName(sheet.name, names);
     const calculated = result.worksheets[index];
     if (
       calculated.id !== sheet.id ||
@@ -258,143 +292,9 @@ export async function exportXlsxWithReport(
       calculated.values.some((row, y) => row.length !== sheet.data[y].length)
     )
       throw new TypeError('Export needs results matching every authored cell.');
-    const output = document.addWorksheet(sheet.name);
-    sheet.columns?.forEach((column, x) => {
-      output.getColumn(x + 1).width = Math.max(1, ((column.width ?? 100) - 5) / 7);
-    });
-    for (const [row, geometry] of Object.entries(sheet.rows ?? {}))
-      output.getRow(Number(row) + 1).height = (geometry.height * 3) / 4;
-    sheet.data.forEach((row, y) =>
-      row.forEach((input, x) => {
-        const address = formatSpreadsheetAddress(x, y),
-          cell = output.getCell(y + 1, x + 1),
-          value = calculated.values[y][x],
-          format = sheet.formats?.[address],
-          location = `${sheet.name}!${address}`;
-        report.cells++;
-        const formattingLoss = numberFormatLoss(format);
-        if (formattingLoss) warn('number-format', formattingLoss, location, 'not-exported');
-        const canonical = (sheet as typeof sheet & { inputValues?: Record<string, unknown> })
-          .inputValues?.[address];
-        if (canonical)
-          warn(
-            'canonical-input',
-            'Canonical numeric metadata is projected as the stored value; XLSX does not retain the canonical override or its provenance.',
-            location,
-            'not-exported',
-          );
-        if (
-          isNumeric(value) &&
-          ('temperature' in value || value.quantityKind || 'provenance' in value)
-        )
-          warn(
-            'quantity-metadata',
-            'Quantity and provenance metadata are retained in displayed stored text where applicable, but XLSX does not retain the typed metadata.',
-            location,
-            'not-exported',
-          );
-        const raw = typeof input === 'string' ? input : null;
-        if (raw?.trimStart().startsWith('=')) report.formulas++;
-        if (
-          format?.kind === 'unit' ||
-          (isNumeric(value) && (value.dimension || value.quantityKind))
-        ) {
-          cell.value =
-            format?.kind === 'unit'
-              ? formatWorksheetCell(value, format, { significantDigits: 10000 })
-              : formatCellValue(value, { significantDigits: 10000 });
-          warn(
-            'quantity-text',
-            'A quantity is exported as stored text to preserve its units and temperature meaning.',
-            location,
-          );
-        } else if (raw?.trimStart().startsWith('=')) {
-          try {
-            const formula = raw.trimStart().slice(1),
-              node = parseFormula(formula);
-            // A direct rich host call has the same display projection in its
-            // frozen cache and its expanded formula; Excel does not recalculate.
-            const projected =
-              node.kind === 'call' &&
-              functions.get(node.name)?.capturedText === 'html-to-text' &&
-              typeof value === 'string'
-                ? capturedText(value, 'html-to-text', 32767)
-                : value;
-            const inlined = inlineHostOperands(
-              node,
-              formula,
-              sheet.id,
-              x,
-              y,
-              result,
-              functions,
-              (code, message) => warn(code, message, location),
-            );
-            if (
-              inlined === null ||
-              (isNumeric(value) && value.dimension) ||
-              (isError(value) && ['#CYCLE!', '#LIMIT!', '#ERROR!'].includes(value.code))
-            ) {
-              cell.value = excelValue(projected);
-              if (isError(value) && ['#CYCLE!', '#LIMIT!', '#ERROR!'].includes(value.code))
-                warn(
-                  'formula-error',
-                  'Excel cannot represent this calculation error; its stored error text is exported.',
-                  location,
-                );
-            } else {
-              const cache = excelValue(projected),
-                unsupported = unsupportedCall(node, functions);
-              if (unsupported)
-                warn(
-                  'unsupported-formula',
-                  'An unsupported or undeclared host formula is retained without a cache.',
-                  location,
-                  'not-exported',
-                );
-              cell.value = {
-                formula: inlined,
-                result:
-                  cache === null || unsupported
-                    ? undefined
-                    : (cache as ExcelJS.CellFormulaValue['result']),
-              };
-            }
-          } catch {
-            warn(
-              'malformed-formula',
-              'The formula is exported as authored text because it cannot be parsed.',
-              location,
-              'not-exported',
-            );
-            cell.value = raw;
-          }
-        } else if (typeof value === 'string') cell.value = value;
-        else cell.value = excelValue(value);
-        if (typeof cell.value === 'string' && cell.value.length > 32767)
-          throw new RangeError(`${location}: Excel cell strings have a 32767-character limit.`);
-        cell.style = {
-          ...exportCellStyle(parseCellStyle(sheet.style?.[address])),
-          numFmt: exportNumberFormat(format),
-        };
-      }),
-    );
-    for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
-      report.mergedRanges++;
-      const anchor = requireDefined(parseSpreadsheetAddress(address));
-      output.mergeCells(anchor.y + 1, anchor.x + 1, anchor.y + rows, anchor.x + columns);
-    }
-    if (sheet.freezeColumns)
-      output.views = [{ state: 'frozen', xSplit: sheet.freezeColumns, ySplit: 0 }];
+    writeWorksheet(context, document, { sheet, values: calculated.values });
   });
-  const files = unzipSync(new Uint8Array(await document.xlsx.writeBuffer()));
-  const xml = strFromU8(files['xl/workbook.xml']);
-  files['xl/workbook.xml'] = strToU8(
-    xml.replace(
-      /<calcPr\b[^>]*\/?\s*>/,
-      '<calcPr calcMode="manual" fullCalcOnLoad="0" forceFullCalc="0" calcOnSave="0"/>',
-    ),
-  );
-  report.warnings = [...warnings.values()];
-  return { bytes: zipSync(files), report };
+  const bytes = await manualCalculation(document);
+  report.warnings = warnings.list();
+  return { bytes, report };
 }

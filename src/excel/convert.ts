@@ -1,41 +1,202 @@
 import ExcelJS from 'exceljs';
-import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
-import { formatCellValue } from '../calculation/format.js';
 import { createArithmetic } from '../calculation/rational.js';
-import { serializeCellStyle } from '../model/editing.js';
-import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
 import { requireDefined } from '../model/require-defined.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetRange,
 } from '../model/spreadsheet-addressing.js';
-import {
-  assertWorkbook,
-  type CellInput,
-  type Workbook,
-  type Worksheet,
-} from '../model/workbook.js';
+import { assertWorkbook, type Workbook, type Worksheet } from '../model/workbook.js';
 import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
 import { readThemeColors } from './colors.js';
-import type { ExcelFormulaCapabilities, XlsxImport, XlsxWarning } from './contracts.js';
+import type { ExcelFormulaCapabilities, XlsxImport, XlsxReport } from './contracts.js';
 import { inspectXlsx, type XlsxLimits } from './guard.js';
-import { importCellStyle, importNumberFormat } from './styles.js';
+import { importCell, type ImportContext, type SheetImport } from './import-cell.js';
+import { createWarnings } from './warnings.js';
 
 const decode = new TextDecoder();
-function unsupported(node: FormulaNode, external: ReadonlyMap<string, unknown>): string[] {
-  if (node.kind === 'call')
-    return [
-      ...(!SUPPORTED_FUNCTIONS.includes(node.name) && !external.has(node.name) ? [node.name] : []),
-      ...node.args.flatMap((arg) => unsupported(arg, external)),
-    ];
-  if (node.kind === 'binary')
-    return [...unsupported(node.left, external), ...unsupported(node.right, external)];
-  return node.kind === 'unary' ? unsupported(node.operand, external) : [];
-}
 function attrs(tag: string): Record<string, string> {
   return Object.fromEntries(
     [...tag.matchAll(/([\w:]+)="([^"]*)"/g)].map((match) => [match[1], match[2]]),
   );
+}
+type Parts = Record<string, Uint8Array>;
+const text = (parts: Parts, name: string) => decode.decode(parts[name] ?? new Uint8Array());
+
+/** The worksheet part paths, in workbook order, from the workbook and its relationships. */
+function worksheetPaths(parts: Parts): (string | undefined)[] {
+  const relationships = new Map(
+    [...text(parts, 'xl/_rels/workbook.xml.rels').matchAll(/<Relationship\b[^>]*>/g)].map(
+      (match) => {
+        const a = attrs(match[0]);
+        return [a.Id, a.Target];
+      },
+    ),
+  );
+  return [...decode.decode(parts['xl/workbook.xml']).matchAll(/<sheet\b[^>]*>/g)].map((match) =>
+    relationships.get(attrs(match[0])['r:id']),
+  );
+}
+
+/** The XML of a worksheet part; only `xl/worksheets/sheetN.xml` parts are read. */
+function worksheetXml(parts: Parts, target: string | undefined): string {
+  const part = target?.startsWith('/xl/')
+    ? target.slice(1)
+    : target?.startsWith('xl/')
+      ? target
+      : `xl/${target}`;
+  if (!/^xl\/worksheets\/sheet[1-9]\d*\.xml$/.test(part) || !parts[part])
+    throw new TypeError('Unsupported workbook part layout.');
+  return decode.decode(parts[part]);
+}
+
+/** Plain numeric cells as the XML wrote them, so no binary float rounding reaches the model. */
+function authoredNumbers(xml: string): Map<string, string> {
+  const numbers = new Map<string, string>();
+  for (const cell of xml.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+    const a = attrs(cell[1]);
+    if ((a.t && a.t !== 'n') || /<f(?:\s|>)/.test(cell[2])) continue;
+    const number = /<v>([^<]+)<\/v>/.exec(cell[2])?.[1];
+    if (number && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(number))
+      numbers.set(a.r, number);
+  }
+  return numbers;
+}
+
+const emptySheet = (index: number, name: string): Worksheet => ({
+  id: `sheet-${index + 1}`,
+  name,
+  data: [],
+  columns: [],
+  rows: {},
+  style: {},
+  formats: {},
+  mergeCells: {},
+  cellProvenance: {},
+});
+
+function importColumns(context: ImportContext, source: ExcelJS.Worksheet, sheet: Worksheet) {
+  (source.columns ?? []).forEach((column, x) => {
+    requireDefined(sheet.columns)[x] = { width: column.width ? column.width * 7 + 5 : 100 };
+    if (column.hidden)
+      context.warn({
+        code: 'hidden-column',
+        message: 'Hidden columns are imported visible.',
+        location: `${source.name}!${x + 1}`,
+        disposition: 'skipped',
+      });
+  });
+}
+
+function importRows(
+  context: ImportContext,
+  source: ExcelJS.Worksheet,
+  { target, maxCells }: { target: SheetImport; maxCells: number },
+) {
+  const { sheet } = target;
+  source.eachRow({ includeEmpty: false }, (row, y) => {
+    if (y > maxCells)
+      throw new RangeError('Worksheet extent exceeds the standalone editor row limit.');
+    while (sheet.data.length < y) sheet.data.push([]);
+    if (row.height) requireDefined(sheet.rows)[String(y - 1)] = { height: (row.height * 4) / 3 };
+    if (row.hidden)
+      context.warn({
+        code: 'hidden-row',
+        message: 'Hidden rows are imported visible.',
+        location: `${source.name}!${y}`,
+        disposition: 'skipped',
+      });
+    row.eachCell({ includeEmpty: false }, (cell, x) => importCell(context, target, { cell, x, y }));
+  });
+}
+
+function importLayout(context: ImportContext, source: ExcelJS.Worksheet, sheet: Worksheet) {
+  for (const range of source.model.merges ?? []) {
+    const parsed = parseSpreadsheetRange(range);
+    if (!parsed) continue;
+    requireDefined(sheet.mergeCells)[formatSpreadsheetAddress(parsed.start.x, parsed.start.y)] = [
+      parsed.end.x - parsed.start.x + 1,
+      parsed.end.y - parsed.start.y + 1,
+    ];
+    context.report.mergedRanges++;
+  }
+  for (const view of source.views ?? []) {
+    if (view.state !== 'frozen') continue;
+    if (view.xSplit) sheet.freezeColumns = view.xSplit;
+    if (view.ySplit)
+      context.warn({
+        code: 'frozen-rows',
+        message: 'Frozen rows are not imported.',
+        location: source.name,
+        disposition: 'skipped',
+      });
+  }
+}
+
+const SHEET_FEATURES = [
+  [
+    /<conditionalFormatting\b/,
+    'conditional-formatting',
+    'Conditional formatting is not imported.',
+    'not-imported',
+  ],
+  [/<dataValidation\b/, 'validation', 'Data validation is not imported.', 'not-imported'],
+  [/<pageSetup\b/, 'page-setup', 'Page setup is not imported.', 'skipped'],
+] as const;
+
+function featureWarnings(context: ImportContext, source: ExcelJS.Worksheet, xml: string) {
+  const location = source.name;
+  if (source.headerFooter && Object.values(source.headerFooter).some(Boolean))
+    context.warn({
+      code: 'print-state',
+      message: 'Print headers, footers and page setup are not imported.',
+      location,
+      disposition: 'skipped',
+    });
+  for (const [pattern, code, message, disposition] of SHEET_FEATURES)
+    if (pattern.test(xml)) context.warn({ code, message, location, disposition });
+}
+
+function importWorksheet(
+  context: ImportContext,
+  source: ExcelJS.Worksheet,
+  { index, xml, maxCells }: { index: number; xml: string; maxCells: number },
+): Worksheet {
+  const sheet = emptySheet(index, source.name);
+  const target = { sheet, name: source.name, authoredNumbers: authoredNumbers(xml) };
+  if (source.state !== 'visible')
+    context.warn({
+      code: 'hidden-worksheet',
+      message: 'Hidden worksheets are imported visible.',
+      location: source.name,
+      disposition: 'skipped',
+    });
+  importColumns(context, source, sheet);
+  importRows(context, source, { target, maxCells });
+  if (!sheet.data.length) sheet.data = [['']];
+  importLayout(context, source, sheet);
+  featureWarnings(context, source, xml);
+  return sheet;
+}
+
+const PART_CATEGORIES: readonly [RegExp, string][] = [
+  [/^xl\/charts\/chart\d+\.xml$/, 'charts'],
+  [/^xl\/media\//, 'images'],
+  [/^xl\/pivotTables\//, 'pivot-tables'],
+  [/^xl\/tables\/table\d+\.xml$/, 'tables'],
+  [/^xl\/externalLinks\/externalLink\d+\.xml$/, 'external-links'],
+  [/^xl\/threadedComments\//, 'threaded-comments'],
+];
+
+function partWarnings(context: ImportContext, parts: Parts) {
+  for (const name of Object.keys(parts)) {
+    const category = PART_CATEGORIES.find(([pattern]) => pattern.test(name))?.[1];
+    if (category)
+      context.warn({
+        code: category,
+        message: `${category.replaceAll('-', ' ')} are not imported; cell values remain.`,
+        location: name,
+      });
+  }
 }
 
 /** Runs only in the isolated import child. Excel's formula caches are never read. */
@@ -45,244 +206,36 @@ export async function convertXlsx(
   formulaCapabilities?: ExcelFormulaCapabilities,
 ): Promise<XlsxImport> {
   const external = hostFunctionMap(validateFormulaCapabilities(formulaCapabilities));
-  const inspected = inspectXlsx(bytes, limits),
-    warnings = new Map<string, XlsxWarning>();
-  const warn = (
-    code: string,
-    message: string,
-    location: string,
-    disposition: XlsxWarning['disposition'] = 'not-imported',
-  ) => {
-    const entry = warnings.get(code) ?? { code, message, disposition, count: 0, locations: [] };
-    entry.count++;
-    if (entry.locations.length < 5 && !entry.locations.includes(location))
-      entry.locations.push(location);
-    warnings.set(code, entry);
-  };
-  const theme = readThemeColors(
-    decode.decode(inspected.parts['xl/theme/theme1.xml'] ?? new Uint8Array()),
-  );
+  const { parts } = inspectXlsx(bytes, limits),
+    warnings = createWarnings('not-imported');
+  const theme = readThemeColors(text(parts, 'xl/theme/theme1.xml'));
   const document = new ExcelJS.Workbook();
   await document.xlsx.load(bytes as never);
   const workbook: Workbook = { schemaVersion: 1, worksheets: [] };
-  const report = {
+  const report: XlsxReport = {
     worksheets: 0,
     cells: 0,
     formulas: 0,
     mergedRanges: 0,
-    warnings: [] as XlsxWarning[],
+    warnings: [],
   };
-  const relationships = new Map(
-    [
-      ...decode
-        .decode(inspected.parts['xl/_rels/workbook.xml.rels'] ?? new Uint8Array())
-        .matchAll(/<Relationship\b[^>]*>/g),
-    ].map((match) => {
-      const a = attrs(match[0]);
-      return [a.Id, a.Target];
-    }),
-  );
-  const paths = [
-    ...decode.decode(inspected.parts['xl/workbook.xml']).matchAll(/<sheet\b[^>]*>/g),
-  ].map((match) => relationships.get(attrs(match[0])['r:id']));
-  const arithmetic = createArithmetic();
+  const context: ImportContext = {
+    warn: warnings.warn,
+    report,
+    theme,
+    arithmetic: createArithmetic(),
+    date1904: Boolean(document.properties.date1904),
+    external,
+  };
+  const paths = worksheetPaths(parts),
+    maxCells = limits.maxCells ?? 250000;
   document.worksheets.forEach((source, index) => {
-    const target = paths[index];
-    const part = target?.startsWith('/xl/')
-      ? target.slice(1)
-      : target?.startsWith('xl/')
-        ? target
-        : `xl/${target}`;
-    if (!part || !/^xl\/worksheets\/sheet[1-9]\d*\.xml$/.test(part) || !inspected.parts[part])
-      throw new TypeError('Unsupported workbook part layout.');
-    const xml = decode.decode(inspected.parts[part]);
-    const authoredNumbers = new Map<string, string>();
-    for (const cell of xml.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
-      const a = attrs(cell[1]);
-      if ((a.t && a.t !== 'n') || /<f(?:\s|>)/.test(cell[2])) continue;
-      const number = /<v>([^<]+)<\/v>/.exec(cell[2])?.[1];
-      if (number && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(number))
-        authoredNumbers.set(a.r, number);
-    }
-    const sheet: Worksheet = {
-      id: `sheet-${index + 1}`,
-      name: source.name,
-      data: [],
-      columns: [],
-      rows: {},
-      style: {},
-      formats: {},
-      mergeCells: {},
-      cellProvenance: {},
-    };
-    if (source.state !== 'visible')
-      warn('hidden-worksheet', 'Hidden worksheets are imported visible.', source.name, 'skipped');
-    (source.columns ?? []).forEach((column, x) => {
-      requireDefined(sheet.columns)[x] = { width: column.width ? column.width * 7 + 5 : 100 };
-      if (column.hidden)
-        warn(
-          'hidden-column',
-          'Hidden columns are imported visible.',
-          `${source.name}!${x + 1}`,
-          'skipped',
-        );
-    });
-    source.eachRow({ includeEmpty: false }, (row, y) => {
-      if (y > (limits.maxCells ?? 250000))
-        throw new RangeError('Worksheet extent exceeds the standalone editor row limit.');
-      while (sheet.data.length < y) sheet.data.push([]);
-      if (row.height) requireDefined(sheet.rows)[String(y - 1)] = { height: (row.height * 4) / 3 };
-      if (row.hidden)
-        warn('hidden-row', 'Hidden rows are imported visible.', `${source.name}!${y}`, 'skipped');
-      row.eachCell({ includeEmpty: false }, (cell, x) => {
-        if (cell.isMerged && cell.master.address !== cell.address) return;
-        const address = formatSpreadsheetAddress(x - 1, y - 1),
-          location = `${source.name}!${address}`;
-        let value: CellInput;
-        const format = importNumberFormat(cell.numFmt);
-        if (!format)
-          warn(
-            `number-format:${cell.numFmt}`,
-            'Unsupported number format falls back to General.',
-            location,
-          );
-        if (format && format.kind !== 'general') requireDefined(sheet.formats)[address] = format;
-        if (cell.formula) {
-          value = '=' + cell.formula;
-          report.formulas++;
-          try {
-            for (const name of unsupported(parseFormula(cell.formula), external))
-              warn(
-                `formula:${name}`,
-                `${name} is retained but is unavailable in the calculation catalog.`,
-                location,
-              );
-          } catch {
-            warn(
-              'malformed-formula',
-              'Formula is retained as authored but cannot be parsed.',
-              location,
-            );
-          }
-        } else if (authoredNumbers.has(address)) {
-          value = requireDefined(authoredNumbers.get(address));
-          if (
-            document.properties.date1904 &&
-            format &&
-            ['date', 'time', 'datetime'].includes(format.kind)
-          )
-            value = formatCellValue(
-              arithmetic.add(arithmetic.parse(value), arithmetic.parse('1462')),
-              { significantDigits: 10000, notation: 'decimal' },
-            );
-        } else if (cell.value instanceof Date) {
-          // Numeric date serials normally use the raw XML path above.
-          value = String((cell.value.getTime() - Date.UTC(1899, 11, 30)) / 86400000);
-        } else if (typeof cell.value === 'object' && cell.value !== null) {
-          if ('richText' in cell.value) {
-            value = cell.value.richText.map((part) => part.text).join('');
-            warn('rich-text', 'Rich text becomes plain text.', location);
-          } else if ('hyperlink' in cell.value) {
-            value = cell.value.text;
-            warn('hyperlink', 'Hyperlinks become plain text.', location);
-          } else if ('error' in cell.value) value = cell.value.error;
-          else value = cell.text;
-        } else value = cell.value as CellInput;
-        const values = sheet.data[y - 1];
-        while (values.length < x) values.push(null);
-        values[x - 1] = value;
-        const style = importCellStyle(cell.style, theme);
-        if (!cell.alignment?.horizontal)
-          style['text-align'] =
-            typeof value === 'boolean' || (typeof value === 'string' && value.startsWith('#'))
-              ? 'center'
-              : authoredNumbers.has(address)
-                ? 'right'
-                : 'left';
-        requireDefined(sheet.style)[address] = serializeCellStyle(style);
-        requireDefined(sheet.cellProvenance)[address] = {
-          actor: { id: 'system', name: 'System' },
-          source: 'system',
-        };
-        report.cells++;
-        if (cell.note) warn('note', 'Excel notes and comments are not imported.', location);
-        if (
-          cell.fill?.type === 'pattern' &&
-          cell.fill.pattern !== 'solid' &&
-          cell.fill.pattern !== 'none'
-        )
-          warn('pattern-fill', 'Pattern fills are not imported.', location);
-        if (cell.alignment?.textRotation)
-          warn('rotated-text', 'Text rotation is not imported.', location);
-        if (typeof value === 'string' && /\b(?:ITAR|EAR99|ECCN|EXPORT CONTROLLED)\b/i.test(value))
-          warn(
-            'export-control-legend',
-            'Export-control text is retained; set the document marking in the host application.',
-            location,
-          );
-      });
-    });
-    if (!sheet.data.length) sheet.data = [['']];
-    for (const range of source.model.merges ?? []) {
-      const parsed = parseSpreadsheetRange(range);
-      if (parsed) {
-        requireDefined(sheet.mergeCells)[formatSpreadsheetAddress(parsed.start.x, parsed.start.y)] =
-          [parsed.end.x - parsed.start.x + 1, parsed.end.y - parsed.start.y + 1];
-        report.mergedRanges++;
-      }
-    }
-    for (const view of source.views ?? [])
-      if (view.state === 'frozen') {
-        if (view.xSplit) sheet.freezeColumns = view.xSplit;
-        if (view.ySplit)
-          warn('frozen-rows', 'Frozen rows are not imported.', source.name, 'skipped');
-      }
-    if (source.headerFooter && Object.values(source.headerFooter).some(Boolean))
-      warn(
-        'print-state',
-        'Print headers, footers and page setup are not imported.',
-        source.name,
-        'skipped',
-      );
-    for (const [pattern, code, message, disposition] of [
-      [
-        /<conditionalFormatting\b/g,
-        'conditional-formatting',
-        'Conditional formatting is not imported.',
-        'not-imported',
-      ],
-      [/<dataValidation\b/g, 'validation', 'Data validation is not imported.', 'not-imported'],
-      [/<pageSetup\b/g, 'page-setup', 'Page setup is not imported.', 'skipped'],
-    ] as const)
-      if (pattern.test(xml)) warn(code, message, source.name, disposition);
-    workbook.worksheets.push(sheet);
+    const xml = worksheetXml(parts, paths[index]);
+    workbook.worksheets.push(importWorksheet(context, source, { index, xml, maxCells }));
     report.worksheets++;
   });
-  for (const name of Object.keys(inspected.parts)) {
-    const category = /^xl\/charts\/chart\d+\.xml$/.test(name)
-      ? 'charts'
-      : /^xl\/media\//.test(name)
-        ? 'images'
-        : /^xl\/pivotTables\//.test(name)
-          ? 'pivot-tables'
-          : /^xl\/tables\/table\d+\.xml$/.test(name)
-            ? 'tables'
-            : /^xl\/externalLinks\/externalLink\d+\.xml$/.test(name)
-              ? 'external-links'
-              : /^xl\/threadedComments\//.test(name)
-                ? 'threaded-comments'
-                : null;
-    if (category)
-      warn(
-        category,
-        `${category.replaceAll('-', ' ')} are not imported; cell values remain.`,
-        name,
-      );
-  }
-  assertWorkbook(workbook, {
-    maxCells: limits.maxCells ?? 250000,
-    maxWorksheets: limits.maxWorksheets ?? 200,
-  });
-  report.warnings = [...warnings.values()];
+  partWarnings(context, parts);
+  assertWorkbook(workbook, { maxCells, maxWorksheets: limits.maxWorksheets ?? 200 });
+  report.warnings = warnings.list();
   return { workbook, report };
 }
