@@ -56,6 +56,11 @@ export const DEFAULT_WORKBOOK_LIMITS = Object.freeze({
   maxWorksheets: 200,
 });
 
+/** The form worksheet names are compared in: spaces collapsed, case folded. */
+export function worksheetNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
 export function createWorkbook(data: CellInput[][] = [['']]): Workbook {
   return { schemaVersion: 1, worksheets: [{ id: 'sheet-1', name: 'Sheet1', data }] };
 }
@@ -96,7 +101,7 @@ export function assertWorkbook(
       !sheet.name.trim() ||
       sheet.name.length > 256 ||
       ids.has(sheet.id) ||
-      names.has(sheet.name.trim().replace(/\s+/g, ' ').toUpperCase()) ||
+      names.has(worksheetNameKey(sheet.name)) ||
       !Array.isArray(sheet.data)
     ) {
       throw new TypeError('Worksheets need unique ids, unique names, and row data.');
@@ -122,7 +127,7 @@ export function assertWorkbook(
         throw new TypeError('Invalid worksheet line identities.');
     }
     ids.add(sheet.id);
-    names.add(sheet.name.trim().replace(/\s+/g, ' ').toUpperCase());
+    names.add(worksheetNameKey(sheet.name));
     rowCount += sheet.data.length;
     if (rowCount > bounds.maxCells || sheet.data.length > 1_048_576)
       throw new RangeError('Worksheet exceeds the row limit.');
@@ -290,9 +295,7 @@ export function appendWorksheet(workbook: Workbook): Workbook {
   let index = next.worksheets.length + 1;
   while (
     next.worksheets.some(
-      (sheet) =>
-        sheet.id === `sheet-${index}` ||
-        sheet.name.trim().replace(/\s+/g, ' ').toUpperCase() === `SHEET${index}`,
+      (sheet) => sheet.id === `sheet-${index}` || worksheetNameKey(sheet.name) === `SHEET${index}`,
     )
   )
     index++;

@@ -10,6 +10,7 @@ import {
   isPureTemperature,
   mergeNumericProvenance,
   normalizeNumericValue,
+  TEXT_COLLATOR,
   type NumericValue,
 } from './values.js';
 export { BINARY_PREFIXES, SI_DECIMAL_PREFIXES, UNIT_DEFINITIONS } from './unit-catalog.js';
@@ -149,7 +150,7 @@ function kindsFromPowers(powers: Record<string, number>): string | undefined {
   return (
     Object.entries(powers)
       .filter(([, n]) => n)
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) => TEXT_COLLATOR.compare(a, b))
       .map(([kind, n]) => (n === 1 ? kind : `${kind}^${n}`))
       .join('*') || undefined
   );
