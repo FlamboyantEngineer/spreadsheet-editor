@@ -106,6 +106,8 @@ for (const lab of ['full', 'embedded']) {
       await expect(
         editor.getByRole('tab', { name: lab === 'full' ? 'Inputs' : 'Mass budget', exact: true }),
       ).toBeVisible();
+      // The grid loads lazily: measure once it is mounted, not when the tabs are.
+      await expect(editor.locator('.jss_content').first()).toBeVisible();
       const measure = () =>
         editor.evaluate((root) => {
           const grid = root.querySelector<HTMLElement>('.jss_content')!;
