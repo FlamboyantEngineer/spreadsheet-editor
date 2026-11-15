@@ -202,6 +202,7 @@ The server-safe `createDocumentInsertion(workbook, result, options)` helper expo
 | ---------------------------------------- | -------------------------------------------------------------------- |
 | `@flamboyantengineer/spreadsheet-editor` | React editor and primary public types                                |
 | `…/calculation`                          | Exact arithmetic, formulas, formatting, providers and HTTP handler   |
+| `…/host`                                 | Host adapters, in-memory host and causal receipt bookkeeping         |
 | `…/model`                                | Versioned workbook, addressing and extracted formula parsers         |
 | `…/document`                             | Both document insertion payloads and table projection                |
 | `…/excel`                                | Optional Node-only bounded XLSX import/export and conversion reports |
