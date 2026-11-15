@@ -245,7 +245,7 @@ export function changeWorkbookStructure(
       const moved = interval(Number(index), Number(index), change);
       if (moved) rowSettings[String(moved[0])] = settings;
     }
-    sheet.rows = rowSettings;
+    if (sheet.rows) sheet.rows = rowSettings;
   } else {
     sheet.data.forEach((row) => {
       if (change.kind === 'insert') {
@@ -273,10 +273,11 @@ export function changeWorkbookStructure(
         return next ? [[next, value]] : [];
       }),
     );
-  sheet.style = remap(sheet.style);
-  sheet.formats = remap(sheet.formats);
-  sheet.cellProvenance = remap(sheet.cellProvenance);
-  sheet.inputValues = remap(sheet.inputValues);
+  // A map the worksheet did not have stays absent, so an inverse restores it exactly (SE-HOST-5).
+  if (sheet.style) sheet.style = remap(sheet.style);
+  if (sheet.formats) sheet.formats = remap(sheet.formats);
+  if (sheet.cellProvenance) sheet.cellProvenance = remap(sheet.cellProvenance);
+  if (sheet.inputValues) sheet.inputValues = remap(sheet.inputValues);
   const merges: NonNullable<Worksheet['mergeCells']> = {};
   for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
     const anchor = parseSpreadsheetAddress(address)!;
@@ -291,7 +292,7 @@ export function changeWorkbookStructure(
         span.end.y - span.start.y + 1,
       ];
   }
-  sheet.mergeCells = merges;
+  if (sheet.mergeCells) sheet.mergeCells = merges;
   next.worksheets.forEach((current) =>
     current.data.forEach((row) =>
       row.forEach((value, index) => {
