@@ -138,6 +138,44 @@ export function assertExternalCalculationSnapshot(
     );
 }
 
+interface DependencyIndex {
+  /** Cells pending whatever was edited: every cell without recorded dependencies. */
+  unrecorded: string[];
+  /** Cells that read the used extent of a worksheet, by worksheet id. */
+  extentReaders: [string, string[]][];
+  /** Reverse dependencies: the cells that read each cell. */
+  dependents: Map<string, string[]>;
+}
+const dependencyIndexes = new WeakMap<CalculationResult, DependencyIndex>();
+/** Built once per result, so a keystroke walks only what its draft cell reaches (SE-PERF-1). */
+function dependencyIndex(result: CalculationResult): DependencyIndex {
+  const cached = dependencyIndexes.get(result);
+  if (cached) return cached;
+  const recorded = result.dependencies?.cells,
+    unrecorded: string[] = [],
+    dependents = new Map<string, string[]>();
+  for (const sheet of result.worksheets)
+    sheet.values.forEach((row, y) =>
+      row.forEach((_cell, x) => {
+        const key = calculationCellKey(sheet.id, x, y);
+        if (!recorded || !Object.hasOwn(recorded, key)) unrecorded.push(key);
+      }),
+    );
+  for (const [key, dependencies] of Object.entries(recorded ?? {}))
+    for (const dependency of dependencies) {
+      const list = dependents.get(dependency);
+      if (list) list.push(key);
+      else dependents.set(dependency, [key]);
+    }
+  const index = {
+    unrecorded,
+    extentReaders: Object.entries(result.dependencies?.extents ?? {}),
+    dependents,
+  };
+  dependencyIndexes.set(result, index);
+  return index;
+}
+
 /** Invalidates only formulas whose actually-read dependencies lead to an edited cell. */
 export function pendingCalculationCells(
   result: CalculationResult | null,
@@ -146,29 +184,11 @@ export function pendingCalculationCells(
 ): Set<string> {
   const pending = new Set(edited);
   if (!result) return pending;
-  if (!result.dependencies) {
-    for (const sheet of result.worksheets)
-      sheet.values.forEach((row, y) =>
-        row.forEach((_cell, x) => pending.add(calculationCellKey(sheet.id, x, y))),
-      );
-    return pending;
-  }
-  for (const sheet of result.worksheets)
-    sheet.values.forEach((row, y) =>
-      row.forEach((_cell, x) => {
-        const key = calculationCellKey(sheet.id, x, y);
-        if (!Object.hasOwn(result.dependencies!.cells, key)) pending.add(key);
-      }),
-    );
-  for (const [key, sheets] of Object.entries(result.dependencies.extents ?? {}))
+  const { unrecorded, extentReaders, dependents } = dependencyIndex(result);
+  for (const key of unrecorded) pending.add(key);
+  if (!result.dependencies) return pending;
+  for (const [key, sheets] of extentReaders)
     if (sheets.some((sheet) => extentChanges.includes(sheet))) pending.add(key);
-  const dependents = new Map<string, string[]>();
-  for (const [key, dependencies] of Object.entries(result.dependencies.cells))
-    for (const dependency of dependencies) {
-      const list = dependents.get(dependency) ?? [];
-      list.push(key);
-      dependents.set(dependency, list);
-    }
   const queue = [...pending];
   for (let index = 0; index < queue.length; index++)
     for (const dependent of dependents.get(queue[index]) ?? [])

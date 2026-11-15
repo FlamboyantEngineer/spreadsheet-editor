@@ -5,6 +5,7 @@ import { worksheetExtent } from './extent.js';
 import { changeWorkbookStructure } from './structure.js';
 import {
   changeWorkbookStructureWithOperations,
+  collectCellOperations,
   writeCellsWithOperations,
   invertWorkbookOperations,
 } from './operations.js';
@@ -152,6 +153,35 @@ describe('SE-HOST-MODEL-1: structure commands on a tall, narrow sheet', () => {
 });
 
 describe('SE-HOST-MODEL-2: semantic transactions', () => {
+  it('SE-PERF-1: compares cells in place and reports only those that differ', () => {
+    const before = createWorkbook([
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+    ]);
+    before.worksheets[0].style = { A1: 'color: red', C2: 'color: blue' };
+    before.worksheets[0].cellProvenance = {
+      B1: { actor: { id: 'alex', name: 'Alex' }, source: 'human' },
+    };
+    const after = structuredClone(before),
+      sheet = after.worksheets[0];
+    expect(collectCellOperations(before, after)).toEqual([]);
+    sheet.data[1][0] = '40';
+    sheet.style = { A1: 'color: red', B2: 'color: green' };
+    sheet.cellProvenance = { B1: { actor: { id: 'sam', name: 'Sam' }, source: 'human' } };
+    sheet.inputValues = { C1: rational };
+    const [operation] = collectCellOperations(before, after);
+    expect(operation.kind === 'cells' && operation.changes.map((change) => change.address)).toEqual(
+      ['A2', 'C2', 'B2', 'C1', 'B1'],
+    );
+    const targeted = collectCellOperations(before, after, new Map([['sheet-1', ['A2', 'A1']]]));
+    expect(targeted).toEqual([
+      {
+        kind: 'cells',
+        sheetId: 'sheet-1',
+        changes: [expect.objectContaining({ address: 'A2', after: { value: '40' } })],
+      },
+    ]);
+  });
   it('uses the host identity factory when ordinary writes extend either axis', () => {
     const workbook = createWorkbook([['original']]);
     workbook.worksheets[0].rowIds = ['row-original'];

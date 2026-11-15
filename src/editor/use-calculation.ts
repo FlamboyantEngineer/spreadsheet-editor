@@ -12,11 +12,13 @@ export function useCalculation(
   provider: CalculationProvider,
   options?: CalculationOptions,
   enabled = true,
+  /** The built-in client calculator's own results are not re-validated (SE-PERF-1). */
+  trusted = false,
 ) {
   const inputKey = useMemo(() => workbookCalculationKey(workbook), [workbook]);
   const request = useMemo(
-    () => ({ workbook, provider, options, enabled }),
-    [inputKey, provider, options, enabled],
+    () => ({ workbook, provider, options, enabled, trusted }),
+    [inputKey, provider, options, enabled, trusted],
   );
   const [settled, setSettled] = useState<{
     request: typeof request;
@@ -30,7 +32,7 @@ export function useCalculation(
       .then(() => request.provider.calculate(request.workbook, request.options, controller.signal))
       .then((result) => {
         if (controller.signal.aborted) return;
-        assertCalculationResult(result, request.workbook);
+        if (!request.trusted) assertCalculationResult(result, request.workbook);
         setSettled({ request, result, error: null });
       })
       .catch((error: unknown) => {

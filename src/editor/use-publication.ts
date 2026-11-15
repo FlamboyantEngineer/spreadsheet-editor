@@ -20,20 +20,28 @@ export function usePublication(
   options: CalculationOptions,
   enabled = true,
 ) {
-  const native = useCalculation(workbook, provider, options, enabled && mode?.mode !== 'external');
+  const native = useCalculation(
+    workbook,
+    provider,
+    options,
+    enabled && mode?.mode !== 'external',
+    mode?.mode !== 'server',
+  );
   const inputKey = useMemo(() => workbookCalculationKey(workbook), [workbook]);
   const accepted = useRef<{ revision: number; payload: string } | null>(null);
   const local = useRef({ result: native.result, revision: 0 });
   if (native.result && local.current.result !== native.result)
     local.current = { result: native.result, revision: local.current.revision + 1 };
+  const kind = mode?.mode,
+    snapshot = mode?.mode === 'external' ? mode.snapshot : null;
+  // Keyed on the mode's kind and snapshot, so a host's inline calculation prop costs nothing.
   return useMemo(() => {
     let result = native.result,
       error = native.error,
       pending = native.pending,
       revision = local.current.revision,
       valid = true;
-    const snapshot = mode?.mode === 'external' ? mode.snapshot : null;
-    if (mode?.mode === 'external') {
+    if (kind === 'external') {
       result = null;
       error = null;
       pending = true;
@@ -69,7 +77,7 @@ export function usePublication(
             const key = calculationCellKey(sheet.id, x, y);
             if (
               valid &&
-              (mode?.mode === 'external'
+              (kind === 'external'
                 ? (snapshot?.cellStates?.[key] ?? snapshot?.status) === 'ready'
                 : !error && !pending)
             )
@@ -89,7 +97,7 @@ export function usePublication(
           ? ('pending' as const)
           : ('ready' as const),
     };
-  }, [workbook, mode, native.result, native.error, native.pending, inputKey]);
+  }, [workbook, kind, snapshot, native.result, native.error, native.pending, inputKey]);
 }
 
 export function acceptedPresentation(

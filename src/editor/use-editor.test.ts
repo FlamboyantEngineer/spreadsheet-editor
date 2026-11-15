@@ -549,3 +549,41 @@ describe('SE-CHROME-5: workbook replacement', () => {
     expect(result.current.sheet.data[0][0]).toBe('Replacement');
   });
 });
+
+describe('SE-HOST-MODEL-2 and SE-PERF-1: change context', () => {
+  it('gives the host a detached, frozen baseline and patches for the edited cell only', () => {
+    const onChange = vi.fn<NonNullable<SpreadsheetEditorProps['onChange']>>();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([
+          ['1', '2'],
+          ['3', '4'],
+        ]),
+        currentUser: actor,
+        onChange,
+      }),
+    );
+    const before = result.current.workbook;
+    act(() => result.current.setDraftValue('5'));
+    act(() => void result.current.applyFormula());
+    const [next, context] = onChange.mock.calls[0];
+    expect(next.worksheets[0].data[0][0]).toBe('5');
+    expect(context!.baseline).toEqual(before);
+    expect(context!.baseline).not.toBe(before);
+    expect(context!.baseline).toBe(context!.baseline);
+    expect(Object.isFrozen(context!.baseline.worksheets[0].data[0])).toBe(true);
+    expect(context!.operations).toEqual([
+      {
+        kind: 'cells',
+        sheetId: 'sheet-1',
+        changes: [
+          expect.objectContaining({
+            address: 'A1',
+            before: { value: '1' },
+            after: expect.objectContaining({ value: '5', provenance: expect.anything() }),
+          }),
+        ],
+      },
+    ]);
+  });
+});
