@@ -31,18 +31,24 @@ describe('SE-DOC-3.1: linked authoritative captures', () => {
       result: calculateWorkbook(workbook),
     };
     expect(() =>
-      updateLinkedSpreadsheetInsertion(captured, workbook, next, {
+      updateLinkedSpreadsheetInsertion(captured, {
+        workbook,
+        publication: next,
         source: { id: 'source', revision: 'r2' },
         expectedRevision: 'stale',
       }),
     ).toThrow('captured revision');
     expect(() =>
-      updateLinkedSpreadsheetInsertion(captured, workbook, next, {
+      updateLinkedSpreadsheetInsertion(captured, {
+        workbook,
+        publication: next,
         source: { id: 'source', revision: 'r1' },
         expectedRevision: 'r1',
       }),
     ).toThrow('different captured data');
-    const refreshed = updateLinkedSpreadsheetInsertion(captured, workbook, next, {
+    const refreshed = updateLinkedSpreadsheetInsertion(captured, {
+      workbook,
+      publication: next,
       source: { id: 'source', revision: 'r2' },
       expectedRevision: 'r1',
     });

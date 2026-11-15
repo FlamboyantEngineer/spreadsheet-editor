@@ -63,16 +63,20 @@ export function createLinkedSpreadsheetInsertion(
   };
 }
 
+/** Newly resolved host data for an explicit refresh of a linked spreadsheet. */
+export interface LinkedSpreadsheetUpdate {
+  workbook: Workbook;
+  publication: ExternalCalculationSnapshot;
+  source: SpreadsheetSourceReference;
+  /** The revision the current insertion captured; a different one rejects the refresh. */
+  expectedRevision: string;
+  display?: InsertionOptions['display'];
+}
+
 /** The host resolves the source and explicitly authorizes refresh of a current document. */
 export function updateLinkedSpreadsheetInsertion(
   current: LinkedSpreadsheetInsertion,
-  workbook: Workbook,
-  publication: ExternalCalculationSnapshot,
-  options: {
-    source: SpreadsheetSourceReference;
-    expectedRevision: string;
-    display?: InsertionOptions['display'];
-  },
+  { workbook, publication, ...options }: LinkedSpreadsheetUpdate,
 ): LinkedSpreadsheetInsertion {
   if (
     options.source.id !== current.source.id ||
