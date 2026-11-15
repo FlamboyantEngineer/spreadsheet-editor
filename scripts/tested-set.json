@@ -1,0 +1,9 @@
+{
+  "about": "The set of packages a host installs beside this library, as `npm run check:consumer` installs it into a packed consumer (README, Tested set). The git pin of the base component library comes from package.json. A change to this set is a change to the README's table.",
+  "packages": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "pinned": ["@flamboyantengineer/ui-components"],
+  "shared": ["react", "react-dom", "@flamboyantengineer/ui-components"]
+}
