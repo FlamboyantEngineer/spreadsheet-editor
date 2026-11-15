@@ -1,31 +1,40 @@
 import { type EagerCall, type EagerFunction, requireArity } from './builtin-call.js';
-import { CalculationError, isError, isNumeric, type NumericValue } from './values.js';
+import { CalculationError, type CellValue, isError, isNumeric, type NumericValue } from './values.js';
 
 const COUNTS = ['COUNT', 'COUNTA', 'COUNTBLANK'];
 
+/** A value typed directly as an argument, as a number; COUNT skips one that does not convert. */
+function converted(call: EagerCall, value: CellValue): NumericValue | undefined {
+  try {
+    return call.evaluation.values.numeric(value);
+  } catch (error) {
+    if (call.name !== 'COUNT') throw error;
+    return undefined;
+  }
+}
+
 /**
- * The numbers an aggregate reads. Numbers in references always count; other values typed
- * directly as arguments are converted, except by COUNTA and COUNTBLANK, and COUNT skips those
- * that do not convert.
+ * The numbers one argument gives an aggregate. Numbers in references always count; other values
+ * typed directly as arguments are converted, except by COUNTA and COUNTBLANK.
  */
-function numbers(call: EagerCall): NumericValue[] {
-  const { name, node, evaluation } = call;
+function argumentNumbers(call: EagerCall, index: number): NumericValue[] {
+  const arg = call.args[index];
+  const direct =
+    !['COUNTA', 'COUNTBLANK'].includes(call.name) &&
+    !['reference', 'lines'].includes(call.node.args[index].kind) &&
+    !Array.isArray(arg);
   const values: NumericValue[] = [];
-  const converts = !['COUNTA', 'COUNTBLANK'].includes(name);
-  call.args.forEach((arg, index) => {
-    const reference = ['reference', 'lines'].includes(node.args[index].kind);
-    for (const value of evaluation.values.flattened([arg])) {
-      if (isNumeric(value)) values.push(value);
-      else if (converts && !reference && !Array.isArray(arg) && value !== null && !isError(value))
-        try {
-          values.push(evaluation.values.numeric(value));
-        } catch (error) {
-          if (name !== 'COUNT') throw error;
-        }
+  for (const value of call.evaluation.values.flattened([arg])) {
+    if (isNumeric(value)) values.push(value);
+    else if (direct && value !== null && !isError(value)) {
+      const number = converted(call, value);
+      if (number) values.push(number);
     }
-  });
+  }
   return values;
 }
+
+const numbers = (call: EagerCall) => call.args.flatMap((_, index) => argumentNumbers(call, index));
 
 /** Requires one argument or more (SUM takes none), and no error unless the function counts. */
 function prepare(call: EagerCall): NumericValue[] {

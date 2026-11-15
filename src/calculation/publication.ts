@@ -84,18 +84,12 @@ function assertTransportTree(value: unknown, ancestors = new Set<object>(), dept
   for (const child of Object.values(value)) assertTransportTree(child, ancestors, depth + 1);
   ancestors.delete(value);
 }
-export function assertExternalCalculationSnapshot(
-  value: unknown,
-  workbook: Workbook,
-): asserts value is ExternalCalculationSnapshot {
-  if (!value || typeof value !== 'object')
-    throw new TypeError('Invalid external calculation snapshot.');
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
-    throw new TypeError('External calculation snapshots must be plain objects.');
-  assertTransportTree(value);
-  if (new TextEncoder().encode(JSON.stringify(value)).length > 16 * 1024 * 1024)
-    throw new RangeError('External calculation snapshot exceeds the transport byte limit.');
-  const snapshot = value as ExternalCalculationSnapshot;
+const isPlainObject = (value: unknown): value is object =>
+  Boolean(value) &&
+  typeof value === 'object' &&
+  [Object.prototype, null].includes(Object.getPrototypeOf(value));
+
+function assertSnapshotFields(snapshot: ExternalCalculationSnapshot, workbook: Workbook): void {
   if (snapshot.inputKey !== workbookCalculationKey(workbook))
     throw new TypeError('External calculation input key does not match the workbook.');
   if (
@@ -110,51 +104,71 @@ export function assertExternalCalculationSnapshot(
   )
     throw new TypeError('Invalid external calculation error.');
   if (snapshot.hostContext !== undefined) assertJsonValue(snapshot.hostContext);
-  if (snapshot.cellStates !== undefined) {
-    if (
-      !snapshot.cellStates ||
-      typeof snapshot.cellStates !== 'object' ||
-      Array.isArray(snapshot.cellStates) ||
-      ![Object.prototype, null].includes(Object.getPrototypeOf(snapshot.cellStates))
-    )
-      throw new TypeError('Invalid calculation cell states.');
-    if (Object.keys(snapshot.cellStates).length > 250_000)
-      throw new RangeError('Too many calculation cell states.');
-    for (const [key, state] of Object.entries(snapshot.cellStates)) {
-      const tuple: unknown = JSON.parse(key);
-      if (
-        !Array.isArray(tuple) ||
-        tuple.length !== 3 ||
-        typeof tuple[0] !== 'string' ||
-        !Number.isSafeInteger(tuple[1]) ||
-        !Number.isSafeInteger(tuple[2]) ||
-        tuple[1] < 0 ||
-        tuple[2] < 0 ||
-        tuple[1] > 16_383 ||
-        tuple[2] > 1_048_575 ||
-        calculationCellKey(tuple[0], tuple[1], tuple[2]) !== key ||
-        !workbook.worksheets.some((sheet) => sheet.id === tuple[0]) ||
-        !states.has(state)
-      )
-        throw new TypeError('Invalid calculation cell state.');
-    }
-  }
-  if (snapshot.status === 'ready' && !snapshot.result)
-    throw new TypeError('Ready calculations require a result.');
-  if (snapshot.result) assertCalculationResult(snapshot.result, workbook);
-  for (const sheet of workbook.worksheets)
+}
+
+/** A `[sheetId, x, y]` key in canonical form, naming a cell of one of the workbook's sheets. */
+function isCellStateKey(key: string, workbook: Workbook): boolean {
+  const tuple: unknown = JSON.parse(key);
+  return (
+    Array.isArray(tuple) &&
+    tuple.length === 3 &&
+    typeof tuple[0] === 'string' &&
+    Number.isSafeInteger(tuple[1]) &&
+    Number.isSafeInteger(tuple[2]) &&
+    tuple[1] >= 0 &&
+    tuple[2] >= 0 &&
+    tuple[1] <= 16_383 &&
+    tuple[2] <= 1_048_575 &&
+    calculationCellKey(tuple[0], tuple[1], tuple[2]) === key &&
+    workbook.worksheets.some((sheet) => sheet.id === tuple[0])
+  );
+}
+
+function assertCellStates(cellStates: unknown, workbook: Workbook): void {
+  if (!isPlainObject(cellStates) || Array.isArray(cellStates))
+    throw new TypeError('Invalid calculation cell states.');
+  if (Object.keys(cellStates).length > 250_000)
+    throw new RangeError('Too many calculation cell states.');
+  for (const [key, state] of Object.entries(cellStates))
+    if (!isCellStateKey(key, workbook) || !states.has(state))
+      throw new TypeError('Invalid calculation cell state.');
+}
+
+/** Ready cells with authored input publish a value; pending or unavailable cells publish none. */
+function assertPublishedCells(snapshot: ExternalCalculationSnapshot, workbook: Workbook): void {
+  for (const sheet of workbook.worksheets) {
+    const values = snapshot.result?.worksheets.find((entry) => entry.id === sheet.id)?.values;
     sheet.data.forEach((row, y) =>
       row.forEach((input, x) => {
         const state = snapshot.cellStates?.[calculationCellKey(sheet.id, x, y)] ?? snapshot.status;
-        const result = snapshot.result?.worksheets.find((entry) => entry.id === sheet.id)?.values[
-          y
-        ]?.[x];
+        const result = values?.[y]?.[x];
         if (state === 'ready' && input !== null && input !== '' && result == null)
           throw new TypeError('Ready authored cells require calculated values.');
         if (state !== 'ready' && result != null)
           throw new TypeError('Pending or unavailable cells cannot publish cached values.');
       }),
     );
+  }
+}
+
+export function assertExternalCalculationSnapshot(
+  value: unknown,
+  workbook: Workbook,
+): asserts value is ExternalCalculationSnapshot {
+  if (!value || typeof value !== 'object')
+    throw new TypeError('Invalid external calculation snapshot.');
+  if (!isPlainObject(value))
+    throw new TypeError('External calculation snapshots must be plain objects.');
+  assertTransportTree(value);
+  if (new TextEncoder().encode(JSON.stringify(value)).length > 16 * 1024 * 1024)
+    throw new RangeError('External calculation snapshot exceeds the transport byte limit.');
+  const snapshot = value as ExternalCalculationSnapshot;
+  assertSnapshotFields(snapshot, workbook);
+  if (snapshot.cellStates !== undefined) assertCellStates(snapshot.cellStates, workbook);
+  if (snapshot.status === 'ready' && !snapshot.result)
+    throw new TypeError('Ready calculations require a result.');
+  if (snapshot.result) assertCalculationResult(snapshot.result, workbook);
+  assertPublishedCells(snapshot, workbook);
 }
 
 interface DependencyIndex {

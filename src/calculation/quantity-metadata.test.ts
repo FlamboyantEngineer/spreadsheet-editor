@@ -267,7 +267,7 @@ describe('SE-CALC-6.1: exact localized formatting', () => {
       ],
       ['.125', 'de-DE', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }],
     ] as const)
-      expect(formatExactDecimal(text, locale, options, true)).toBe(
+      expect(formatExactDecimal(text, locale, { ...options, forceFallback: true })).toBe(
         formatExactDecimal(text, locale, options),
       );
   });

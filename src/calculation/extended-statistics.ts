@@ -10,31 +10,32 @@ import {
   number,
   oneOf,
   scalar,
+  type Value,
   zeroOf,
 } from './function-call.js';
 import { type CellValue, isNumeric, type NumericValue } from './values.js';
 import { meetsCriterion } from './wildcard.js';
 
-/** COUNTIF, SUMIF, AVERAGEIF and their several-condition forms, MAXIFS and MINIFS. */
-function conditional(call: FunctionCall) {
-  const { name, args, math } = call;
-  const single = !name.endsWith('IFS'),
-    count = name.startsWith('COUNT');
-  if (single) arity(call, 2, count ? 2 : 3);
-  else arity(call, count ? 2 : 3, 255);
-  const outputs = flat(single ? (args[2] ?? args[0]) : args[0]),
-    pairs = single ? args.slice(0, 2) : args.slice(count ? 0 : 1);
+interface ConditionTest {
+  values: CellValue[];
+  condition: CellValue;
+}
+
+/** The value ranges and their conditions, each range as long as the outputs. */
+function conditionTests(pairs: readonly Value[], outputs: readonly CellValue[]): ConditionTest[] {
   if (pairs.length % 2) fail();
-  const tests: { values: CellValue[]; condition: CellValue }[] = [];
+  const tests: ConditionTest[] = [];
   for (let i = 0; i < pairs.length; i += 2) {
     const values = flat(pairs[i]);
     if (values.length !== outputs.length) fail();
     tests.push({ values, condition: scalar(pairs[i + 1]) });
   }
-  const selected = outputs.filter((_, index) =>
-    tests.every(({ values, condition }) => meetsCriterion(call, values[index], condition)),
-  );
-  if (count) return math.parse(String(selected.length));
+  return tests;
+}
+
+/** Sums, averages or picks the extreme of the selected outputs. */
+function combineSelected(call: FunctionCall, selected: readonly CellValue[]) {
+  const { name, math } = call;
   selected.forEach(checked);
   const numbers = selected.filter(isNumeric);
   if (name.startsWith('MAX') || name.startsWith('MIN'))
@@ -42,9 +43,23 @@ function conditional(call: FunctionCall) {
       (a, b) => (call.compare(a, b) > 0 === name.startsWith('MAX') ? a : b),
       numbers[0] ?? zeroOf(call),
     );
-  return name.startsWith('AVERAGE')
-    ? math.average(numbers)
-    : numbers.reduce(math.add, zeroOf(call));
+  return name.startsWith('AVERAGE') ? math.average(numbers) : numbers.reduce(math.add, zeroOf(call));
+}
+
+/** COUNTIF, SUMIF, AVERAGEIF and their several-condition forms, MAXIFS and MINIFS. */
+function conditional(call: FunctionCall) {
+  const { name, args } = call;
+  const single = !name.endsWith('IFS'),
+    count = name.startsWith('COUNT');
+  if (single) arity(call, 2, count ? 2 : 3);
+  else arity(call, count ? 2 : 3, 255);
+  const outputs = flat(single ? (args[2] ?? args[0]) : args[0]),
+    pairs = single ? args.slice(0, 2) : args.slice(count ? 0 : 1);
+  const tests = conditionTests(pairs, outputs);
+  const selected = outputs.filter((_, index) =>
+    tests.every(({ values, condition }) => meetsCriterion(call, values[index], condition)),
+  );
+  return count ? call.math.parse(String(selected.length)) : combineSelected(call, selected);
 }
 
 function sumProduct(call: FunctionCall) {
