@@ -214,4 +214,17 @@ npm run check
 
 Checks include lint, formatting, types, unit tests, a clean package build, built-entry-point imports in plain Node, and Chromium browser tests. Browser tests use `CHROMIUM_PATH`, system Chromium when available, or Playwright's browser (`npx playwright install chromium`). CI installs the public base library without a private-repository token.
 
+### Tested set
+
+The library has no release yet, so a host installs it and the base component library from git, by commit. It is tested as one set: `npm run check:consumer`, part of `npm run check`, packs the built package and installs it into an empty consumer beside the packages below, with strict peers (`--strict-peer-deps`, no `--force`, `--legacy-peer-deps`, overrides or nested copies), then again with `npm ci`, and requires one copy each of React, React DOM and the base component library.
+
+| Package                             | Tested                              |
+| ----------------------------------- | ----------------------------------- |
+| `@flamboyantengineer/ui-components` | the commit pinned in `package.json` |
+| `react`, `react-dom`                | 19.2.7                              |
+
+`scripts/tested-set.json` holds the same set for the check. Peers follow one rule, shared with the document editor: a release candidate is exact; the base component library is a peer within its `0.x` minor (`~0.1.0`), since before `1.0.0` every minor may break; other peers are caret ranges.
+
+Each weekday the pin-bump workflow (`.github/workflows/pin-bump.yml`) moves the git pin to the head of the base library's `dev`, installs the set strictly, runs the packed-consumer check, and only then opens a pull request, which merges by itself once `check` passes. It touches only `package.json` and the lockfile and opens nothing when the pin is current.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [notices](NOTICE.md). The [host compatibility contract](specs/HOST-COMPATIBILITY.md) records implemented differences, deliberate numerical choices and application integration boundaries. Unknown functions return `#NAME?`; hosts supply authorized external formulas and constants through `FormulaHost`. CSV/JSON and clipboard operations are built in.

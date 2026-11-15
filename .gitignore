@@ -1,4 +1,5 @@
-node_modules/
+# Also a link named node_modules, which the trailing slash would miss.
+node_modules
 dist/
 labs/build/
 playwright-report/
