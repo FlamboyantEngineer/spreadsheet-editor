@@ -87,4 +87,34 @@ describe('SE-CALC-3: interchangeable server calculation', () => {
     );
     expect(response.status).toBe(413);
   });
+  it('accepts every workbook the cell limit accepts with the default transport limits', async () => {
+    // 200,000 short values: 2.6 MiB of request JSON and about 10 MiB of response JSON.
+    const workbook = createWorkbook(
+      Array.from({ length: 2_000 }, (_, y) =>
+        Array.from({ length: 100 }, (_, x) => String(y * 100 + x)),
+      ),
+    );
+    const provider = createHttpCalculator('http://localhost/calculate', {
+      fetch: (async (url, init) =>
+        handleCalculationRequest(new Request(url, init))) as typeof fetch,
+    });
+    const result = await provider.calculate(workbook);
+    expect(result.worksheets[0].values[1_999][99]).toMatchObject({ numerator: '199999' });
+  }, 60_000);
+  it('says which limit a refused request hit', async () => {
+    const tooLarge = await handleCalculationRequest(request({ many: 'x'.repeat(100) }), {
+      maxRequestBytes: 32,
+    });
+    expect(tooLarge.status).toBe(413);
+    expect(await tooLarge.json()).toMatchObject({ limit: 'requestBytes' });
+    const tooManyCells = await handleCalculationRequest(
+      request({ schemaVersion: 1, requestId: '1', workbook: createWorkbook([['1', '2']]) }),
+      { limits: { maxCells: 1 }, maxRequestBytes: 1024 },
+    );
+    expect(tooManyCells.status).toBe(413);
+    expect(await tooManyCells.json()).toMatchObject({
+      limit: 'workbook',
+      detail: 'Worksheet extent exceeds the cell limit.',
+    });
+  });
 });

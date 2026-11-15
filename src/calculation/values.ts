@@ -17,8 +17,19 @@ export interface NumericValue {
   readonly precision?: number;
 }
 
-export type FormulaErrorCode =
-  '#DIV/0!' | '#VALUE!' | '#REF!' | '#NAME?' | '#NUM!' | '#N/A' | '#ERROR!' | '#LIMIT!' | '#CYCLE!';
+/** Every error a calculated cell can hold. */
+export const FORMULA_ERROR_CODES = Object.freeze([
+  '#DIV/0!',
+  '#VALUE!',
+  '#REF!',
+  '#NAME?',
+  '#NUM!',
+  '#N/A',
+  '#ERROR!',
+  '#LIMIT!',
+  '#CYCLE!',
+] as const);
+export type FormulaErrorCode = (typeof FORMULA_ERROR_CODES)[number];
 export interface ErrorValue {
   readonly kind: 'error';
   readonly code: FormulaErrorCode;
