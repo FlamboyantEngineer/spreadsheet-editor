@@ -280,6 +280,8 @@ test('SE-CHROME-1: saved history retains host messages and opens captured versio
 }) => {
   await openLab(page);
   const editor = source(page);
+  // Save keeps a change: the session saves nothing for an unchanged workbook (SE-SESSION-2).
+  await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('5');
   await editor.getByRole('button', { name: 'Save', exact: true }).click();
   await editor.getByRole('button', { name: 'History', exact: true }).click();
   const message = editor.getByText('Saved workbook version', { exact: true });

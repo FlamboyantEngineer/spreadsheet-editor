@@ -182,7 +182,7 @@ test('SE-HOST-1: sheet switches restore selection, scroll and focus and commit t
   ).toBe(true);
 });
 
-test('SE-HOST-1: host saves include active drafts and flush uses durability without adding a manual save', async ({
+test('SE-SESSION-4: host saves include active drafts and flush saves only what is pending', async ({
   page,
 }) => {
   const root = editor(page);
@@ -197,9 +197,9 @@ test('SE-HOST-1: host saves include active drafts and flush uses durability with
   await expect(page.getByLabel('Saved A1', { exact: true })).toHaveText('11');
   await expect(page.getByLabel('Host save count')).toHaveText('2');
   await page.getByRole('button', { name: 'Flush host editor', exact: true }).click();
-  await expect(page.getByLabel('Host receipt count')).toHaveText('1');
+  await expect(page.getByLabel('Host dirty state')).toHaveText('Saved');
   await expect(page.getByLabel('Host save count')).toHaveText('2');
-  await page.getByRole('button', { name: 'Reject durability receipts', exact: true }).click();
+  await page.getByRole('button', { name: 'Reject saves', exact: true }).click();
   await cell(root, 0).click();
   await formula(root).fill('10');
   await page.getByRole('button', { name: 'Flush host editor', exact: true }).click();

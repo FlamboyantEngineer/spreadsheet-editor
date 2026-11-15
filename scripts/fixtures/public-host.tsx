@@ -169,11 +169,6 @@ export const modernProps: SpreadsheetEditorProps = {
     ) : undefined;
   },
   undo: { canUndo: true, canRedo: false, undo: async () => {}, redo: () => {} },
-  onFlush: async (snapshot, context) => {
-    context.signal.throwIfAborted();
-    void snapshot;
-    void context.requestId;
-  },
 };
 // Existing single-argument handlers and providers remain assignable.
 export const legacyProvider: CalculationProvider = {

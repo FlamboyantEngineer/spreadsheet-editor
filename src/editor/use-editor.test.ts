@@ -6,10 +6,12 @@ import type { PresenceAdapter } from '../host/presence-adapters.js';
 import { calculateWorkbook, type CalculationResult } from '../calculation/evaluator.js';
 import { calculationCellKey } from '../calculation/publication.js';
 import { writeCells } from '../model/editing.js';
-import type { SpreadsheetEditorProps, SpreadsheetSaveContext } from './contracts.js';
+import type { SpreadsheetEditorProps } from './contracts.js';
+import { createWorkbookSession } from '../host/workbook-session.js';
+import type { HostResult, SavedState, WorkbookStoreAdapter } from '../host/adapters.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 import { createMemoryHost } from '../host/memory-host.js';
-import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
+import { FULL_CAPABILITIES } from '../host/capabilities.js';
 
 const actor = { id: 'alex', name: 'Alex' };
 const identity = createMemoryHost({ reader: actor }).identity;
@@ -36,16 +38,44 @@ function peerLock(id: string, range: string): PresenceAdapter {
   peerLocks.set(key, adapter);
   return adapter;
 }
+
+/**
+ * A loaded session over a memory store whose `save` is a spy; with `hold`, each save waits until
+ * the test calls its entry in `held`.
+ */
+async function openSession(
+  data: string[][],
+  options: { hold?: boolean; autosaveDelay?: number } = {},
+) {
+  const inner = createMemoryHost({ workbooks: { book: createWorkbook(data) } }).workbooks;
+  const held: (() => void)[] = [];
+  const store = {
+    load: inner.load,
+    save: vi.fn<WorkbookStoreAdapter['save']>((id, save) =>
+      options.hold
+        ? new Promise<HostResult<SavedState>>((resolve) => {
+            held.push(() => resolve(inner.save(id, save)));
+          })
+        : inner.save(id, save),
+    ),
+  };
+  const session = createWorkbookSession({
+    workbooks: store,
+    workbookId: 'book',
+    autosaveDelay: options.autosaveDelay ?? Infinity,
+  });
+  await session.ready;
+  return { session, store, held };
+}
 describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   it('clamps reviewers, previews only their proposals, and blocks structural/save/decision commands', async () => {
-    const onSave = vi.fn();
+    const { session, store } = await openSession([['1E-25']]);
     const { result, rerender } = renderHook(
       (props: SpreadsheetEditorProps) => useSpreadsheetEditor(props),
       {
         initialProps: {
-          defaultValue: createWorkbook([['1E-25']]),
+          session,
           identity,
-          onSave,
           capabilities: reviewer,
         } as SpreadsheetEditorProps,
       },
@@ -63,9 +93,9 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
     await act(() => result.current.save());
     expect(result.current.workbook.worksheets).toHaveLength(1);
     expect(result.current.workbook.worksheets[0].data).toEqual([['1E-25']]);
-    expect(onSave).not.toHaveBeenCalled();
+    expect(store.save).not.toHaveBeenCalled();
     const workbook = result.current.workbook;
-    rerender({ value: workbook, identity, onSave, capabilities: FULL_CAPABILITIES });
+    rerender({ value: workbook, identity, session, capabilities: FULL_CAPABILITIES });
     expect(result.current.previewSheet.data[0][0]).toBe('1E-25');
     act(() => result.current.decide(proposal.id, 'accepted'));
     expect(result.current.workbook.suggestions![0].status).toBe('pending'); // controlled host must publish the result
@@ -91,64 +121,41 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   });
 });
 
-describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
-  it('coalesces saves, preserves changes made in flight, and aborts on permission loss', async () => {
-    const requests: { context: SpreadsheetSaveContext; finish(): void }[] = [];
-    const onSave = vi.fn(
-      (_workbook, context: SpreadsheetSaveContext) =>
-        new Promise<void>((resolve) => requests.push({ context, finish: resolve })),
-    );
-    const { result, rerender, unmount } = renderHook(
-      (props: SpreadsheetEditorProps) => useSpreadsheetEditor(props),
-      {
-        initialProps: { defaultValue: createWorkbook([['1']]), onSave } as SpreadsheetEditorProps,
-      },
-    );
-    let first!: Promise<void>;
-    act(() => {
-      first = result.current.save()!;
-    });
-    await waitFor(() => expect(requests).toHaveLength(1));
-    act(() => {
-      void result.current.save();
-    });
-    expect(onSave).toHaveBeenCalledTimes(1);
+describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
+  it('joins a save in flight and keeps changes made during it dirty', async () => {
+    const { session, store, held } = await openSession([['1']], { hold: true });
+    const { result } = renderHook(() => useSpreadsheetEditor({ session }));
     act(() =>
       result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit'),
     );
+    let first!: Promise<void>;
+    act(() => {
+      first = result.current.save();
+    });
+    await waitFor(() => expect(held).toHaveLength(1));
+    act(() => {
+      void result.current.save();
+    });
+    expect(store.save).toHaveBeenCalledTimes(1);
+    expect(result.current.savePhase).toBe('saving');
+    act(() =>
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit'),
+    );
     await act(async () => {
-      requests[0].finish();
+      held[0]();
       await first;
     });
+    expect(store.save.mock.calls[0][1].content.worksheets[0].data[0][0]).toBe('2');
     expect(result.current.savePhase).toBe('dirty');
-    let cancelled!: Promise<void>;
-    act(() => {
-      cancelled = result.current.save();
-      void cancelled.catch(() => {});
-    });
-    await waitFor(() => expect(requests).toHaveLength(2));
-    rerender({ onSave, capabilities: READ_ONLY_CAPABILITIES });
-    expect(requests[1].context.signal.aborted).toBe(true);
-    unmount();
-    requests[1].finish();
-    await expect(cancelled).rejects.toThrow('cancelled');
+    expect(result.current.lifecycleState.dirty).toBe(true);
   });
-  it('retries a transient autosave with the same request id and saves before opening history', async () => {
+  it('autosaves through the session and saves before opening history', async () => {
     vi.useFakeTimers();
-    const ids: string[] = [];
-    const onSave = vi.fn(async (_workbook, context: SpreadsheetSaveContext) => {
-      ids.push(context.requestId);
-      if (ids.length === 1) throw Object.assign(new Error('Busy'), { status: 503 });
-    });
     const onOpen = vi.fn();
     const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
+    const { session, store } = await openSession([['1']], { autosaveDelay: 100 });
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({
-        defaultValue: createWorkbook([['1']]),
-        onSave,
-        autosaveMs: 100,
-        history: { entries: [entry], onOpen },
-      }),
+      useSpreadsheetEditor({ session, history: { entries: [entry], onOpen } }),
     );
     act(() =>
       result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit'),
@@ -156,32 +163,29 @@ describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(result.current.savePhase).toBe('saving');
-    expect(result.current.notice).toBeNull();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(ids).toHaveLength(2);
-    expect(ids[0]).toBe(ids[1]);
+    expect(store.save).toHaveBeenCalledTimes(1);
     expect(result.current.savePhase).toBe('saved');
+    expect(result.current.saveAutomatic).toBe(true);
     act(() =>
       result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit'),
     );
     await act(async () => {
       await result.current.openHistorical(entry);
     });
-    expect(onSave).toHaveBeenCalledTimes(3);
+    expect(store.save).toHaveBeenCalledTimes(2);
     expect(onOpen).toHaveBeenCalledWith(entry);
   });
   it('does not open a historical snapshot after a failed save or commit stale import results', async () => {
     const onOpen = vi.fn();
     let resolveImport!: (value: ReturnType<typeof createWorkbook>) => void;
+    const { session, store } = await openSession([['1']]);
+    store.save.mockResolvedValue({
+      ok: false,
+      error: { kind: 'unavailable', message: 'Save failed' },
+    });
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
-        defaultValue: createWorkbook([['1']]),
-        onSave: async () => {
-          throw new Error('Save failed');
-        },
+        session,
         history: { entries: [], onOpen },
         onImportXlsx: () =>
           new Promise((resolve) => {
@@ -212,33 +216,23 @@ describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
     expect(result.current.notice).toBe('Save failed');
   });
   it('saves a pending formula before opening history even when the workbook was clean', async () => {
-    let finishSave!: () => void;
-    const onSave = vi.fn<NonNullable<SpreadsheetEditorProps['onSave']>>(
-      () =>
-        new Promise<void>((resolve) => {
-          finishSave = resolve;
-        }),
-    );
+    const { session, store, held } = await openSession([['1']], { hold: true });
     const onOpen = vi.fn();
     const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({
-        defaultValue: createWorkbook([['1']]),
-        onSave,
-        history: { entries: [entry], onOpen },
-      }),
+      useSpreadsheetEditor({ session, history: { entries: [entry], onOpen } }),
     );
     act(() => result.current.setDraftValue('=1-1E-25'));
-    expect(result.current.savePhase).toBe('idle');
+    expect(result.current.savePhase).toBe('saved');
     let opening!: Promise<void>;
     act(() => {
       opening = result.current.openHistorical(entry);
     });
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    expect(onSave.mock.calls[0][0].worksheets[0].data[0][0]).toBe('=1-1E-25');
+    await waitFor(() => expect(store.save).toHaveBeenCalledTimes(1));
+    expect(store.save.mock.calls[0][1].content.worksheets[0].data[0][0]).toBe('=1-1E-25');
     expect(onOpen).not.toHaveBeenCalled();
     await act(async () => {
-      finishSave();
+      held[0]();
       await opening;
     });
     expect(onOpen).toHaveBeenCalledWith(entry);
@@ -246,16 +240,17 @@ describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
   });
   it('keeps history closed when a pending formula cannot commit or its save fails', async () => {
     const onOpen = vi.fn();
-    const onSave = vi.fn(async () => {
-      throw new Error('Save failed');
+    const { session, store } = await openSession([['1']]);
+    store.save.mockResolvedValue({
+      ok: false,
+      error: { kind: 'unavailable', message: 'Save failed' },
     });
     const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
     const { result, rerender } = renderHook(
       (props: SpreadsheetEditorProps) => useSpreadsheetEditor(props),
       {
         initialProps: {
-          defaultValue: createWorkbook([['1']]),
-          onSave,
+          session,
           history: { entries: [entry], onOpen },
           workbookId: 'book',
           presence: peerLock('peer', 'A1'),
@@ -267,13 +262,13 @@ describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
       await result.current.openHistorical(entry);
     });
     expect(onOpen).not.toHaveBeenCalled();
-    expect(onSave).not.toHaveBeenCalled();
+    expect(store.save).not.toHaveBeenCalled();
     expect(result.current.draftValue).toBe('1E-25');
-    rerender({ onSave, history: { entries: [entry], onOpen } });
+    rerender({ session, history: { entries: [entry], onOpen } });
     await act(async () => {
       await result.current.openHistorical(entry);
     });
-    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(store.save).toHaveBeenCalledTimes(1);
     expect(onOpen).not.toHaveBeenCalled();
     expect(result.current.sheet.data[0][0]).toBe('1E-25');
     expect(result.current.notice).toBe('Save failed');
@@ -429,11 +424,9 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     expect(result.current.notice).toBeNull();
   });
   it('includes pending draft in a size dialog transaction and manual save snapshot', async () => {
-    const onChange = vi.fn(),
-      onSave = vi.fn<NonNullable<SpreadsheetEditorProps['onSave']>>(async () => {});
-    const { result } = renderHook(() =>
-      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), onChange, onSave }),
-    );
+    const onChange = vi.fn();
+    const { session, store } = await openSession([['1']]);
+    const { result } = renderHook(() => useSpreadsheetEditor({ session, onChange }));
     act(() => result.current.setDraftValue('1E-25'));
     act(() => result.current.openDialog('column-width'));
     act(() => result.current.setDialogValue('140'));
@@ -445,7 +438,7 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     await act(async () => {
       await result.current.save();
     });
-    expect(onSave.mock.calls[0][0].worksheets[0].data[0][0]).toBe('=1-1E-25');
+    expect(store.save.mock.calls[0][1].content.worksheets[0].data[0][0]).toBe('=1-1E-25');
     expect(onChange).toHaveBeenCalledTimes(2);
   });
   it('records draft plus formatting as a review proposal while blocking worksheet changes', () => {

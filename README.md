@@ -52,26 +52,26 @@ import { SpreadsheetEditor, createWorkbook } from '@flamboyantengineer/spreadshe
 
 `value` / `onChange` gives the host control of the workbook. `onChange(next, context)` adds a unique transaction ID, detached immutable baseline and semantic cell/line/sheet/layout operations; existing one-argument callbacks remain valid. Synchronous rejection preserves accepted data and the draft. `defaultValue` provides instance-local state. Use `chrome="minimal"`, `chrome="embedded"` or `chrome="full"` (the default) to choose visible editor controls. Optional props include `capabilities`, `identity`, `initialSheetId`, `display`, `calculation`, `className` and `aria-label`. `capabilities={READ_ONLY_CAPABILITIES}` locks editing, comment mutations and suggestion decisions across the grid, menus and panels while preserving reading, searching, copying and export.
 
-Use `editorRef` for the session's public `SpreadsheetEditorHandle`: `commitDraft`, `cancelDraft`, detached `getSnapshot`, `select`, `getState`, `subscribe`, `save` and `flush`. `onFlush(snapshot, { signal, requestId })` supplies the host durability barrier; Flush commits active native/formula-bar input and drains scheduled saves without creating an extra manual snapshot. Failed barriers reject and retain dirty state. `undo` delegates every undo/redo surface to a host-owned history manager. `idFactory(kind)` makes new row, column, worksheet and transaction identities deterministic when needed. See the [public host example](examples/host-integration.tsx) and [host contract](specs/HOST-INTEGRATION.md).
+Use `editorRef` for the session's public `SpreadsheetEditorHandle`: `commitDraft`, `cancelDraft`, detached `getSnapshot`, `select`, `getState`, `subscribe`, `save` and `flush`. Flush commits active native/formula-bar input and waits until the workbook session has saved every change accepted before it; a failed save rejects and keeps the changes dirty. `undo` delegates every undo/redo surface to a host-owned history manager. `idFactory(kind)` makes new row, column, worksheet and transaction identities deterministic when needed. See the [public host example](examples/host-integration.tsx) and [host contract](specs/HOST-INTEGRATION.md).
 
 Concurrent flushes share a receipt only when it covers all edits requested by that call; newer drafts queue a newer barrier. History navigation uses configured save/flush adapters and stays in the current session on failure. Pure presentation or title changes preserve current calculations. Bulk native edits publish one transaction, with rollback on synchronous host rejection. See [the core editor review](docs/CORE-EDITOR-REVIEW.md) for regression coverage and shared UI responsibilities.
 
 `mode` / `onModeChange` controls Authoring, Reviewing or Reading; `defaultMode` sets an uncontrolled instance's initial mode. `identity` (the host's identity adapter, from `/host`) supplies the reader, who is the actor of comments, suggestions and decisions. `capabilities` (`EditorCapabilities`, the document editor's: `edit`, `suggest`, `comment`, `decide`, `saveVersion`, `history`) independently control what the UI offers; every capability is on by default, and the host enforces authorization at its persistence boundary.
 
 ```tsx
+const session = useWorkbookSession({ workbooks: host.workbooks, drafts: host.drafts, workbookId });
+
 <SpreadsheetEditor
-  value={workbook}
-  onChange={setWorkbook}
+  session={session}
   identity={host.identity}
   capabilities={capabilities}
   defaultMode="review"
-  onSave={async (snapshot) => persistWorkbook(snapshot)}
   onRefresh={async () => refreshExternalFormulaData()}
   panels={[{ id: 'workflow', label: 'Workflow', content: <WorkflowPanel /> }]}
-/>
+/>;
 ```
 
-`onSave(snapshot, { signal, kind, requestId })` enables Save and saving/saved/error status. Set `autosaveMs` to opt into debounced autosaves; the host distinguishes autosaves from explicit snapshots using `kind`. Saves coalesce, manual snapshots queue behind autosaves, and transient autosave failures with `status: 503` retry for up to 30 seconds using the same request id. Honor the abort signal when a session ends or edit permission is removed. Edits made during a pending save remain dirty after that save completes. `onRefresh` supplies the external-data refresh action. Additional host `panels` appear beside the built-ins; ids `properties`, `history` and `comments` replace their built-in content. `features` controls comments, suggestions, search, panels and mode selection. Use `sessionKey` when changing document identity to discard instance state and cancel pending work. A `presence` adapter and a `workbookId` share the reader's place and advisory edit locks with the other people in the workbook (see Host adapters). Optional `history` supplies saved entries and snapshot-opening callbacks; `historical` forces Reading and renders a return-to-current banner. The host owns snapshot loading and routes. `clipboard` can supply asynchronous `readText` / `writeText`; otherwise the editor uses the browser clipboard.
+A workbook `session` (`useWorkbookSession`, or `createWorkbookSession` from `./host`) loads the workbook from the host's store, enables Save and the save status, autosaves a second after the last change (`autosaveDelay`), and saves against the revision the workbook was edited from. Edits made during a save stay unsaved after it answers; an unavailable store is retried while autosaving; a conflicting save asks the reader to keep their changes or take the stored workbook; and a `drafts` adapter keeps unsaved changes across a reload. A host that keeps changes through `onChange` transactions itself can mark them saved with `session.acknowledge(transactionId)`. `onRefresh` supplies the external-data refresh action. Additional host `panels` appear beside the built-ins; ids `properties`, `history` and `comments` replace their built-in content. `features` controls comments, suggestions, search, panels and mode selection. Use `sessionKey` when changing document identity to discard instance state and cancel pending work. A `presence` adapter and a `workbookId` share the reader's place and advisory edit locks with the other people in the workbook (see Host adapters). Optional `history` supplies saved entries and snapshot-opening callbacks; `historical` forces Reading and renders a return-to-current banner. The host owns snapshot loading and routes. `clipboard` can supply asynchronous `readText` / `writeText`; otherwise the editor uses the browser clipboard.
 
 ### Comments and review
 
@@ -87,7 +87,7 @@ The headless `/model` entry point exposes the same immutable comment, suggestion
 
 ## Host adapters
 
-The headless `/host` entry point holds the host contract the editor is moving to: one `SpreadsheetHost` object with `identity`, `permissions`, a workbook store with revisions, versions, presence, drafts and the page lifecycle. Its names and shapes follow the document editor's host adapters, so a host that embeds both editors passes the same identity, permissions and versions adapters to each. Requests resolve to `{ ok, value }` or `{ ok: false, error: { kind } }` instead of throwing. The editor takes its `identity`, `capabilities` and `presence` (with `workbookId`) from it today. `createMemoryHost()` is a complete in-memory host for labs and tests. See [HOST-ADAPTERS.md](specs/HOST-ADAPTERS.md).
+The headless `/host` entry point holds the host contract the editor is moving to: one `SpreadsheetHost` object with `identity`, `permissions`, a workbook store with revisions, versions, presence, drafts and the page lifecycle. Its names and shapes follow the document editor's host adapters, so a host that embeds both editors passes the same identity, permissions and versions adapters to each. Requests resolve to `{ ok, value }` or `{ ok: false, error: { kind } }` instead of throwing. The editor takes its `identity`, `capabilities`, `presence` (with `workbookId`) and a workbook `session` over its store from it today. `createMemoryHost()` is a complete in-memory host for labs and tests. See [HOST-ADAPTERS.md](specs/HOST-ADAPTERS.md).
 
 The host loads the vendor grid's structural CSS:
 
