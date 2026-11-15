@@ -270,6 +270,11 @@ export function changeWorkbookStructureWithOperations(
   }
   const actual = { ...change, count, ...(change.kind === 'insert' ? { ids } : {}) };
   const next = changeWorkbookStructure(materialized, sheetId, actual);
+  const nextSheet = next.worksheets.find((candidate) => candidate.id === sheetId)!;
+  const geometry = geometryOperation(sheet, nextSheet) as Extract<
+    WorkbookOperation,
+    { kind: 'geometry' }
+  >;
   const operation: WorkbookOperation = {
     kind: 'lines',
     sheetId,
@@ -280,22 +285,10 @@ export function changeWorkbookStructureWithOperations(
     ids,
     beforeId: oldIds?.[change.index - 1],
     afterId: oldIds?.[change.kind === 'insert' ? change.index : change.index + count],
-    beforeGeometry: (
-      geometryOperation(
-        sheet,
-        next.worksheets.find((candidate) => candidate.id === sheetId)!,
-      ) as Extract<WorkbookOperation, { kind: 'geometry' }>
-    ).before,
-    afterGeometry: (
-      geometryOperation(
-        sheet,
-        next.worksheets.find((candidate) => candidate.id === sheetId)!,
-      ) as Extract<WorkbookOperation, { kind: 'geometry' }>
-    ).after,
+    beforeGeometry: geometry.before,
+    afterGeometry: geometry.after,
     beforeMerges: structuredClone(sheet.mergeCells ?? {}),
-    afterMerges: structuredClone(
-      next.worksheets.find((candidate) => candidate.id === sheetId)!.mergeCells ?? {},
-    ),
+    afterMerges: structuredClone(nextSheet.mergeCells ?? {}),
     ...(change.kind === 'delete'
       ? {
           deletedCells: [...authoredAddresses(sheet)].flatMap((address) => {
