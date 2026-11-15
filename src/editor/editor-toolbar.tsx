@@ -111,6 +111,8 @@ function FormatSelector({
   );
 }
 
+const PRESENCE_STATUS_LABELS = { active: 'Active', idle: 'Idle', away: 'Away' } as const;
+
 export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorController }) {
   const menus = editorMenus(e);
   const disabled = !e.canWrite;
@@ -148,7 +150,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
               id: person.id,
               name: person.name,
               colorIndex: collaboratorColorIndex(person.id),
-              description: person.activity ?? 'Viewing',
+              description: PRESENCE_STATUS_LABELS[person.status],
             }))}
             onAction={e.followCollaborator}
           />

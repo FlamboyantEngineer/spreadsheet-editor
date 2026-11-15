@@ -19,9 +19,9 @@ import type {
 import type { Workbook } from '../model/workbook.js';
 import type { ReviewActor, CellFormat } from '../model/review.js';
 import type { DocumentInsertion } from '../document/insertion.js';
-import type { SpreadsheetCollaborator, SpreadsheetPresence } from '../model/presence.js';
 import type { CellSelection } from '../model/editing.js';
 import type { IdentityAdapter } from '../host/adapters.js';
+import type { PresenceAdapter } from '../host/presence-adapters.js';
 import type { EditorCapabilities, SpreadsheetMode } from '../host/capabilities.js';
 export type { SpreadsheetMode } from '../host/capabilities.js';
 
@@ -100,8 +100,13 @@ export interface SpreadsheetEditorProps {
   features?: SpreadsheetFeatures;
   autosaveMs?: number;
   history?: SpreadsheetHistory;
-  collaborators?: readonly SpreadsheetCollaborator[];
-  onPresenceChange?(presence: SpreadsheetPresence): void;
+  /**
+   * The workbook's id in the host. It addresses the workbook in the host's adapters, and a new id
+   * starts a new editor session, as a new `sessionKey` does.
+   */
+  workbookId?: string;
+  /** Shares the reader's place with the other people in the workbook, given a `workbookId`. */
+  presence?: PresenceAdapter;
   historical?: SpreadsheetHistoricalView;
   value?: Workbook;
   defaultValue?: Workbook;

@@ -1,35 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import { createWorkbook } from './workbook.js';
-import { collaboratorSheet, remoteCollaborators, selectionLock } from './presence.js';
-describe('SE-CO: host-neutral presence', () => {
-  it('deduplicates remote identities, removes self and resolves sheets without trusting peer coordinates', () => {
+import { collaboratorSheet, placePeers, selectionLock } from './presence.js';
+
+describe('SE-ADAPTERS-4.3: peers placed on the workbook', () => {
+  it('leaves out the reader and drops places the workbook does not have', () => {
     const workbook = createWorkbook();
-    workbook.worksheets[0].name = 'Mass Budget';
-    const peers = remoteCollaborators(
+    const peers = placePeers(
+      workbook,
       [
-        { id: 'self', name: 'Me' },
-        { id: 'peer', name: 'Old', updatedAt: 1 },
+        { id: 'self', name: 'Me', at: null, status: 'active' },
         {
           id: 'peer',
           name: 'Morgan',
-          updatedAt: 2,
-          sheetName: '  mass   budget ',
-          editLock: { x1: 0, x2: 1, y1: 0, y2: 0 },
+          at: { sheetId: 'sheet-1', range: 'b1' },
+          editLock: { sheetId: 'sheet-1', range: 'A1:B1' },
+          status: 'idle',
         },
+        { id: 'lost', name: 'Avery', at: { sheetId: 'gone', range: 'A1' }, status: 'active' },
+        { id: 'bad', name: 'Blake', at: { sheetId: 'sheet-1', range: 'A0' }, status: 'away' },
+        { id: '', name: 'Nobody', at: null, status: 'active' },
       ],
       'self',
     );
-    expect(peers).toHaveLength(1);
-    expect(collaboratorSheet(workbook, peers[0])?.id).toBe('sheet-1');
+    expect(peers.map((peer) => peer.id)).toEqual(['lost', 'bad', 'peer']);
+    const [lost, bad, peer] = peers;
+    expect(lost.sheetId).toBeUndefined();
+    expect(bad.selection).toBeUndefined();
+    expect(peer).toMatchObject({
+      status: 'idle',
+      sheetId: 'sheet-1',
+      selection: { x1: 1, x2: 1, y1: 0, y2: 0 },
+      editLock: { x1: 0, x2: 1, y1: 0, y2: 0 },
+    });
+    expect(collaboratorSheet(workbook, peer)?.id).toBe('sheet-1');
     expect(selectionLock(workbook, 'sheet-1', { x1: 1, x2: 1, y1: 0, y2: 0 }, peers)?.name).toBe(
       'Morgan',
     );
     expect(
       selectionLock(workbook, 'sheet-1', { x1: 2, x2: 2, y1: 0, y2: 0 }, peers),
-    ).toBeUndefined();
-    peers[0].editLock!.x1 = -1;
-    expect(
-      selectionLock(workbook, 'sheet-1', { x1: 0, x2: 0, y1: 0, y2: 0 }, peers),
     ).toBeUndefined();
   });
 });

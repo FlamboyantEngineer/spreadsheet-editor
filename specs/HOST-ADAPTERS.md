@@ -2,7 +2,7 @@
 
 The editor reaches what lies outside it through adapters the host passes in: who the reader is, what they may do, where workbooks and their versions are stored, where the other people in a workbook are, and the page's lifecycle. The adapters follow the document editor's host adapters by name and shape, so a host that embeds both editors passes the same identity, permissions and versions adapters to each. The `./host` entry holds the types, an in-memory host and pure causal transaction receipt bookkeeping; it needs no DOM.
 
-The editor is switched to these adapters one concern at a time. It takes the reader's identity and capabilities now (SE-ADAPTERS-2.3); presence, saving and history follow, and until then [HOST-INTEGRATION.md](HOST-INTEGRATION.md) describes the props it takes for them.
+The editor is switched to these adapters one concern at a time. It takes the reader's identity and capabilities (SE-ADAPTERS-2.3) and presence (SE-ADAPTERS-4.3) now; saving and history follow, and until then [HOST-INTEGRATION.md](HOST-INTEGRATION.md) describes the props it takes for them.
 
 ## SE-ADAPTERS-1 - Contract
 
@@ -125,3 +125,12 @@ Verification: `src/host/memory-host.test.ts`
 
 Implementation: `src/host/memory-presence.ts`, `src/host/memory-host.ts`
 Verification: `src/host/memory-host.test.ts`
+
+### SE-ADAPTERS-4.3 - The editor's presence
+
+Given a `presence` adapter and a `workbookId`, the editor shall subscribe to the other people in that workbook and publish the reader's place: `at` is the active worksheet and the selected range, and `editLock` is the same place while the reader is writing in a cell, otherwise null. It shall publish again when the place, the lock or the status changes, and withdraw (`publish(workbookId, null)`) when it unmounts or the adapter or workbook id changes. The reader is `away` while the page is hidden and `active` otherwise. Without either prop the editor has no peers and publishes nothing.
+
+Peers are placed on the workbook before they are shown: the reader and peers without an id or a name are left out, and a place on a worksheet the workbook lacks or in a malformed range is dropped rather than trusted. The toolbar lists the peers with their status, following one moves to their selection, their selections and locks are drawn on the grid in a colour slot from their id, and a lock refuses the reader's writes to those cells (advisory; the host enforces its own policy). A new `workbookId` also starts a new editor session, as a new `sessionKey` does.
+
+Implementation: `src/editor/use-workbook-presence.ts`, `src/editor/use-editor.ts`, `src/model/presence.ts`, `src/editor/editor-toolbar.tsx`, `src/engine/workbook-grid.tsx`
+Verification: `src/editor/host-integration.test.tsx`, `src/model/presence.test.ts`, `src/editor/use-editor.test.ts`, `e2e/interaction-parity.spec.ts` (collaboration)
