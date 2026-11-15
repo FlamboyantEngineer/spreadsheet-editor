@@ -20,6 +20,12 @@ const {
   calculationCellKey,
 } = await import('@flamboyantengineer/spreadsheet-editor/calculation');
 const { createDocumentInsertion } = await import('@flamboyantengineer/spreadsheet-editor/document');
+const { createMemoryHost, resolveSpreadsheetMode } =
+  await import('@flamboyantengineer/spreadsheet-editor/host');
+assert.equal(
+  resolveSpreadsheetMode(await createMemoryHost().permissions.capabilities('a')),
+  'author',
+);
 const { SpreadsheetEditor } = await import('@flamboyantengineer/spreadsheet-editor');
 assert.equal(typeof SpreadsheetEditor, 'function');
 const workbook = createWorkbook([['=1-(1-1E-25)']]);
