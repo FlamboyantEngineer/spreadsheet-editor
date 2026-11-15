@@ -68,11 +68,11 @@ Verification: `src/calculation/quantity-metadata.test.ts`, `units.test.ts`, `dim
 
 TEXT accepts a bounded explicit set of numeric masks (`0`, `#,##0`, optional 1–100 zero decimals, currency prefix or percent suffix) and calendar masks documented in `text-format.ts`. Unsupported masks and quantities return `#VALUE!`. Windows-1252 CHAR/CODE remain separate from Unicode UNICHAR/UNICODE. INDEX truncates fractional indices, selects either vector axis, and preserves whole row/column/matrix results for zero axes and nested functions. Exact integer LOG results are verified with rational powers before returning, so INT(LOG(8,2)) remains 3.
 
-`CalculationResult.dependencies` records actually-read serialized `[sheetId,x,y]` cell tuples and used-extent worksheet IDs. Lazy untaken branches add no dependencies. Collection shares addressed-cell budgets and resumable evaluation; existing 1,200-cell chains and limits remain supported. FormulaHost name/call callbacks receive the originating formula and cell context. Optional bounded `hostContext` is captured separately from native values in result context and span-keyed operands, for immutable later export.
+`CalculationResult.dependencies` records actually-read serialized `[sheetId,x,y]` cell tuples and used-extent worksheet IDs. The native calculator records an entry for every formula cell and none for value cells, and marks this with `scope: 'formulas'`; without that mark a cell with no entry has unknown dependencies and a draft treats it as pending. A formula that reads a value cell does not suspend; reading a formula cell that is not calculated yet suspends the reader without capturing a stack, so evaluation cost does not depend on whether a range sits above or below its data. Each worksheet's calculation extent is read once per calculation. Lazy untaken branches add no dependencies. Collection shares addressed-cell budgets and resumable evaluation; existing 1,200-cell chains and limits remain supported. FormulaHost name/call callbacks receive the originating formula and cell context. Optional bounded `hostContext` is captured separately from native values in result context and span-keyed operands, for immutable later export.
 
 Implementation: `src/calculation/evaluator.ts`, `extended-functions.ts`, `text-format.ts`, `rational.ts`.
 
-Verification: `src/calculation/core-numeric-corpus.test.ts`, `quantity-metadata.test.ts`, `parity.test.ts`, `catalog.test.ts`.
+Verification: `src/calculation/core-numeric-corpus.test.ts`, `quantity-metadata.test.ts`, `parity.test.ts`, `catalog.test.ts`, `evaluator.test.ts` and `publication.test.ts` (SE-4).
 
 ## SE-CALC-6 — Exact locale and currency formatting
 
