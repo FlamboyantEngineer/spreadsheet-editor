@@ -40,14 +40,6 @@ export function CommentsPanel({
   threadId?: string;
 }) {
   const [filter, setFilter] = useState('open');
-  const threads = (e.workbook.comments ?? []).filter((thread) =>
-    threadId
-      ? thread.id === threadId
-      : !thread.suggestion &&
-        (filter === 'mine'
-          ? thread.entries.some((entry) => entry.author === e.actor.id)
-          : filter === 'all' || thread.state === filter),
-  );
   if (!threadId) {
     const conversations = (e.workbook.comments ?? [])
       .filter((thread) =>
@@ -126,30 +118,9 @@ export function CommentsPanel({
       </div>
     );
   }
+  const threads = (e.workbook.comments ?? []).filter((thread) => thread.id === threadId);
   return (
     <div className="se-comments" aria-label="Workbook comments">
-      {!threadId && (
-        <div className="se-comments__actions">
-          <SelectField
-            label="Comment filter"
-            value={filter}
-            onChange={(value) => setFilter(String(value))}
-            options={[
-              { id: 'open', label: 'Open comments' },
-              { id: 'resolved', label: 'Resolved comments' },
-              { id: 'all', label: 'All comments' },
-              { id: 'mine', label: 'My conversations' },
-            ]}
-          />
-          <Button
-            startIcon={ChatBubblePlusGlyph}
-            onPress={e.beginWorkbookComment}
-            isDisabled={!e.canComment}
-          >
-            Add comment
-          </Button>
-        </div>
-      )}
       {e.commentComposer && (threadId === 'draft' || e.commentScope === 'workbook') && (
         <CommentComposer
           label={
