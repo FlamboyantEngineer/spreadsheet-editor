@@ -129,7 +129,8 @@ test('SE-HOST-1: external results update without edits, rich content and pins cl
   await search.press('Enter');
   await expect(formula(root)).toHaveValue('=CAPTURED()');
   await root.getByRole('textbox', { name: 'Replace with', exact: true }).fill('Do not write');
-  await root.getByRole('button', { name: 'Replace', exact: true }).click();
+  await expect(root.getByRole('button', { name: 'Replace', exact: true })).toBeDisabled();
+  await expect(root.getByRole('button', { name: 'Replace all', exact: true })).toBeDisabled();
   await expect(formula(root)).toHaveValue('=CAPTURED()');
   await expect(page.getByLabel('Host transaction count')).toHaveText('0');
   await page.getByRole('button', { name: 'Publish pending result', exact: true }).click();

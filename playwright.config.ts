@@ -15,7 +15,7 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: 'npm run labs',
+    command: 'npm run labs -- --strict-port',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

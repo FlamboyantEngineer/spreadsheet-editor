@@ -11,7 +11,7 @@ import { type NumericOptions } from './rational.js';
 import {
   createQuantityArithmetic,
   makeQuantity,
-  resolveUnit,
+  quantityInUnit,
   validateUnitDimension,
 } from './units.js';
 import {
@@ -407,9 +407,8 @@ export function calculateWorkbook(
                 options,
                 format.quantityKind,
               );
-              const target = resolveUnit(displayUnit, options);
-              if (JSON.stringify(candidate.dimension) === JSON.stringify(target.dimension))
-                result = candidate;
+              quantityInUnit(candidate, displayUnit, options);
+              result = candidate;
             } catch {
               /* Invalid explicit unit text remains text. */
             }
@@ -430,9 +429,7 @@ export function calculateWorkbook(
             throw new CalculationError('#VALUE!');
           if (format.quantityKind && !result.quantityKind)
             result = { ...result, quantityKind: format.quantityKind };
-          const target = resolveUnit(displayUnit, options);
-          if (JSON.stringify(result.dimension) !== JSON.stringify(target.dimension))
-            throw new CalculationError('#VALUE!');
+          quantityInUnit(result, displayUnit, options);
         }
       }
     } catch (error) {
@@ -729,6 +726,7 @@ export function calculateWorkbook(
         if (name === 'CHOOSE') {
           arity(2, 255);
           const index = numeric(run(node.args[0]));
+          if (index.dimension || index.quantityKind) throw new CalculationError('#VALUE!');
           const choice = Number(BigInt(index.numerator) / BigInt(index.denominator));
           if (choice < 1 || choice >= count) throw new CalculationError('#VALUE!');
           return run(node.args[choice]);
@@ -774,7 +772,7 @@ export function calculateWorkbook(
         ) {
           const integer = (value: Value) => {
             const n = numeric(value);
-            if (n.dimension) throw new CalculationError('#VALUE!');
+            if (n.dimension || n.quantityKind) throw new CalculationError('#VALUE!');
             const result = Number(BigInt(n.numerator) / BigInt(n.denominator));
             if (!Number.isSafeInteger(result)) throw new CalculationError('#NUM!');
             return result;

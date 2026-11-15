@@ -23,3 +23,5 @@ The core-port unit catalog and portable numeric behavior fixtures were adapted f
 The generic captured Excel formula contract was reviewed against the same commit's `apps/spreadsheets/server/xlsx/xlsx-stored-formulas.ts`; host names are explicit capability descriptors rather than application-specific branches. HTML conversion uses parse5, whose upstream license is distributed with that package.
 
 The external-provider lifecycle contract was reviewed against `FlamboyantEngineer/collaboration-tools` commit `8e3b096b0b8bab90858c4d4bdc56a2e7118989b0`, `src/client/room-provider.ts`. No transport implementation or workbook-specific protocol was added to that repository.
+
+A subsequent core behavior review used upstream commit `67fd6efc67c45725343aee8735765597831ca6c2`, including its numerical quantity/calendar assertions and spreadsheet editing runtime. The resulting dimensional-argument, serial-boundary, atomic native-edit and lifecycle regressions are standalone tests; no application services or transport code were imported.

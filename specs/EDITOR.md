@@ -20,17 +20,23 @@ Verification: `src/editor/use-calculation.test.ts`, `src/calculation/http.test.t
 
 The grid receives a copy of authored data and preserves formula text and decimal/scientific literals. Rendering calculated text never changes raw data. Multiple instances may coexist; live document insertions and undo snapshots do not mutate their source workbooks.
 
+Native multi-cell commands publish one accepted workbook transaction and one undo step, including Delete, Backspace and fill operations. Capturing those commands preserves sparse authored data and untouched canonical inputs. A host refusal restores the vendor display to accepted state. Active single-cell drafts retain preflight before the native editor closes. Finishing an unchanged native edit preserves the authored primitive type and canonical input; opening a logical cell and pressing Enter cannot turn it into text.
+
+The initial asynchronous grid mount does not move focus away from editor or host controls. Later worksheet mounts may restore grid focus after a deliberate switch. Mount focus intent is captured for that grid instance so later parent renders cannot turn initial adoption into an autofocus request.
+
 Implementation: `src/engine/workbook-grid.tsx`, `src/engine/cell-renderer.ts`, `src/document/insertion.ts`.
 
-Verification: `e2e/editor.spec.ts` (SE-UI-3, SE-DOC-2), `src/document/insertion.test.ts`, `src/model/workbook.test.ts`.
+Verification: `e2e/editor.spec.ts` (SE-UI-3, SE-DOC-2), `e2e/core-engine.spec.ts`, `src/engine/worksheet-data.test.ts`, `src/document/insertion.test.ts`, `src/model/workbook.test.ts`.
 
 ## SE-LABS-1 — One-command labs
 
 `npm run labs` installs any missing or stale locked dependencies, then builds and serves labs plus a real server calculation endpoint. It requires no application server, database or consumer repository checkout. Host and port are configurable. The harness serves only browser assets and bounds request bodies. CI must exercise actual browser edits, HTTP calculation and both insertion modes.
 
-Implementation: `scripts/labs.mjs`, `scripts/build-labs.mjs`, `labs/src/main.tsx`.
+Following ui-components' lab policy, the launcher shall try the requested port and up to 19 subsequent ports on `EADDRINUSE`, without exceeding port 65535. It shall bind the actual API-capable server rather than probing and releasing a port, and print the selected URL. Other listen errors fail immediately. `--strict-port` shall disable fallback, including in the Playwright web-server command; `--port 0` shall use one operating-system-assigned port. CLI host/port flags override `LABS_HOST`/`LABS_PORT` defaults. Retrying must preserve request handlers and remove temporary listen/error listeners on every attempt. The static ui-components launcher is not used here because the harness also owns calculation/Excel endpoints and must keep server bundles private.
 
-Verification: `e2e/editor.spec.ts`, launched by the Playwright web-server configuration through `npm run labs`.
+Implementation: `scripts/labs.mjs`, `scripts/lib/labs-server.mjs`, `scripts/build-labs.mjs`, `labs/src/main.tsx`.
+
+Verification: `src/tooling/labs-server.test.ts`, `e2e/editor.spec.ts`, launched by the Playwright web-server configuration through `npm run labs -- --strict-port`.
 
 ## SE-LABS-2 — Installation diagnostics and portable startup
 

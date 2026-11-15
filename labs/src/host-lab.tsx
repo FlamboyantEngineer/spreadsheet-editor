@@ -81,6 +81,7 @@ export function HostLab() {
   const [snapshot, setSnapshot] = useState<ExternalCalculationSnapshot | null>(null);
   const [readOnly, setReadOnly] = useState(false);
   const [rejectDurability, setRejectDurability] = useState(false);
+  const [rejectChanges, setRejectChanges] = useState(false);
   const [transactions, setTransactions] = useState(0);
   const [saves, setSaves] = useState(0);
   const [receipts, setReceipts] = useState(0);
@@ -146,6 +147,7 @@ export function HostLab() {
           editorRef={setHandle}
           value={workbook}
           onChange={(next) => {
+            if (rejectChanges) throw new Error('Host workbook change was rejected.');
             current.current = next;
             setWorkbook(next);
             setTransactions((count) => count + 1);
@@ -224,6 +226,9 @@ export function HostLab() {
         <Button onPress={() => void attempt(() => handle?.flush())}>Flush host editor</Button>
         <Button onPress={() => setRejectDurability((value) => !value)}>
           {rejectDurability ? 'Allow durability receipts' : 'Reject durability receipts'}
+        </Button>
+        <Button onPress={() => setRejectChanges((value) => !value)}>
+          {rejectChanges ? 'Allow workbook changes' : 'Reject workbook changes'}
         </Button>
         <dl>
           <dt>Accepted A1</dt>

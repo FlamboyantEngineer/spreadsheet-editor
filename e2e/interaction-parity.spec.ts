@@ -69,7 +69,7 @@ test('SE-CR-3.6 and collaboration: reviewer controls and advisory peer locks', a
   await page.getByRole('button', { name: 'Show collaborator lock', exact: true }).click();
   await editor.locator('td[data-x="1"][data-y="1"]').first().dblclick();
   await expect(editor.locator('.se-editor__grid-surface input')).toHaveCount(0);
-  await expect(editor.getByRole('alert')).toContainText('Morgan');
+  await expect(editor.getByRole('status').filter({ hasText: 'Morgan' })).toBeVisible();
   await expect(editor.getByRole('group', { name: 'Active collaborators' })).toBeVisible();
   await page.getByRole('button', { name: 'Reviewer permissions', exact: true }).click();
   await expect(editor).toHaveAttribute('data-mode', 'review');

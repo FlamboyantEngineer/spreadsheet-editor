@@ -19,6 +19,8 @@ The spreadsheet editor is a generic package. Application storage, authorization,
 
 Calculation extent excludes purely visual and annotation anchors, so those changes cannot invalidate host results. Explicit minimum dimensions, defined geometry, merges and identities still affect whole-line ranges. Editor extent separately includes all anchored metadata to prevent clipping or data loss.
 
+The current implementation also guards native bulk mutation as one accepted command, retains unchanged typed/canonical native inputs, emits metadata and appended-identity operations, and queues newer durability requests without acknowledging older snapshots. [The core editor review](../docs/CORE-EDITOR-REVIEW.md) records the focused regressions and shared-control ownership.
+
 ## Numerical contract
 
 The native engine keeps exact rational arithmetic: `1/3*3` is exactly 1, tiny scientific values survive cancellation, display defaults to 32 significant digits, and non-rational operations use an isolated 80-digit approximation context. Resource limits produce `#LIMIT!`. The [intentional-difference manifest](NUMERIC-INTENTIONAL-DIFFERENCES.json) records precise comparisons with a finite-decimal reference. There are no function-family exemptions.

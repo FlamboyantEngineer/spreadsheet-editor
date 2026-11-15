@@ -4,16 +4,21 @@ import { realpath, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Readable } from 'node:stream';
+import { parseArgs } from 'node:util';
 import { buildLabs, output } from './build-labs.mjs';
 import { reportLabsError } from './lib/labs-setup.mjs';
+import { listenLabsServer } from './lib/labs-server.mjs';
 
-function option(name, fallback) {
-  const index = process.argv.indexOf(`--${name}`);
-  return index < 0 ? fallback : process.argv[index + 1];
-}
 async function main() {
-  const port = Number(option('port', process.env.LABS_PORT ?? '4173'));
-  const host = option('host', process.env.LABS_HOST ?? '127.0.0.1');
+  const { values } = parseArgs({
+    options: {
+      port: { type: 'string', default: process.env.LABS_PORT ?? '4173' },
+      host: { type: 'string', default: process.env.LABS_HOST ?? '127.0.0.1' },
+      'strict-port': { type: 'boolean', default: false },
+    },
+  });
+  const port = Number(values.port);
+  const host = values.host;
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw new RangeError('Invalid labs port.');
   await buildLabs();
@@ -126,15 +131,19 @@ async function main() {
       else response.end();
     }
   });
+  const listening = await listenLabsServer(server, {
+    port,
+    host,
+    strictPort: values['strict-port'],
+  });
   server.on('error', (error) => {
     console.error(error.message);
     process.exitCode = 1;
   });
-  server.listen(port, host, () => {
-    console.log(`Spreadsheet labs: http://${host}:${server.address().port}/`);
-  });
   process.on('SIGTERM', () => server.close());
   process.on('SIGINT', () => server.close());
+  const moved = port !== 0 && listening.port !== port;
+  console.log(`Spreadsheet labs: ${listening.url}${moved ? ` (port ${port} was in use)` : ''}`);
 }
 
 await main().catch(reportLabsError);

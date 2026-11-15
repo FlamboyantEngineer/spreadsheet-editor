@@ -7,6 +7,7 @@ import {
   CalculationError,
   isError,
   isNumeric,
+  mergeNumericProvenance,
   type CellValue,
   type NumericValue,
 } from './values.js';
@@ -479,16 +480,26 @@ export function evaluateExtendedFunction(
       mn: 'min',
       sec: 's',
       lbm: 'lb',
+      ozm: 'oz',
+      meter: 'm',
+      ang: 'Å',
+      l: 'L',
+      lt: 'L',
+      cel: '°C',
+      fah: '°F',
+      kel: 'K',
     };
     const from = text(args[1]),
       to = text(args[2]);
-    const value = makeQuantity(number(args[0]), codes[from] ?? from);
+    const magnitude = number(args[0]);
+    if (magnitude.dimension || magnitude.quantityKind) fail();
+    const value = makeQuantity(magnitude, codes[from] ?? from);
     return quantityInUnit(value, codes[to] ?? to);
   }
   if (name === 'RADIANS' || name === 'DEGREES') {
     arity(1);
     const value = number(args[0]);
-    if (value.dimension) fail();
+    if (value.dimension || value.quantityKind) fail();
     return name === 'RADIANS'
       ? math.divide(math.multiply(value, math.pi()), math.parse('180'))
       : math.divide(math.multiply(value, math.parse('180')), math.pi());
@@ -498,15 +509,19 @@ export function evaluateExtendedFunction(
     const D = Decimal.clone({ precision: math.precision }),
       a = number(args[0]),
       b = number(args[1]);
-    if (a.dimension || b.dimension || a.quantityKind || b.quantityKind) fail();
+    math.compare(a, b);
     if (a.numerator === '0' && b.numerator === '0') fail('#DIV/0!');
-    return math.parse(
-      D.atan2(
-        new D(b.numerator).div(b.denominator),
-        new D(a.numerator).div(a.denominator),
-      ).toString(),
-      true,
-    );
+    const provenance = mergeNumericProvenance(a, b);
+    return {
+      ...math.parse(
+        D.atan2(
+          new D(b.numerator).div(b.denominator),
+          new D(a.numerator).div(a.denominator),
+        ).toString(),
+        true,
+      ),
+      ...(provenance ? { provenance } : {}),
+    };
   }
   if (
     [
@@ -570,12 +585,14 @@ export function evaluateExtendedFunction(
     const monthIndex = parts.year * 12 + parts.month - 1 + months;
     const year = Math.floor(monthIndex / 12),
       month = (((monthIndex % 12) + 12) % 12) + 1;
-    const next = calendarSerial(year, month + 1, 1),
-      last = math.subtract(next, one),
-      lastParts = calendarParts(last);
-    return name === 'EOMONTH'
-      ? last
-      : calendarSerial(year, month, Math.min(parts.day, lastParts.day));
+    // DATE's public year shorthand must not reinterpret an internal 1899 field
+    // as 3799. Determine the month's final day without requiring serial 10000-01-01.
+    const lastDay =
+      year === 1900 && month === 2 ? 29 : new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const day = name === 'EOMONTH' ? lastDay : Math.min(parts.day, lastDay);
+    if (year === 1899 && month === 12 && day === 31) return zero;
+    if (year < 1900 || year > 9999) fail('#NUM!');
+    return calendarSerial(year, month, day);
   }
   return undefined;
 }

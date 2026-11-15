@@ -7,7 +7,7 @@ import {
 } from './workbook.js';
 import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 import type { CellFormat } from './review.js';
-import { extendWorksheetIdentities } from './extent.js';
+import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
 
 export interface CellSelection {
   x1: number;
@@ -55,6 +55,7 @@ export function writeCells(
   x: number,
   y: number,
   values: CellInput[][],
+  idFactory?: WorkbookIdFactory,
 ): Workbook {
   const next = copyWorkbook(workbook),
     sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
@@ -76,7 +77,7 @@ export function writeCells(
       if (sheet.inputValues) delete sheet.inputValues[formatSpreadsheetAddress(x + dx, y + dy)];
     });
   });
-  extendWorksheetIdentities(sheet);
+  extendWorksheetIdentities(sheet, idFactory);
   assertWorkbook(next);
   return next;
 }

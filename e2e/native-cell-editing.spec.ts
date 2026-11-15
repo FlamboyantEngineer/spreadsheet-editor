@@ -2,6 +2,52 @@ import { expect, test } from '@playwright/test';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
+test('SE-UI-3: finishing unchanged native entries preserves logical types and canonical inputs', async ({
+  page,
+}) => {
+  await page.goto('/full.html');
+  const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
+  await editor.getByRole('menuitem', { name: 'File', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^Import CSV or workbook JSON/ }).click();
+  await page.getByRole('textbox', { name: 'CSV or workbook JSON', exact: true }).fill(
+    JSON.stringify({
+      schemaVersion: 1,
+      worksheets: [
+        {
+          id: 'typed',
+          name: 'Typed',
+          data: [[true, '=ISLOGICAL(A1)', '1', '=C1*2']],
+          inputValues: {
+            C1: { kind: 'number', numerator: '7', denominator: '3', approximate: false },
+          },
+        },
+      ],
+    }),
+  );
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  const cell = (x: number) => editor.locator(`td[data-x="${x}"][data-y="0"]`).first();
+  await expect(cell(1)).toHaveText('TRUE');
+  const canonicalResult = await cell(3).textContent();
+  for (const x of [0, 2]) {
+    await cell(x).dblclick();
+    await cell(x).getByRole('textbox').press('Enter');
+  }
+  await expect(cell(0)).toHaveText('TRUE');
+  await expect(cell(1)).toHaveText('TRUE');
+  await expect(cell(3)).toHaveText(canonicalResult!);
+});
+
+test('SE-HOST-1: native completion includes host function documentation', async ({ page }) => {
+  await page.goto('/host.html');
+  const editor = page.getByRole('region', { name: 'Host spreadsheet', exact: true });
+  const cell = editor.locator('td[data-x="0"][data-y="0"]').first();
+  await cell.dblclick();
+  await cell.getByRole('textbox').fill('=CAP');
+  const option = page.getByRole('option', { name: /CAPTURED/ }).first();
+  await expect(option).toContainText('CAPTURED()');
+  await expect(option).toContainText('A captured value supplied by this example host.');
+});
+
 for (const theme of ['light', 'dark'])
   for (const merged of [false, true])
     test(`SE-CHROME-4: ${merged ? 'merged' : 'ordinary'} native editing preserves geometry and visible text in ${theme}`, async ({

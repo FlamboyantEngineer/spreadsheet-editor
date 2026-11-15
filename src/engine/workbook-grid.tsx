@@ -8,7 +8,11 @@ import type {
   RenderCellContent,
 } from '../editor/public-host.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
-import { gridWorksheetExtent, syncWorksheetData } from './worksheet-data.js';
+import {
+  captureWorksheetCellChanges,
+  gridWorksheetExtent,
+  syncWorksheetData,
+} from './worksheet-data.js';
 import { createSelectionPublication } from './selection-publication.js';
 import { observeGridBorderCopies } from './shared-grid-borders.js';
 import {
@@ -27,7 +31,7 @@ import { useHeaderResize, deliveredHeader } from './header-resize.js';
 import type { CellValue } from '../calculation/values.js';
 import type { DisplayOptions } from '../calculation/format.js';
 import type { CellInput, Worksheet } from '../model/workbook.js';
-import type { WorksheetExtent } from '../model/extent.js';
+import type { WorkbookIdFactory, WorksheetExtent } from '../model/extent.js';
 import { createWorkbook } from '../model/workbook.js';
 import type { SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
 import {
@@ -65,6 +69,7 @@ import {
 export interface WorkbookGridProps {
   worksheet: Worksheet;
   logicalExtent?: WorksheetExtent;
+  idFactory?: WorkbookIdFactory;
   values?: CellValue[][];
   draft?: GridDraft;
   readyCells?: ReadonlySet<string>;
@@ -85,6 +90,7 @@ export interface WorkbookGridProps {
   onReviewChange?(values: CellInput[][], x: number, y: number): void;
   onPasteCells?(values: CellInput[][], x: number, y: number): void;
   onBlockedAction?(message: string): void;
+  onError?(error: unknown): void;
   showFormulas?: boolean;
   comments?: SpreadsheetComment[];
   suggestions?: SpreadsheetSuggestion[];
@@ -109,6 +115,7 @@ export interface WorkbookGridProps {
 
 export default function WorkbookGrid(props: WorkbookGridProps) {
   const handle = useRef<JSpreadsheetHostHandle | null>(null);
+  const focusOnMount = useRef(props.focusOnMount);
   const stopBorderCopies = useRef<(() => void) | null>(null);
   const surface = useRef<HTMLDivElement | null>(null);
   const picking = useRef<CellSelection | null>(null);
@@ -409,7 +416,11 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     return () => props.onController(null);
   }, [controller]);
   const config = useMemo(() => {
-    function capture(value: unknown, allowReview = false) {
+    function capture(
+      value: unknown,
+      allowReview = false,
+      changes?: readonly { x: number; y: number; value: CellInput | undefined }[],
+    ) {
       if (handledNativeChange.current) {
         handledNativeChange.current = false;
         return;
@@ -417,24 +428,39 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       if (
         suppress.current ||
         latest.current.readOnly ||
-        (latest.current.reviewMode && !allowReview)
+        (latest.current.reviewMode && !allowReview && !latest.current.onReviewChange)
       )
         return;
-      const worksheet = value as JSpreadsheetWorksheetInstance,
-        data = worksheet?.getData?.();
-      if (!data) return;
+      const worksheet = value as JSpreadsheetWorksheetInstance;
       const current = latest.current.worksheet;
-      const normalized = data.map((row) =>
-        row.map((cell) => (cell === undefined ? null : (cell as CellInput))),
-      );
-      const merge = worksheet.getMerge?.();
-      const next: Worksheet = {
-        ...current,
-        data: normalized.map((row) => [...row]),
-        ...(merge && !Array.isArray(merge) ? { mergeCells: structuredClone(merge) } : {}),
-      };
-      // Native data edits must never capture zoomed presentation measures as authored sizes.
-      if (JSON.stringify(next) !== JSON.stringify(current)) latest.current.onChange(next);
+      try {
+        const data = changes ? undefined : worksheet?.getData?.();
+        if (!changes && !data) return;
+        const merge = changes ? undefined : worksheet.getMerge?.();
+        const next: Worksheet = {
+          ...(changes
+            ? captureWorksheetCellChanges(current, changes, latest.current.idFactory)
+            : {
+                ...current,
+                data: data!.map((row) =>
+                  row.map((cell) => (cell === undefined ? null : (cell as CellInput))),
+                ),
+              }),
+          ...(merge && !Array.isArray(merge) ? { mergeCells: structuredClone(merge) } : {}),
+        };
+        // Native data edits must never capture zoomed presentation measures as authored sizes.
+        if (JSON.stringify(next) !== JSON.stringify(current)) latest.current.onChange(next);
+      } catch (error) {
+        // A batch has already changed CE's presentation. Reconcile it with the
+        // accepted workbook after host preflight refuses the complete command.
+        if (latest.current.onError) latest.current.onError(error);
+        else
+          latest.current.onBlockedAction?.(
+            error instanceof Error ? error.message : 'The cell changes could not be applied.',
+          );
+        applied.current = null;
+        setRevision((value) => value + 1);
+      }
     }
     function propose(values: CellInput[][], x: number, y: number) {
       if (latest.current.onReviewChange) {
@@ -445,7 +471,8 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         workbook = createWorkbook();
       workbook.worksheets = [structuredClone(current)];
       latest.current.onChange(
-        writeCells(workbook, current.id, Number(x), Number(y), values).worksheets[0],
+        writeCells(workbook, current.id, Number(x), Number(y), values, latest.current.idFactory)
+          .worksheets[0],
       );
     }
     return {
@@ -476,7 +503,15 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         }
 
         if (suppress.current) return undefined;
-        if (!latest.current.reviewMode && !latest.current.onReviewChange) return undefined;
+        const authored = latest.current.worksheet.data[Number(y)]?.[Number(x)];
+        if (inCell.current && String(authored ?? '') === String(value ?? '')) {
+          // Text inputs stringify typed primitives. Finishing an unchanged edit
+          // must preserve its logical/number type and any canonical input value.
+          handledNativeChange.current = true;
+          return authored ?? '';
+        }
+        if (!inCell.current || (!latest.current.reviewMode && !latest.current.onReviewChange))
+          return undefined;
         // Host preflight runs before CE mutates the cell or discards its editor.
         // A synchronous rejection therefore retains the exact active native draft.
         propose([[value]], Number(x), Number(y));
@@ -529,7 +564,10 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           tableHeight: '400px',
         },
       ],
-      onafterchanges: (worksheet: unknown) => capture(worksheet),
+      onafterchanges: (
+        worksheet: unknown,
+        changes: { x: number; y: number; value: CellInput | undefined }[],
+      ) => capture(worksheet, false, changes),
       onresizecolumn: (worksheet: unknown) => capture(worksheet, true),
       onresizerow: (worksheet: unknown) => capture(worksheet, true),
       // Canonical React history includes cell data, formatting and review state.
@@ -855,7 +893,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           controller.select(latest.current.selection);
           if (latest.current.initialViewport)
             controller.restoreViewport?.(latest.current.initialViewport);
-          if (latest.current.focusOnMount) {
+          if (focusOnMount.current) {
             // A lazy grid mount must not interrupt a press or draft in the chrome.
             focusRequest.current = requestAnimationFrame(() => {
               const active = document.activeElement;

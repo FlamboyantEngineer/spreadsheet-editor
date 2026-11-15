@@ -124,6 +124,28 @@ describe('SE-HOST-MODEL-1: canonical authored quantities and stable extent', () 
 });
 
 describe('SE-HOST-MODEL-2: semantic transactions', () => {
+  it('uses the host identity factory when ordinary writes extend either axis', () => {
+    const workbook = createWorkbook([['original']]);
+    workbook.worksheets[0].rowIds = ['row-original'];
+    workbook.worksheets[0].columnIds = ['column-original'];
+    let sequence = 0;
+    const factory = (kind: string) => `${kind}-host-${++sequence}`;
+    const result = writeCellsWithOperations(workbook, 'sheet-1', 1, 1, [['new']], factory);
+    expect(result.workbook.worksheets[0].rowIds).toEqual(['row-original', 'row-host-1']);
+    expect(result.workbook.worksheets[0].columnIds).toEqual(['column-original', 'column-host-2']);
+    expect(result.operations).toMatchObject([
+      { kind: 'lines', axis: 'row', ids: ['row-host-1'] },
+      { kind: 'lines', axis: 'column', ids: ['column-host-2'] },
+      {
+        kind: 'cells',
+        changes: [{ address: 'B2', rowId: 'row-host-1', columnId: 'column-host-2' }],
+      },
+    ]);
+    const single = setWorkbookCell(workbook, 'sheet-1', 0, 1, 'new', factory);
+    expect(single.worksheets[0].rowIds).toEqual(['row-original', 'row-host-3']);
+    expect(workbook.worksheets[0].rowIds).toEqual(['row-original']);
+    expect(workbook.worksheets[0].columnIds).toEqual(['column-original']);
+  });
   it('records a blank final-line insert from its command and retains explicitly generated IDs', () => {
     const workbook = createWorkbook();
     let sequence = 0;

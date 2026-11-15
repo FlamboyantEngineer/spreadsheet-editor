@@ -335,6 +335,9 @@ export function quantityInUnit(
     normalized = normalizeNumericValue(value);
   if (
     !same(dimensionOf(value), definition.dimension) ||
+    ((Object.keys(nonSIKindPowers(value.quantityKind)).length > 0 ||
+      Object.keys(nonSIKindPowers(definition.quantityKind)).length > 0) &&
+      value.quantityKind !== definition.quantityKind) ||
     (value.quantityKind &&
       definition.quantityKind &&
       value.quantityKind !== definition.quantityKind)
@@ -438,6 +441,10 @@ export function createQuantityArithmetic(options: NumericOptions = {}) {
     const first = values[0];
     if (!first) throw new CalculationError('#DIV/0!');
     values.forEach((v) => {
+      // A synthetic zero can seed a sum, but an authored scalar zero is not
+      // a measurement in the first value's unit (and vice versa).
+      if (!same(dimensionOf(first), dimensionOf(v)) || scalar(first) !== scalar(v))
+        throw new CalculationError('#VALUE!');
       compatible(first, v);
       if (temp(first) !== temp(v)) throw new CalculationError('#VALUE!');
     });
@@ -470,6 +477,10 @@ export function createQuantityArithmetic(options: NumericOptions = {}) {
   };
   return {
     ...math,
+    integer: (...args: Parameters<typeof math.integer>) => {
+      dimensionless(args[0]);
+      return math.integer(...args);
+    },
     average,
     add: (a: NumericValue, b: NumericValue) => addition(a, b, false),
     subtract: (a: NumericValue, b: NumericValue) => addition(a, b, true),
