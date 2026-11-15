@@ -12,10 +12,17 @@ describe('SE-DOC-1: document insertion modes', () => {
     expect(insertion.kind).toBe('table');
     if (insertion.kind !== 'table') throw new Error('Expected a table.');
     expect(insertion.rows[0][0].text).toBe('0.9999999999999999999999999');
-    expect(insertion.node.type).toBe('table');
+    expect(Object.keys(insertion).sort()).toEqual([
+      'html',
+      'kind',
+      'range',
+      'rows',
+      'schemaVersion',
+      'sheetId',
+    ]);
     expect(insertion.html).toContain('&lt;img');
     expect(insertion.html).not.toContain('<img');
-    expect(JSON.stringify(insertion.node)).not.toContain('=1-');
+    expect(JSON.stringify(insertion.rows)).not.toContain('=1-');
   });
   it('keeps cross-sheet dependencies and isolates the live insertion snapshot', () => {
     const workbook = createWorkbook([['=Inputs!A1/3']]);
