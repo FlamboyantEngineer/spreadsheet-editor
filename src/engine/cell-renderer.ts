@@ -57,6 +57,25 @@ interface PaintedCell {
   content: ReactNode | undefined;
 }
 const paintedCells = new WeakMap<HTMLElement, PaintedCell>();
+/**
+ * What a row was last painted from. A values row keeps its identity only while no cell in it
+ * changes value or readiness, so a row whose values, input, formats, hints and settings are all
+ * the same objects is left as it is without visiting its cells (SE-PERF-1).
+ */
+interface PaintedRow {
+  settings: object;
+  /** The values row, or the input row when there are no values. */
+  values: readonly (CellValue | CellInput)[];
+  raw: readonly CellInput[] | undefined;
+  formats: Record<string, CellFormat>;
+  hints: unknown;
+  cells: HTMLElement[];
+  /** Each cell's first child after painting, as in PaintedCell. */
+  nodes: (ChildNode | null)[];
+  portals: CellPortal[];
+}
+const NO_FORMATS: Record<string, CellFormat> = Object.freeze({});
+const paintedRows = new WeakMap<JSpreadsheetHostHandle, Map<number, PaintedRow>>();
 /** Settings shared by every cell; a new object means every cell is painted again. */
 const paintSettings = new WeakMap<
   JSpreadsheetHostHandle,
@@ -84,6 +103,7 @@ export function clearCalculatedPresentation(handle: JSpreadsheetHostHandle) {
   }
   previousPresentations.delete(handle);
   paintSettings.delete(handle);
+  paintedRows.delete(handle);
 }
 
 /** Calculated values compare by content: a new calculation result holds new objects. */
@@ -132,7 +152,7 @@ export function renderCalculatedCells(
   display?: DisplayOptions,
   raw: CellInput[][] = [],
   unavailableText = '…',
-  formats: Record<string, CellFormat> = {},
+  formats: Record<string, CellFormat> = NO_FORMATS,
   showFormulas = false,
   presentation?: GridCellPresentation,
   repaint = false,
@@ -168,17 +188,44 @@ export function renderCalculatedCells(
   const draft = presentation?.draft;
   const readyCells = presentation?.readyCells;
   const rows = values ?? raw;
+  const rowMemo = paintedRows.get(handle) ?? new Map<number, PaintedRow>();
+  paintedRows.set(handle, rowMemo);
+  if (rowMemo.size > rows.length)
+    for (const y of rowMemo.keys()) if (y >= rows.length) rowMemo.delete(y);
   for (let y = 0; y < rows.length; y++) {
     const row = rows[y],
       rawRow = raw[y];
+    const memo = rowMemo.get(y);
+    if (
+      memo &&
+      memo.values === row &&
+      memo.raw === rawRow &&
+      memo.settings === settings &&
+      memo.formats === formats &&
+      memo.hints === hints &&
+      draft?.y !== y &&
+      // A rebuilt row has new cells; the engine replaces every cell of a row it rebuilds.
+      memo.cells[0] === worksheet.getCellFromCoords(0, y) &&
+      // The engine writes its raw value into a cell when an editor closes.
+      memo.cells.every((cell, index) => cell.firstChild === memo.nodes[index])
+    ) {
+      for (const cell of memo.cells) touched.add(cell);
+      for (const portal of memo.portals) portals.push(portal);
+      continue;
+    }
+    const rowCells: HTMLElement[] = [],
+      rowPortals = portals.length;
+    let rowSettled = draft?.y !== y;
     for (let x = 0; x < row.length; x++) {
       const cell = worksheet.getCellFromCoords(x, y);
       if (!cell) continue;
       if (cell.classList.contains('editor')) {
         // The engine rewrites the cell when its editor closes.
         paintedCells.delete(cell);
+        rowSettled = false;
         continue;
       }
+      rowCells.push(cell);
       const input = rawRow?.[x];
       const value: CellValue = values
         ? values[y][x]
@@ -281,6 +328,18 @@ export function renderCalculatedCells(
         content: portal ? content : undefined,
       });
     }
+    if (rowSettled)
+      rowMemo.set(y, {
+        settings,
+        values: row,
+        raw: rawRow,
+        formats,
+        hints,
+        cells: rowCells,
+        nodes: rowCells.map((cell) => cell.firstChild),
+        portals: portals.slice(rowPortals),
+      });
+    else rowMemo.delete(y);
   }
   if (draft) {
     const { x, y, text } = draft;

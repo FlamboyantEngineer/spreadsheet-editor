@@ -142,7 +142,11 @@ function readyValues<T>(
     row.map((value, x) => (ready.has(calculationCellKey(sheetId, x, y)) ? value : null)),
   );
 }
-/** Blank a draft's pending cells; rows without one keep their identity. */
+/**
+ * Blank a draft's pending cells; rows without one keep their identity. A row with a pending cell
+ * is always a new row, even when that cell is already blank: the grid does not paint a row whose
+ * identity is unchanged, so it would miss the cell's change of readiness (SE-PERF-1).
+ */
 function withoutPendingValues<T>(
   values: (T | null)[][] | undefined,
   pending: ReadonlySet<string>,
@@ -152,10 +156,10 @@ function withoutPendingValues<T>(
   let next: (T | null)[][] | undefined;
   for (const key of pending) {
     const [id, x, y] = JSON.parse(key) as [string, number, number];
-    if (id !== sheetId || values[y]?.[x] == null) continue;
+    if (id !== sheetId || !values[y]) continue;
     next ??= [...values];
     if (next[y] === values[y]) next[y] = [...values[y]];
-    next[y][x] = null;
+    if (x < next[y].length) next[y][x] = null;
   }
   return next ?? values;
 }
@@ -1425,25 +1429,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (!targets.length) return 0;
     mutateWithDraft(
       (base) => {
-        let next = base;
+        // Matches are authored cells, so every replacement lands in one copy (SE-8).
+        const next = copyWorkbook(base),
+          pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
         for (const match of targets) {
-          const value = String(
-            next.worksheets.find((sheet) => sheet.id === match.sheetId)!.data[match.y][match.x] ??
-              '',
+          const target = next.worksheets.find((sheet) => sheet.id === match.sheetId)!;
+          target.data[match.y][match.x] = String(target.data[match.y][match.x] ?? '').replace(
+            pattern,
+            () => text,
           );
-          const pattern = new RegExp(
-            query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-            all ? 'gi' : 'i',
-          );
-          next = writeCells(
-            next,
-            match.sheetId,
-            match.x,
-            match.y,
-            [[value.replace(pattern, () => text)]],
-            props.idFactory,
-          );
+          if (target.inputValues)
+            delete target.inputValues[formatSpreadsheetAddress(match.x, match.y)];
         }
+        assertWorkbook(next);
         return next;
       },
       all ? 'Replace all matches' : 'Replace match',
