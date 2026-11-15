@@ -36,19 +36,13 @@ export function syncFrozenColumns(engine: JSpreadsheetWorksheetInstance) {
   const count = engine.options?.freezeColumns ?? 0;
   const table = engine.table;
   const corner = table?.tHead?.rows[0]?.cells[0];
-  const rowHeaderWidth = corner?.getBoundingClientRect().width ?? DEFAULT_ROW_HEADER_WIDTH;
-  if (corner) {
-    corner.style.position = 'sticky';
-    corner.style.left = '0px';
-    corner.style.zIndex = '4';
-  }
+  // Measuring forces layout; only frozen columns need the row header's width.
+  const rowHeaderWidth =
+    (count > 0 ? corner?.getBoundingClientRect().width : undefined) ?? DEFAULT_ROW_HEADER_WIDTH;
+  if (corner) position(corner, 'sticky', '0px', '4');
   for (const row of engine.rows ?? []) {
     const header = row?.element?.firstElementChild;
-    if (header instanceof HTMLElement) {
-      header.style.position = 'sticky';
-      header.style.left = '0px';
-      header.style.zIndex = '2';
-    }
+    if (header instanceof HTMLElement) position(header, 'sticky', '0px', '2');
   }
   let left = rowHeaderWidth;
   const positioned = new Set<HTMLElement>();
@@ -57,22 +51,26 @@ export function syncFrozenColumns(engine: JSpreadsheetWorksheetInstance) {
     const header = engine.headers?.[x];
     if (header) {
       header.classList.toggle('jss_freezed', frozen);
-      header.style.left = frozen ? `${left}px` : '';
-      header.style.zIndex = frozen ? '3' : '';
+      position(header, header.style.position, frozen ? `${left}px` : '', frozen ? '3' : '');
     }
     for (const row of engine.records ?? []) {
       const cell = row?.[x]?.element;
       if (!(cell instanceof HTMLElement) || positioned.has(cell)) continue;
       positioned.add(cell);
       cell.classList.toggle('jss_freezed', frozen);
-      cell.style.position = frozen ? 'sticky' : '';
-      cell.style.left = frozen ? `${left}px` : '';
-      cell.style.zIndex = frozen ? '1' : '';
+      position(cell, frozen ? 'sticky' : '', frozen ? `${left}px` : '', frozen ? '1' : '');
     }
     const col = engine.cols?.[x]?.colElement;
     if (frozen && col?.style.display !== 'none')
       left += Number.parseFloat(col?.style.width || col?.getAttribute('width') || '0') || 0;
   }
+}
+
+/** Write only changed values: every write is a mutation the engine's observers handle. */
+function position(element: HTMLElement, value: string, left: string, zIndex: string) {
+  if (element.style.position !== value) element.style.position = value;
+  if (element.style.left !== left) element.style.left = left;
+  if (element.style.zIndex !== zIndex) element.style.zIndex = zIndex;
 }
 
 /** Restore sticky offsets after CE's scroll handler writes relative-scroll offsets over them. */
