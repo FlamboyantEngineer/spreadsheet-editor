@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import { SpreadsheetEditor } from '../../src/index.js';
 import {
   createMemoryHost,
+  createMemoryPresenceRoom,
   FULL_CAPABILITIES,
   READ_ONLY_CAPABILITIES,
 } from '../../src/host/index.js';
@@ -42,6 +43,7 @@ function TablePreview({ insertion }: { insertion: Extract<DocumentInsertion, { k
 
 const alex = { id: 'alex', name: 'Alex' };
 const morgan = { id: 'morgan', name: 'Morgan' };
+const LAB_WORKBOOK = 'lab-workbook';
 
 export function FullLab() {
   const excel = useExcelLab();
@@ -58,13 +60,19 @@ export function FullLab() {
   const [autosave, setAutosave] = useState(false);
   const [actorId, setActorId] = useState('alex');
   const [readOnly, setReadOnly] = useState(false);
-  const identities = useMemo(
-    () => ({
-      alex: createMemoryHost({ reader: alex, people: [morgan] }).identity,
-      morgan: createMemoryHost({ reader: morgan, people: [alex] }).identity,
-    }),
-    [],
-  );
+  const hosts = useMemo(() => {
+    const room = createMemoryPresenceRoom();
+    return {
+      alex: createMemoryHost({ reader: alex, people: [morgan], presence: room }),
+      morgan: createMemoryHost({ reader: morgan, people: [alex], presence: room }),
+    };
+  }, []);
+  useEffect(() => {
+    if (!presence) return;
+    const place = { sheetId: 'calculations', range: 'B2' };
+    hosts.morgan.presence?.publish(LAB_WORKBOOK, { at: place, editLock: place, status: 'active' });
+    return () => hosts.morgan.presence?.publish(LAB_WORKBOOK, null);
+  }, [presence, hosts]);
   const [mode, setMode] = useState<'client' | 'server'>('client');
   const [digits, setDigits] = useState('32');
   const [insertion, setInsertion] = useState<DocumentInsertion | null>(null);
@@ -125,27 +133,15 @@ export function FullLab() {
                 ? { ...FULL_CAPABILITIES, edit: false }
                 : FULL_CAPABILITIES
           }
-          collaborators={
-            presence
-              ? [
-                  {
-                    id: 'morgan',
-                    name: 'Morgan',
-                    sheetId: 'calculations',
-                    selection: { x1: 1, x2: 1, y1: 1, y2: 1 },
-                    editLock: { x1: 1, x2: 1, y1: 1, y2: 1 },
-                    activity: 'Editing',
-                  },
-                ]
-              : []
-          }
+          workbookId={LAB_WORKBOOK}
+          presence={hosts[actorId === 'alex' ? 'alex' : 'morgan'].presence}
           getCommentLink={(id) => new URL(`?comment=${encodeURIComponent(id)}`, location.href).href}
           initialCommentId={new URLSearchParams(location.search).get('comment') ?? undefined}
           onChange={setWorkbook}
           calculation={selectedMode}
           display={display}
           onInsert={setInsertion}
-          identity={actorId === 'alex' ? identities.alex : identities.morgan}
+          identity={hosts[actorId === 'alex' ? 'alex' : 'morgan'].identity}
           onSave={async (snapshot, context) => {
             if (context.signal.aborted) return;
             setSaved(snapshot);

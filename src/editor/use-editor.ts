@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  remoteCollaborators,
-  collaboratorSheet,
-  lockedChange,
-  selectionLock,
-} from '../model/presence.js';
+import { placePeers, collaboratorSheet, lockedChange, selectionLock } from '../model/presence.js';
 import { attributeCellChanges } from '../model/provenance.js';
 
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -84,6 +79,7 @@ import { createDocumentInsertion } from '../document/insertion.js';
 import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
 import { FULL_CAPABILITIES, resolveSpreadsheetMode } from '../host/capabilities.js';
 import { usePersonNames } from './use-person-names.js';
+import { useWorkbookPresence } from './use-workbook-presence.js';
 
 export type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
@@ -211,17 +207,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     return person ? { id: person.id, name: person.name } : { id: 'local-user', name: 'You' };
   }, [props.identity]);
   const personName = usePersonNames(props.identity, workbook.comments, actor);
-  const peers = useMemo(
-    () =>
-      remoteCollaborators(props.collaborators ?? [], actor.id).map((person) => ({
-        ...person,
-        sheetId: collaboratorSheet(workbook, person)?.id ?? person.sheetId,
-      })),
-    [props.collaborators, actor.id, workbook],
-  );
   const [sheetId, setSheetId] = useState(props.initialSheetId ?? workbook.worksheets[0].id);
   const sheet = workbook.worksheets.find((sheet) => sheet.id === sheetId) ?? workbook.worksheets[0];
   const [selection, setSelection] = useState<CellSelection>(INITIAL_SELECTION);
+  const [editingCell, setEditingCell] = useState(false);
+  const place = { sheetId: sheet.id, range: selectionAddress(selection) };
+  const remotePeers = useWorkbookPresence(props.presence, props.workbookId, {
+    at: place,
+    editLock: editingCell ? place : null,
+  });
+  const peers = useMemo(
+    () => placePeers(workbook, remotePeers, actor.id),
+    [workbook, remotePeers, actor.id],
+  );
   const lockedSelection = selectionLock(workbook, sheet.id, selection, peers);
   const [draft, setDraftState] = useState<{ key: string; value: string } | null>(null);
   const draftRef = useRef(draft);
@@ -443,18 +441,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     selectionAddress({ ...selection, x2: selection.x1, y2: selection.y1 })
   ] ?? { kind: 'general' as const };
 
-  function publishPresence(activity: 'Editing' | 'Reviewing' | 'Viewing', editing = false) {
-    props.onPresenceChange?.({
-      sheetId: sheet.id,
-      selection,
-      editLock: editing ? selection : undefined,
-      activity,
-      timestamp: Date.now(),
-    });
+  /** Shares whether the reader is writing in the selected cells, which locks them for others. */
+  function publishPresence(editing: boolean) {
+    setEditingCell(editing);
   }
-  useEffect(() => {
-    publishPresence('Viewing');
-  }, [sheet.id, selection]);
   function followCollaborator(id: string) {
     const person = peers.find((person) => person.id === id),
       target = person && collaboratorSheet(workbook, person);
@@ -509,7 +499,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       ],
       future: [],
     });
-    publishPresence(/comment|reply|reaction|suggest/i.test(label) ? 'Reviewing' : 'Editing');
+    setEditingCell(false);
   }
   function mutate(
     next: Workbook,

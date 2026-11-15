@@ -1,52 +1,64 @@
-import type { ReviewActor } from './review.js';
-import { worksheetNameKey, type Workbook } from './workbook.js';
+import type { Workbook } from './workbook.js';
 import { normalizeSelection, type CellSelection } from './editing.js';
-import { parseSpreadsheetAddress } from './spreadsheet-addressing.js';
+import { parseSpreadsheetAddress, parseSpreadsheetRange } from './spreadsheet-addressing.js';
+import type { PresencePlace, PresenceStatus, SpreadsheetPeer } from '../host/presence-adapters.js';
 
-export interface SpreadsheetCollaborator extends ReviewActor {
+/** A peer placed on the workbook: their selection and lock as cell rectangles on a worksheet. */
+export interface SpreadsheetCollaborator {
+  id: string;
+  name: string;
+  avatar?: string | undefined;
+  color?: string | undefined;
+  status: PresenceStatus;
   sheetId?: string;
-  sheetName?: string;
-  sheetIndex?: number;
   selection?: CellSelection;
   editLock?: CellSelection;
-  activity?: 'Editing' | 'Reviewing' | 'Viewing' | 'Idle';
-  updatedAt?: number;
-}
-export interface SpreadsheetPresence {
-  sheetId: string;
-  selection: CellSelection;
-  editLock?: CellSelection;
-  activity: 'Editing' | 'Reviewing' | 'Viewing';
-  timestamp: number;
 }
 export function collaboratorColorIndex(id: string): number {
   let hash = 0;
   for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
   return hash % 8;
 }
-export function remoteCollaborators(
-  peers: readonly SpreadsheetCollaborator[],
+function placeSelection(workbook: Workbook, place: PresencePlace | null | undefined) {
+  if (!place || !workbook.worksheets.some((sheet) => sheet.id === place.sheetId)) return undefined;
+  const range = parseSpreadsheetRange(place.range);
+  return range
+    ? {
+        sheetId: place.sheetId,
+        selection: { x1: range.start.x, y1: range.start.y, x2: range.end.x, y2: range.end.y },
+      }
+    : undefined;
+}
+/**
+ * The other people in the workbook, placed on its worksheets: the reader and peers without an id
+ * or a name are left out, and a place on a worksheet the workbook lacks or in a malformed range is
+ * dropped rather than trusted (SE-ADAPTERS-4.3).
+ */
+export function placePeers(
+  workbook: Workbook,
+  peers: readonly SpreadsheetPeer[],
   localId: string,
 ): SpreadsheetCollaborator[] {
   const people = new Map<string, SpreadsheetCollaborator>();
-  for (const person of peers) {
-    if (person.id === localId || !person.id || !person.name) continue;
-    const previous = people.get(person.id);
-    if (!previous || (person.updatedAt ?? 0) >= (previous.updatedAt ?? 0))
-      people.set(person.id, person);
+  for (const peer of peers) {
+    if (peer.id === localId || !peer.id || !peer.name) continue;
+    const at = placeSelection(workbook, peer.at),
+      lock = placeSelection(workbook, peer.editLock);
+    people.set(peer.id, {
+      id: peer.id,
+      name: peer.name,
+      avatar: peer.avatar,
+      color: peer.color,
+      status: peer.status,
+      sheetId: at?.sheetId ?? lock?.sheetId,
+      selection: at?.selection,
+      editLock: lock && (!at || lock.sheetId === at.sheetId) ? lock.selection : undefined,
+    });
   }
   return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 export function collaboratorSheet(workbook: Workbook, person: SpreadsheetCollaborator) {
-  return (
-    workbook.worksheets.find((sheet) => sheet.id === person.sheetId) ??
-    workbook.worksheets.find(
-      (sheet) =>
-        person.sheetName !== undefined &&
-        worksheetNameKey(sheet.name) === worksheetNameKey(person.sheetName),
-    ) ??
-    (person.sheetIndex === undefined ? undefined : workbook.worksheets[person.sheetIndex])
-  );
+  return workbook.worksheets.find((sheet) => sheet.id === person.sheetId);
 }
 
 export function selectionLock(
