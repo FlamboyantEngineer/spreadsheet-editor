@@ -22,6 +22,7 @@ import type { DocumentInsertion } from '../document/insertion.js';
 import type { CellSelection } from '../model/editing.js';
 import type { IdentityAdapter } from '../host/adapters.js';
 import type { PresenceAdapter } from '../host/presence-adapters.js';
+import type { WorkbookSession } from '../host/workbook-session.js';
 import type { EditorCapabilities, SpreadsheetMode } from '../host/capabilities.js';
 export type { SpreadsheetMode } from '../host/capabilities.js';
 
@@ -38,11 +39,6 @@ export interface SpreadsheetHostPanel {
   id: string;
   label: string;
   content: ReactNode;
-}
-export interface SpreadsheetSaveContext {
-  signal: AbortSignal;
-  kind: 'manual' | 'autosave';
-  requestId: string;
 }
 export interface SpreadsheetHistoryEntry {
   id: string;
@@ -87,10 +83,6 @@ export interface SpreadsheetEditorProps {
   formatting?: { kinds?: readonly CellFormat['kind'][]; decimalPlaces?: boolean };
   cellPresentation?: CellPresentationSnapshot;
   renderCellContent?: RenderCellContent;
-  onFlush?(
-    workbook: Workbook,
-    context: { signal: AbortSignal; requestId: string },
-  ): void | Promise<void>;
   /** Visible editor controls; full is the default. Context menus and permissions work in every preset. */
   chrome?: SpreadsheetChrome;
   sessionKey?: string;
@@ -98,13 +90,18 @@ export interface SpreadsheetEditorProps {
   getCommentLink?(threadId: string): string;
   events?: { subscribeWindowBlur(callback: () => void): () => void };
   features?: SpreadsheetFeatures;
-  autosaveMs?: number;
   history?: SpreadsheetHistory;
   /**
    * The workbook's id in the host. It addresses the workbook in the host's adapters, and a new id
    * starts a new editor session, as a new `sessionKey` does.
    */
   workbookId?: string;
+  /**
+   * The stored workbook's session (`createWorkbookSession`): the editor shows its workbook,
+   * records each accepted change in it, and saves and flushes through it (SE-SESSION-4). Null
+   * shows the editor as opening, as `useWorkbookSession` returns before its session exists.
+   */
+  session?: WorkbookSession | null;
   /** Shares the reader's place with the other people in the workbook, given a `workbookId`. */
   presence?: PresenceAdapter;
   historical?: SpreadsheetHistoricalView;
@@ -128,7 +125,6 @@ export interface SpreadsheetEditorProps {
    */
   capabilities?: EditorCapabilities;
   title?: string;
-  onSave?(workbook: Workbook, context: SpreadsheetSaveContext): void | Promise<void>;
   onRefresh?(target?: { sheetId: string; range: string }): void | Promise<void>;
   /** Hosts own file selection, preview and persistence. Node conversion helpers live in /excel. */
   onImportXlsx?(): Promise<Workbook | null>;

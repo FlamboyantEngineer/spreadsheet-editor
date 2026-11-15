@@ -50,7 +50,7 @@ Native text entry shall fit inside the existing cell or complete merged span wit
 
 Initial engine adoption must not steal keyboard focus from chrome controls already being used. Later worksheet switches restore grid focus. Reference presentation reserves the fixed viewport's space during lazy engine loading, so adopting the grid cannot move the worksheet controls between pointer press and release. Hosts retain ownership of viewport sizing through the public grid hook.
 
-`onSave` receives a cancellation signal, stable request id and manual/autosave kind. `autosaveMs` opts in. Saving never starts merely from viewing or selecting. Manual saves coalesce and queue after autosave; later edits remain dirty. Only autosave 503 errors retry quietly with bounded backoff. Historical views force Reading and keep the host-controlled banner until the host restores the current version. The full preset keeps an additional dedicated Suggestions pane; hosts may replace built-in panels.
+Save appears when the editor has a workbook session (SE-SESSION-4); its status reads Saving or Autosaving, then Saved or Autosaved. Saving never starts merely from viewing or selecting; edits made while a save is in flight remain dirty. Historical views force Reading and keep the host-controlled banner until the host restores the current version. The full preset keeps an additional dedicated Suggestions pane; hosts may replace built-in panels.
 
 Verification: `src/editor/use-editor.test.ts`, `e2e/native-cell-editing.spec.ts`, `e2e/interaction-parity.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-COMPATIBILITY.md).
 

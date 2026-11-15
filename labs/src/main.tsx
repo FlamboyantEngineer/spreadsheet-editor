@@ -1,14 +1,17 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { UiProvider } from '@flamboyantengineer/ui-components/core';
 import { mountLabBar } from '@flamboyantengineer/ui-components/labs';
 import { labStorage } from './settings.js';
 import { Button } from '@flamboyantengineer/ui-components/button';
-import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
+import { SpreadsheetEditor, createWorkbook, useWorkbookSession } from '../../src/index.js';
 import { createMemoryHost } from '../../src/host/index.js';
 
-const alex = createMemoryHost({ reader: { id: 'alex', name: 'Alex' } }).identity;
-import type { Workbook } from '../../src/model/index.js';
+const embeddedHost = createMemoryHost({
+  reader: { id: 'alex', name: 'Alex' },
+  workbooks: { embedded: engineeringSample },
+});
+const alex = embeddedHost.identity;
 import { FullLab } from './full-lab.js';
 import { HostLab } from './host-lab.js';
 import { LargeLab } from './large-lab.js';
@@ -92,8 +95,15 @@ function MinimalLab() {
 }
 
 function EmbeddedLab() {
-  const [workbook, setWorkbook] = useState<Workbook>(() => structuredClone(engineeringSample));
-  const [saved, setSaved] = useState(false);
+  const session = useWorkbookSession({
+    workbooks: embeddedHost.workbooks,
+    workbookId: 'embedded',
+    autosaveDelay: Infinity,
+  });
+  const saved = useSyncExternalStore(
+    session?.subscribe ?? (() => () => {}),
+    () => session?.status().phase === 'saved' && session.status().revision !== 'r1',
+  );
   return (
     <section className="lab-app" aria-label="Example project workspace">
       <div className="lab-app__topbar">
@@ -128,21 +138,14 @@ function EmbeddedLab() {
           <SpreadsheetEditor
             chrome="embedded"
             aria-label="Embedded spreadsheet"
-            value={workbook}
-            onChange={(next) => {
-              setWorkbook(next);
-              setSaved(false);
-            }}
+            session={session}
             title="Mass budget"
             identity={alex}
-            onSave={async () => {
-              setSaved(true);
-            }}
           />
           <div className="lab-app__footnote" role="status">
             {saved
               ? 'Saved in this lab session.'
-              : 'Edits stay in this lab session. Select Save to exercise the host callback.'}
+              : 'Edits stay in this lab session. Select Save to save through the host workbook store.'}
           </div>
         </div>
       </div>

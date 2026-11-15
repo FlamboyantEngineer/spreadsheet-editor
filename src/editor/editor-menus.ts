@@ -138,7 +138,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
           ),
         ]
       : []),
-    ...(e.props.onSave
+    ...(e.props.session
       ? [item('save', 'Save', () => e.save(), !e.canEdit || e.savePhase === 'saving')]
       : []),
     ...(e.props.onRefresh

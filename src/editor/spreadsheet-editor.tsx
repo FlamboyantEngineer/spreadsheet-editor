@@ -37,6 +37,7 @@ import type {
 } from '../engine/jspreadsheet-host.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { useSpreadsheetEditor } from './use-editor.js';
+import { useSessionState } from './use-session-state.js';
 import { Tabs, TabPanel } from '@flamboyantengineer/ui-components/tabs';
 import { EditorFormulaBar, type EditorFormulaBarHandle } from './editor-formula-bar.js';
 import { WorksheetStrip } from './worksheet-strip.js';
@@ -48,7 +49,6 @@ export type {
   SpreadsheetEditorProps,
   SpreadsheetChrome,
   SpreadsheetFeatures,
-  SpreadsheetSaveContext,
   SpreadsheetHistory,
   SpreadsheetHistoryEntry,
   SpreadsheetHistoricalView,
@@ -58,10 +58,32 @@ export type {
   SpreadsheetHostPanel,
 } from './contracts.js';
 export * from './public-host.js';
+export { useWorkbookSession } from './use-workbook-session.js';
 import { READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 const WorkbookGrid = lazy(() => import('../engine/workbook-grid.js'));
 
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
+  const session = useSessionState(props.session ?? undefined);
+  if (props.session !== undefined && !props.value && !session.workbook) {
+    const failed = session.status?.phase === 'unavailable';
+    return (
+      <section
+        className="se-editor"
+        data-session={failed ? 'unavailable' : 'loading'}
+        aria-label={props['aria-label'] ?? 'Spreadsheet editor'}
+      >
+        {failed ? (
+          <InlineError className="se-editor__notice">
+            {session.status?.error?.message ?? 'The workbook could not be opened.'}
+          </InlineError>
+        ) : (
+          <p className="se-editor__loading" role="status">
+            Opening workbook…
+          </p>
+        )}
+      </section>
+    );
+  }
   return (
     <SpreadsheetEditorInstance
       key={`${props.workbookId ?? ''}\n${props.sessionKey ?? 'spreadsheet'}`}
@@ -169,7 +191,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
     let action: (() => void | Promise<void>) | undefined;
     if (modifier && key === 'f' && props.features?.search !== false)
       action = () => e.setShowFind(true);
-    if (modifier && key === 's' && props.onSave) action = () => e.save();
+    if (modifier && key === 's' && props.session) action = () => e.save();
     if (modifier && event.altKey && key === 'm') action = e.beginComment;
     const textTarget =
       event.target instanceof HTMLInputElement ||
@@ -540,6 +562,44 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
       </VisuallyHidden>
       {e.calculation.error && (
         <InlineError className="se-editor__notice">{e.calculation.error}</InlineError>
+      )}
+      {e.sessionStatus?.phase === 'conflict' && (
+        <Banner
+          className="se-editor__conflict"
+          tone="warning"
+          description="Someone else saved this workbook after you opened it. Keep your changes over theirs, or take the saved workbook and drop yours."
+          actions={
+            <>
+              <Button size="sm" onPress={() => void e.resolveConflict('mine')}>
+                Keep my changes
+              </Button>
+              <Button size="sm" onPress={() => void e.resolveConflict('stored')}>
+                Use saved workbook
+              </Button>
+            </>
+          }
+        />
+      )}
+      {e.sessionDraft && (
+        <Banner
+          className="se-editor__draft"
+          tone="info"
+          description={
+            e.sessionDraft.stale
+              ? 'Unsaved changes from an earlier visit were kept, but the workbook was saved since. Restoring them replaces the saved workbook when you save.'
+              : 'Unsaved changes from an earlier visit were kept.'
+          }
+          actions={
+            <>
+              <Button size="sm" onPress={() => e.props.session?.restoreDraft()}>
+                Restore changes
+              </Button>
+              <Button size="sm" onPress={() => e.props.session?.discardDraft()}>
+                Discard
+              </Button>
+            </>
+          }
+        />
       )}
       {e.notice && (
         <Banner
