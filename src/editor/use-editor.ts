@@ -157,9 +157,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const copied = useRef<SpreadsheetCopy | null>(null);
   const [panel, setPanel] = useState<string | null>(props.historical ? 'history' : null),
     [panelOpen, setPanelOpen] = useState(!!props.historical);
-  useEffect(() => {
-    props.onPanelChange?.({ id: panel, expanded: panelOpen });
-  }, [panel, panelOpen, props.onPanelChange]);
   const [commentComposer, setCommentComposer] = useState(false);
   const [commentScope, setCommentScope] = useState<'range' | 'workbook'>('range');
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
@@ -241,6 +238,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   useLayoutEffect(() => {
     live.current = { canEdit, canWrite, props };
   }, [canEdit, canWrite, props]);
+  // Read the callback through `live` so a host's inline callback is not a dependency (SE-HOST-2).
+  useEffect(() => {
+    live.current.props.onPanelChange?.({ id: panel, expanded: panelOpen });
+  }, [panel, panelOpen]);
   const activeSave = useRef<{
     promise: Promise<void>;
     controller: AbortController;

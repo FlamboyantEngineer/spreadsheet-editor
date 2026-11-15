@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createRef } from 'react';
+import { createRef, useState } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
@@ -36,6 +36,33 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     expect(onPanelChange).toHaveBeenLastCalledWith({ id: 'workflow', expanded: false });
     act(() => editorRef.current!.cancelDraft());
     expect(editorRef.current!.getState().dirty).toBe(false);
+  });
+
+  it('notifies an inline panel callback only when the panel changes', () => {
+    const editorRef = createRef<SpreadsheetEditorHandle>(),
+      states: { id: string | null; expanded: boolean }[] = [];
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      const [, setPanelState] = useState<{ id: string | null; expanded: boolean } | null>(null);
+      return useSpreadsheetEditor({
+        defaultValue: createWorkbook([['accepted']]),
+        editorRef,
+        onPanelChange: (state) => {
+          states.push(state);
+          // Stop storing after 50 renders so a regression fails instead of hanging.
+          if (renders < 50) setPanelState(state);
+        },
+      });
+    });
+    expect(renders).toBeLessThan(10);
+    expect(states).toEqual([{ id: null, expanded: false }]);
+    act(() => editorRef.current!.setPanel('workflow'));
+    expect(states).toEqual([
+      { id: null, expanded: false },
+      { id: 'workflow', expanded: true },
+    ]);
+    expect(result.current.workbook.worksheets[0].data[0][0]).toBe('accepted');
   });
 
   it('lets the host own creation and imports without exposing replacement actions', () => {
