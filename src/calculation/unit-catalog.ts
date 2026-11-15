@@ -331,11 +331,6 @@ export const BINARY_PREFIXES: readonly Readonly<UnitPrefixDefinition>[] = Object
   }),
 ]);
 
-export const UNIT_PREFIXES = Object.freeze({
-  decimal: SI_DECIMAL_PREFIXES,
-  binary: BINARY_PREFIXES,
-});
-
 export const UNIT_DEFINITIONS = Object.freeze({
   time: freezeCategory({
     requirementId: 'PT-UN-3.1',
