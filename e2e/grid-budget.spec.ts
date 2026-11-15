@@ -54,11 +54,16 @@ async function measure(page: Page, action: () => Promise<void>) {
 async function openLargeWorksheet(page: Page) {
   await page.goto('/large.html');
   const editor = page.locator('.se-editor').first();
-  await expect(editor.locator('td[data-x="24"][data-y="399"]')).toHaveText('2400', {
+  // Row 4's total sums A4:C4 = 4 + 8 + 12.
+  await expect(editor.locator('td[data-x="24"][data-y="3"]')).toHaveText('24', {
     timeout: 20_000,
   });
-  // 10,000 authored cells; the grid always shows at least 26 columns.
-  await expect(editor.locator('.jss_worksheet tbody td[data-x]:not(.jss_row)')).toHaveCount(10_400);
+  // 400 rows; only the rows near the viewport are attached, under a scrollbar for all of them.
+  const rows = await editor.locator('.jss_worksheet tbody tr[data-y]').count();
+  expect(rows).toBeGreaterThan(20);
+  expect(rows).toBeLessThan(100);
+  const height = await editor.locator('.jss_content').evaluate((content) => content.scrollHeight);
+  expect(height).toBeGreaterThanOrEqual(400 * 24);
   return editor;
 }
 

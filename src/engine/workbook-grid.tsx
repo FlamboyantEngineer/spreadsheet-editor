@@ -7,7 +7,8 @@ import type {
   FormulaFunctionDescriptor,
   RenderCellContent,
 } from '../editor/public-host.js';
-import { syncWorksheetPresentation } from './worksheet-presentation.js';
+import { presentAttachedRows, syncWorksheetPresentation } from './worksheet-presentation.js';
+import { refreshGridRowWindow, revealGridRows, windowGridRows } from './row-window.js';
 import {
   captureWorksheetCellChanges,
   sameCapture,
@@ -16,13 +17,14 @@ import {
   syncWorksheetData,
 } from './worksheet-data.js';
 import { createSelectionPublication } from './selection-publication.js';
-import { observeGridBorderCopies } from './shared-grid-borders.js';
+import { observeGridBorderCopies, syncSharedGridBorders } from './shared-grid-borders.js';
 import {
   gridViewport,
   gridBodyBounds,
   clipGridSelectionHandle,
   gridZoomScale,
   measureGridSelection,
+  placeGridCorner,
   restoreGridScroll,
   scrollGridCellIntoView,
   syncFrozenColumns,
@@ -119,6 +121,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
   const handle = useRef<JSpreadsheetHostHandle | null>(null);
   const focusOnMount = useRef(props.focusOnMount);
   const stopBorderCopies = useRef<(() => void) | null>(null);
+  const stopRowWindow = useRef<(() => void) | null>(null);
   const surface = useRef<HTMLDivElement | null>(null);
   const picking = useRef<CellSelection | null>(null);
   const inCell = useRef(false);
@@ -130,6 +133,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     () => () => {
       if (commentClick.current) clearTimeout(commentClick.current);
       stopBorderCopies.current?.();
+      stopRowWindow.current?.();
       if (handle.current) clearCalculatedPresentation(handle.current);
     },
     [],
@@ -562,6 +566,8 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           allowInsertColumn: false,
           allowDeleteColumn: false,
           tableOverflow: true,
+          // The engine attaches only its first rows; the row window takes over once mounted.
+          lazyLoading: true,
           tableWidth: '100%',
           tableHeight: '400px',
         },
@@ -614,6 +620,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       appliedZoom.current = props.zoom ?? 100;
       paint(handle.current, props);
       if (scale !== previousScale) restoreGridScroll(viewport, scroll, previousScale, scale);
+      refreshGridRowWindow(sheet);
       if (!zoomOnly && !draggingSelection.current) selectGridRange(props.selection, false);
       scheduleReferences();
     } finally {
@@ -891,6 +898,18 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           const sheet = worksheet();
           stopBorderCopies.current?.();
           stopBorderCopies.current = sheet ? observeGridBorderCopies(sheet) : null;
+          stopRowWindow.current?.();
+          stopRowWindow.current = null;
+          if (sheet?.options) {
+            // The engine's own lazy mode stays off: its scrollbar spans only the rows it holds.
+            (sheet.options as { lazyLoading?: boolean }).lazyLoading = false;
+            stopRowWindow.current = windowGridRows(sheet, (rows) => {
+              presentAttachedRows(sheet, rows);
+              syncSharedGridBorders(sheet);
+              const corner = Number(sheet.highlighted?.at(-1)?.element?.dataset.y);
+              if (rows.includes(corner)) placeGridCorner(sheet);
+            });
+          }
           if (sheet)
             syncWorksheetPresentation(
               sheet,
@@ -900,6 +919,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
               latest.current.zoom,
               latest.current.logicalExtent,
             );
+          if (sheet) refreshGridRowWindow(sheet);
           appliedZoom.current = latest.current.zoom ?? 100;
           applied.current = latest.current.worksheet;
           appliedExtent.current = gridWorksheetExtent(
@@ -926,6 +946,8 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           scheduleReferences();
         }}
         onBeforeDestroy={() => {
+          stopRowWindow.current?.();
+          stopRowWindow.current = null;
           selectionPublication.dispose();
           releaseJSpreadsheetKeyboardOwner(worksheet());
           native.end();
@@ -935,6 +957,11 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           // CE selects merge anchors while constructing or changing merges. Those
           // presentation callbacks must not replace the host's current selection.
           if (applied.current && !suppress.current && !selecting.current) {
+            // Keyboard moves can leave the attached rows; the engine measures the new cell
+            // to scroll to it right after this callback.
+            const sheet = worksheet(),
+              cursor = Number(sheet?.selectedCell?.[3]);
+            if (sheet && Number.isInteger(cursor)) revealGridRows(sheet, cursor);
             visualSelection.current = range;
             scheduleReferences();
             selectionPublication.update(range);
