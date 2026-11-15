@@ -49,9 +49,6 @@ export type {
   SpreadsheetEditorProps,
   SpreadsheetChrome,
   SpreadsheetFeatures,
-  SpreadsheetHistory,
-  SpreadsheetHistoryEntry,
-  SpreadsheetHistoricalView,
   CalculationMode,
   SpreadsheetMode,
   SpreadsheetClipboard,
@@ -59,7 +56,6 @@ export type {
 } from './contracts.js';
 export * from './public-host.js';
 export { useWorkbookSession } from './use-workbook-session.js';
-import { READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 const WorkbookGrid = lazy(() => import('../engine/workbook-grid.js'));
 
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
@@ -88,7 +84,6 @@ export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
     <SpreadsheetEditorInstance
       key={`${props.workbookId ?? ''}\n${props.sessionKey ?? 'spreadsheet'}`}
       {...props}
-      capabilities={props.historical ? READ_ONLY_CAPABILITIES : props.capabilities}
     />
   );
 }
@@ -265,24 +260,33 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
       }}
     >
       <EditorToolbar editor={e} />
-      {props.historical && (
+      {e.viewedVersion && (
         <Banner
           className="se-editor__historical"
           tone="info"
           description={
             <span>
-              You are viewing a historical version from{' '}
+              You are viewing {e.viewedVersion.label ? <q>{e.viewedVersion.label}</q> : 'a version'}
+              , saved{' '}
               {new Intl.DateTimeFormat(undefined, {
                 dateStyle: 'medium',
                 timeStyle: 'long',
-              }).format(new Date(props.historical.timestamp))}
-              .
+              }).format(new Date(e.viewedVersion.savedAt))}
+              {e.viewedVersion.author && <> by {e.personName(e.viewedVersion.author)}</>}. It is
+              read-only.
             </span>
           }
           actions={
-            <Button size="sm" onPress={() => e.attempt(() => props.historical!.onReturnCurrent())}>
-              View Current Version
-            </Button>
+            <>
+              {e.canRestoreVersion && (
+                <Button size="sm" onPress={() => void e.restoreVersion(e.viewedVersion!)}>
+                  Restore this version
+                </Button>
+              )}
+              <Button size="sm" onPress={e.returnToCurrent}>
+                View current version
+              </Button>
+            </>
           }
         />
       )}

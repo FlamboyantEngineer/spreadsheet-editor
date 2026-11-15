@@ -275,25 +275,22 @@ test('SE-REVIEW-7: server calculations retain comments and accepted exact sugges
   await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveText('2e-25');
 });
 
-test('SE-CHROME-1: saved history retains host messages and opens captured versions', async ({
+test('SE-CHROME-1: the history pane saves a named version and opens it read-only', async ({
   page,
 }) => {
   await openLab(page);
   const editor = source(page);
-  // Save keeps a change: the session saves nothing for an unchanged workbook (SE-SESSION-2).
-  await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('5');
-  await editor.getByRole('button', { name: 'Save', exact: true }).click();
+  const formula = editor.getByRole('textbox', { name: 'Cell value or formula', exact: true });
+  await formula.fill('5');
   await editor.getByRole('button', { name: 'History', exact: true }).click();
-  const message = editor.getByText('Saved workbook version', { exact: true });
-  await expect(message).toBeVisible();
-  await message.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'View historical version', exact: true }).click();
-  await expect(editor.getByText(/You are viewing a historical version/)).toBeVisible();
-  await expect(
-    editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }),
-  ).not.toBeEditable();
-  await editor.getByRole('button', { name: 'View Current Version', exact: true }).click();
-  await expect(
-    editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }),
-  ).toBeEditable();
+  await editor.getByRole('textbox', { name: 'Version name', exact: true }).fill('Review copy');
+  await editor.getByRole('button', { name: 'Save version', exact: true }).click();
+  const named = editor.getByText('Review copy', { exact: true });
+  await expect(named).toBeVisible();
+  await named.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'View this version', exact: true }).click();
+  await expect(editor.locator('.se-editor__historical')).toContainText('Review copy');
+  await expect(formula).not.toBeEditable();
+  await editor.getByRole('button', { name: 'View current version', exact: true }).click();
+  await expect(formula).toBeEditable();
 });

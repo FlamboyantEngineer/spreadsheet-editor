@@ -77,7 +77,13 @@ import {
 } from '../model/review.js';
 import { createDocumentInsertion } from '../document/insertion.js';
 import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
-import { FULL_CAPABILITIES, resolveSpreadsheetMode } from '../host/capabilities.js';
+import {
+  FULL_CAPABILITIES,
+  READ_ONLY_CAPABILITIES,
+  resolveSpreadsheetMode,
+} from '../host/capabilities.js';
+import type { HostResult, WorkbookVersion } from '../host/adapters.js';
+import { useWorkbookVersions } from './use-workbook-versions.js';
 import { usePersonNames } from './use-person-names.js';
 import { useWorkbookPresence } from './use-workbook-presence.js';
 import { saveFailure, sessionSavePhase, useSessionState } from './use-session-state.js';
@@ -176,7 +182,12 @@ function immutableBaseline(workbook: Workbook): Workbook {
 export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const [local, setLocal] = useState(() => copyWorkbook(props.defaultValue ?? createWorkbook()));
   const session = useSessionState(props.session ?? undefined);
-  const workbook = props.value ?? session.workbook ?? local;
+  /** A saved version the reader opened, shown read-only in place of the workbook (SE-ADAPTERS-5.1). */
+  const [viewedVersion, setViewedVersion] = useState<{
+    version: WorkbookVersion;
+    content: Workbook;
+  } | null>(null);
+  const workbook = viewedVersion?.content ?? props.value ?? session.workbook ?? local;
   const [history, setHistory] = useState<{
     head: Workbook | null;
     past: HistoryEntry[];
@@ -186,8 +197,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     history.head === workbook ? history : { head: workbook, past: [], future: [] };
   const [localMode, setLocalMode] = useState<SpreadsheetMode>(props.defaultMode ?? 'author');
   const requestedMode = props.mode ?? localMode;
-  const capabilities = props.capabilities ?? FULL_CAPABILITIES;
-  const highestMode = resolveSpreadsheetMode(capabilities);
+  const hostCapabilities = props.capabilities ?? FULL_CAPABILITIES;
+  const capabilities = viewedVersion ? READ_ONLY_CAPABILITIES : hostCapabilities;
+  const highestMode = resolveSpreadsheetMode(capabilities, { historical: !!viewedVersion });
   /** Nothing is allowed: no mode can be chosen. */
   const locked = highestMode === 'read';
   const mode: SpreadsheetMode =
@@ -208,7 +220,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const person = props.identity?.currentPerson();
     return person ? { id: person.id, name: person.name } : { id: 'local-user', name: 'You' };
   }, [props.identity]);
-  const personName = usePersonNames(props.identity, workbook.comments, actor);
   const [sheetId, setSheetId] = useState(props.initialSheetId ?? workbook.worksheets[0].id);
   const sheet = workbook.worksheets.find((sheet) => sheet.id === sheetId) ?? workbook.worksheets[0];
   const [selection, setSelection] = useState<CellSelection>(INITIAL_SELECTION);
@@ -237,8 +248,18 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   const grid = useRef<GridController | null>(null);
   const copied = useRef<SpreadsheetCopy | null>(null);
-  const [panel, setPanel] = useState<string | null>(props.historical ? 'history' : null),
-    [panelOpen, setPanelOpen] = useState(!!props.historical);
+  const [panel, setPanel] = useState<string | null>(null),
+    [panelOpen, setPanelOpen] = useState(false);
+  const versionList = useWorkbookVersions(
+    hostCapabilities.history ? props.versions : undefined,
+    props.workbookId,
+    panelOpen && panel === 'history',
+  );
+  const versionAuthors = useMemo(
+    () => [viewedVersion?.version.author ?? null, ...versionList.versions.map((v) => v.author)],
+    [viewedVersion, versionList.versions],
+  );
+  const personName = usePersonNames(props.identity, workbook.comments, actor, versionAuthors);
   const [commentComposer, setCommentComposer] = useState(false);
   const [commentScope, setCommentScope] = useState<'range' | 'workbook'>('range');
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
@@ -445,6 +466,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       },
       operations: structuredClone(operations),
     };
+    if (viewedVersion) {
+      setNotice('A saved version is read-only.');
+      throw new Error('A saved version is read-only.');
+    }
     if (props.session && !props.session.workbook()) {
       setNotice('The workbook is still opening.');
       throw new Error('The workbook is still opening.');
@@ -824,7 +849,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function openPanel(id: string) {
     setPanel(id);
     setPanelOpen(true);
-    if (id === 'history') attempt(() => props.history?.onRefresh?.());
     grid.current?.releaseKeyboard();
   }
   function setHostPanel(id: string | null) {
@@ -1092,22 +1116,101 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       if (alive.current) setNotice(saveFailure(error, current));
     }
   }
-  async function openHistorical(entry: import('./contracts.js').SpreadsheetHistoryEntry) {
-    if (!props.history) return;
-    try {
-      commitDraft();
-      const current = live.current.props.session;
-      if (current?.status().dirty || current?.status().phase === 'saving') {
-        await lifecycle.current.flush();
-        if (current.status().dirty)
-          throw new Error('Changes are not saved. Save or discard them before opening history.');
-      }
-    } catch (error) {
-      if (alive.current)
-        setNotice(error instanceof Error ? error.message : 'Could not open history.');
-      return;
+  /**
+   * Commits the active cell edit and saves every change made so far, so a version action never
+   * leaves an edit behind. Throws when an edit stays unsaved.
+   */
+  async function settleChanges() {
+    commitDraft();
+    const current = live.current.props.session;
+    if (current?.status().dirty || current?.status().phase === 'saving') {
+      await lifecycle.current.flush();
+      if (current.status().dirty)
+        throw new Error('Changes are not saved. Save or discard them first.');
     }
-    if (alive.current) await props.history?.onOpen(entry);
+  }
+  /** Runs a version action, showing its failure as a notice. Resolves whether it succeeded. */
+  async function versionAction(action: () => Promise<void>, fallback: string) {
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      if (alive.current) setNotice(error instanceof Error ? error.message : fallback);
+      return false;
+    }
+  }
+  function versionStore() {
+    const { versions, workbookId } = live.current.props;
+    if (!versions || workbookId === undefined) throw new Error('This workbook has no versions.');
+    return { versions, workbookId };
+  }
+  function unwrap<T>(result: HostResult<T>, fallback: string): T {
+    if (!result.ok) throw new Error(result.error.message ?? fallback);
+    return result.value;
+  }
+  const versionRequest = useRef(0);
+  /** Saves pending changes, then shows `version` read-only in place of the workbook. */
+  function openVersion(version: WorkbookVersion) {
+    const request = ++versionRequest.current;
+    return versionAction(async () => {
+      if (!viewedVersion) await settleChanges();
+      const { versions, workbookId } = versionStore();
+      const content = unwrap(
+        await versions.load(workbookId, version.revision),
+        'Could not open the version.',
+      );
+      if (alive.current && request === versionRequest.current) {
+        setNotice(null);
+        setViewedVersion({ version, content });
+      }
+    }, 'Could not open the version.');
+  }
+  function returnToCurrent() {
+    versionRequest.current++;
+    setViewedVersion(null);
+  }
+  /** Saves pending changes, then saves the workbook as a new version named `label`. */
+  function saveVersion(label: string | null) {
+    return versionAction(async () => {
+      await settleChanges();
+      const { versions, workbookId } = versionStore();
+      if (!versions.create) throw new Error('This workbook cannot save versions.');
+      unwrap(
+        await versions.create(workbookId, { content: commitDraft(), label }),
+        'Could not save the version.',
+      );
+      versionList.refresh();
+    }, 'Could not save the version.');
+  }
+  function renameVersion(version: WorkbookVersion, label: string | null) {
+    return versionAction(async () => {
+      const { versions, workbookId } = versionStore();
+      if (!versions.rename) throw new Error('This workbook cannot rename versions.');
+      const renamed = unwrap(
+        await versions.rename(workbookId, version.revision, label),
+        'Could not rename the version.',
+      );
+      if (alive.current)
+        setViewedVersion((viewed) =>
+          viewed?.version.revision === renamed.revision ? { ...viewed, version: renamed } : viewed,
+        );
+      versionList.refresh();
+    }, 'Could not rename the version.');
+  }
+  /** Makes `version` the workbook's current content and returns to it. */
+  function restoreVersion(version: WorkbookVersion) {
+    return versionAction(async () => {
+      const { versions, workbookId } = versionStore();
+      if (!versions.restore) throw new Error('This workbook cannot restore versions.');
+      if (!viewedVersion) await settleChanges();
+      unwrap(
+        await versions.restore(workbookId, version.revision),
+        'Could not restore the version.',
+      );
+      await live.current.props.session?.takeStored();
+      if (alive.current) returnToCurrent();
+      versionList.refresh();
+    }, 'Could not restore the version.');
   }
   function validateSheetName(id: string, name: string): string | null {
     try {
@@ -1527,7 +1630,16 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     sessionStatus: session.status,
     sessionDraft: session.draft,
     resolveConflict,
-    openHistorical,
+    versionList,
+    viewedVersion: viewedVersion?.version ?? null,
+    canSaveVersion: !viewedVersion && hostCapabilities.saveVersion && !!props.versions?.create,
+    canRenameVersion: hostCapabilities.saveVersion && !!props.versions?.rename,
+    canRestoreVersion: hostCapabilities.edit && !!props.versions?.restore,
+    openVersion,
+    returnToCurrent,
+    saveVersion,
+    renameVersion,
+    restoreVersion,
     panel,
     panelOpen,
     setPanelOpen,
