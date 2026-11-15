@@ -80,6 +80,7 @@ import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './
 import { FULL_CAPABILITIES, resolveSpreadsheetMode } from '../host/capabilities.js';
 import { usePersonNames } from './use-person-names.js';
 import { useWorkbookPresence } from './use-workbook-presence.js';
+import { saveFailure, sessionSavePhase, useSessionState } from './use-session-state.js';
 
 export type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
@@ -174,7 +175,8 @@ function immutableBaseline(workbook: Workbook): Workbook {
 }
 export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const [local, setLocal] = useState(() => copyWorkbook(props.defaultValue ?? createWorkbook()));
-  const workbook = props.value ?? local;
+  const session = useSessionState(props.session ?? undefined);
+  const workbook = props.value ?? session.workbook ?? local;
   const [history, setHistory] = useState<{
     head: Workbook | null;
     past: HistoryEntry[];
@@ -277,19 +279,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const pendingStructure = useRef<(() => void) | null>(null);
   const [dialog, setDialog] = useState<EditorDialog>(null),
     [dialogValue, setDialogValue] = useState('');
-  const [savePhase, setSavePhase] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>(
-    'idle',
-  );
-  const localRevision = useRef(0),
-    persistedRevision = useRef(0);
   const listeners = useRef(new Set<() => void>());
   const [flushing, setFlushing] = useState(false);
-  const activeFlush = useRef<{
-    promise: Promise<void>;
-    controller: AbortController;
-    revision: number;
-  } | null>(null);
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savePhase = sessionSavePhase(session.status);
   const sheetViews = useRef(
     new Map<string, { selection: CellSelection; viewport: { left: number; top: number } }>(),
   );
@@ -309,7 +301,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     alive.current = true;
     return () => {
       alive.current = false;
-      activeFlush.current?.controller.abort();
       listeners.current.clear();
     };
   }, []);
@@ -322,22 +313,6 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   useEffect(() => {
     live.current.props.onPanelChange?.({ id: panel, expanded: panelOpen });
   }, [panel, panelOpen]);
-  const activeSave = useRef<{
-    promise: Promise<void>;
-    controller: AbortController;
-    kind: 'manual' | 'autosave';
-  } | null>(null);
-  const [saveKind, setSaveKind] = useState<'manual' | 'autosave'>('manual');
-  useEffect(() => {
-    if (!canEdit) {
-      activeSave.current?.controller.abort();
-      activeFlush.current?.controller.abort();
-      setSavePhase((phase) => (phase === 'saving' ? 'dirty' : phase));
-    }
-    return () => {
-      activeSave.current?.controller.abort();
-    };
-  }, [canEdit]);
   useEffect(() => {
     latestWorkbook.current = workbook;
   }, [workbook]);
@@ -470,6 +445,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       },
       operations: structuredClone(operations),
     };
+    if (props.session && !props.session.workbook()) {
+      setNotice('The workbook is still opening.');
+      throw new Error('The workbook is still opening.');
+    }
     try {
       props.onChange?.(next, context);
     } catch (error) {
@@ -477,9 +456,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       throw error;
     }
     latestWorkbook.current = next;
-    localRevision.current++;
-    if (!props.value) setLocal(next);
-    setSavePhase('dirty');
+    if (props.session) props.session.change(next, context);
+    else if (!props.value) setLocal(next);
   }
   /** `targets` names the cells a command wrote, so its patches need no whole-workbook diff. */
   function commit(
@@ -1069,159 +1047,59 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
             throw new Error('Excel export requires current ready results for every authored cell.');
     await props.onExportXlsx(copyWorkbook(workbook), structuredClone(calculation.result));
   }
-  async function save(kind: 'manual' | 'autosave' = 'manual') {
+  /** Saves through the workbook session now (SE-SESSION-4). */
+  async function save() {
     if (!alive.current) throw new Error('The editor session has ended.');
-    if (kind === 'manual') {
-      commitDraft();
-      if (autosaveTimer.current) {
-        clearTimeout(autosaveTimer.current);
-        autosaveTimer.current = null;
-      }
-    }
-    if (!live.current.props.onSave) return;
+    commitDraft();
+    const current = live.current.props.session;
+    if (!current) return;
     if (!live.current.canEdit) {
       warn('Saving is available only in Authoring mode.');
       return;
     }
-    if (activeSave.current) {
-      if (kind === 'manual' && activeSave.current.kind === 'autosave') {
-        await activeSave.current.promise;
-        if (live.current.canEdit) return save('manual');
-      }
-      return activeSave.current?.promise;
+    try {
+      await current.save();
+      if (alive.current) setNotice(null);
+    } catch (error) {
+      if (alive.current) setNotice(saveFailure(error, current));
+      throw error;
     }
-    const snapshot = latestWorkbook.current,
-      controller = new AbortController();
-    const capturedRevision = localRevision.current;
-    const context = { signal: controller.signal, kind, requestId: globalThis.crypto.randomUUID() };
-    setSaveKind(kind);
-    setSavePhase('saving');
-    const operation = Promise.resolve().then(async () => {
-      const started = Date.now();
-      let retry = 500;
-      try {
-        while (true) {
-          if (controller.signal.aborted || !alive.current || !live.current.canEdit)
-            throw new Error('The editor save was cancelled.');
-          try {
-            await live.current.props.onSave!(copyWorkbook(snapshot), context);
-            break;
-          } catch (error) {
-            const transient =
-              error && typeof error === 'object' && 'status' in error && error.status === 503;
-            if (kind !== 'autosave' || !transient || Date.now() - started >= 30000) throw error;
-            await new Promise<void>((resolve) => {
-              const timer = setTimeout(resolve, retry);
-              controller.signal.addEventListener(
-                'abort',
-                () => {
-                  clearTimeout(timer);
-                  resolve();
-                },
-                { once: true },
-              );
-            });
-            retry = Math.min(4000, retry * 2);
-          }
-        }
-        if (controller.signal.aborted || !alive.current)
-          throw new Error('The editor save was cancelled.');
-        if (!controller.signal.aborted) {
-          persistedRevision.current = Math.max(persistedRevision.current, capturedRevision);
-          setSavePhase(localRevision.current === capturedRevision ? 'saved' : 'dirty');
-          setNotice(null);
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setSavePhase('error');
-          setNotice(error instanceof Error ? error.message : 'Could not save workbook.');
-        }
-        throw error;
-      } finally {
-        activeSave.current = null;
-      }
-    });
-    activeSave.current = { promise: operation, controller, kind };
-    return operation;
   }
-  useEffect(() => {
-    if (savePhase !== 'dirty' || !canEdit || !props.onSave || props.autosaveMs === undefined)
-      return;
-    if (!Number.isFinite(props.autosaveMs) || props.autosaveMs < 1) return;
-    const timer = setTimeout(() => {
-      autosaveTimer.current = null;
-      void save('autosave').catch(() => {});
-    }, props.autosaveMs);
-    autosaveTimer.current = timer;
-    return () => {
-      clearTimeout(timer);
-      if (autosaveTimer.current === timer) autosaveTimer.current = null;
-    };
-  }, [workbook, savePhase, canEdit, props.autosaveMs]);
+  /** Commits the draft and waits until the session holds no unsaved change (SE-SESSION-4). */
   async function flush(): Promise<void> {
     if (!alive.current) throw new Error('The editor session has ended.');
     commitDraft();
-    if (activeFlush.current) {
-      const current = activeFlush.current;
-      return current.revision >= localRevision.current
-        ? current.promise
-        : current.promise.then(() => lifecycle.current.flush());
-    }
-    const controller = new AbortController();
-    const requestedRevision = localRevision.current;
+    const current = live.current.props.session;
+    if (!current) return;
     setFlushing(true);
-    const operation = Promise.resolve().then(async () => {
-      try {
-        if (autosaveTimer.current) {
-          clearTimeout(autosaveTimer.current);
-          autosaveTimer.current = null;
-          await save('autosave');
-        }
-        if (activeSave.current) await activeSave.current.promise;
-        if (!alive.current || controller.signal.aborted)
-          throw new Error('The editor flush was cancelled.');
-        const snapshot = copyWorkbook(latestWorkbook.current),
-          revision = localRevision.current;
-        if (activeFlush.current) activeFlush.current.revision = revision;
-        const callback = live.current.props.onFlush;
-        if (callback)
-          await callback(snapshot, {
-            signal: controller.signal,
-            requestId: (live.current.props.idFactory ?? createWorkbookEntityId)('transaction'),
-          });
-        if (!alive.current || controller.signal.aborted)
-          throw new Error('The editor flush was cancelled.');
-        if (callback) {
-          persistedRevision.current = Math.max(persistedRevision.current, revision);
-          setSavePhase(localRevision.current === revision ? 'saved' : 'dirty');
-        }
-        setNotice(null);
-      } catch (error) {
-        if (alive.current) {
-          setSavePhase('error');
-          setNotice(error instanceof Error ? error.message : 'Could not flush workbook.');
-        }
-        throw error;
-      } finally {
-        activeFlush.current = null;
-        if (alive.current) setFlushing(false);
-      }
-    });
-    activeFlush.current = { promise: operation, controller, revision: requestedRevision };
-    return operation;
+    try {
+      await current.flush();
+      if (alive.current) setNotice(null);
+    } catch (error) {
+      if (alive.current) setNotice(saveFailure(error, current));
+      throw error;
+    } finally {
+      if (alive.current) setFlushing(false);
+    }
+  }
+  async function resolveConflict(choice: 'mine' | 'stored') {
+    const current = live.current.props.session;
+    if (!current) return;
+    try {
+      await (choice === 'mine' ? current.keepMine() : current.takeStored());
+      if (alive.current) setNotice(null);
+    } catch (error) {
+      if (alive.current) setNotice(saveFailure(error, current));
+    }
   }
   async function openHistorical(entry: import('./contracts.js').SpreadsheetHistoryEntry) {
     if (!props.history) return;
     try {
       commitDraft();
-      if (
-        localRevision.current > persistedRevision.current ||
-        activeSave.current ||
-        activeFlush.current
-      ) {
-        if (live.current.props.onSave) await lifecycle.current.save();
+      const current = live.current.props.session;
+      if (current?.status().dirty || current?.status().phase === 'saving') {
         await lifecycle.current.flush();
-        if (localRevision.current > persistedRevision.current)
+        if (current.status().dirty)
           throw new Error('Changes are not saved. Save or discard them before opening history.');
       }
     } catch (error) {
@@ -1450,7 +1328,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     };
   }, [selection, output, props.display]);
   const lifecycleState: SpreadsheetEditorState = {
-    dirty: localRevision.current > persistedRevision.current || draftDirty || !!nativeDraft,
+    dirty: !!session.status?.dirty || draftDirty || !!nativeDraft,
     draftDirty: draftDirty || !!nativeDraft,
     saving: savePhase === 'saving',
     flushing,
@@ -1523,10 +1401,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
               ));
         return structuredClone({
           ...current,
-          dirty: localRevision.current > persistedRevision.current || draftDirty,
+          dirty: !!live.current.props.session?.status().dirty || draftDirty,
           draftDirty,
-          saving: !!activeSave.current,
-          flushing: !!activeFlush.current,
+          saving: live.current.props.session?.status().phase === 'saving',
+          flushing: current.flushing,
           error: errorNotice.current,
         });
       },
@@ -1645,7 +1523,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     refresh,
     exportExcel,
     savePhase,
-    saveKind,
+    saveAutomatic: !!session.status?.automatic,
+    sessionStatus: session.status,
+    sessionDraft: session.draft,
+    resolveConflict,
     openHistorical,
     panel,
     panelOpen,

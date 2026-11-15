@@ -167,6 +167,8 @@ test('SE-VR-1: saved history opens read-only through context action and returns 
 }) => {
   await open(page);
   const editor = source(page);
+  // Save keeps a change: the session saves nothing for an unchanged workbook (SE-SESSION-2).
+  await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('5');
   await editor.getByRole('button', { name: 'Save', exact: true }).click();
   await editor.getByRole('button', { name: 'History', exact: true }).click();
   const snapshot = editor.getByRole('button').filter({ hasText: 'State: Draft' });

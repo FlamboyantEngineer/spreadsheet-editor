@@ -12,12 +12,31 @@ import { useSpreadsheetEditor } from './use-editor.js';
 import { editorMenus } from './editor-menus.js';
 import { createMemoryHost } from '../host/memory-host.js';
 import { createMemoryPresenceRoom } from '../host/memory-presence.js';
+import { createWorkbookSession } from '../host/workbook-session.js';
+import type { WorkbookStoreAdapter } from '../host/adapters.js';
 import type { SpreadsheetPeer } from '../host/presence-adapters.js';
 import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 
 const reviewerIdentity = createMemoryHost({
   reader: { id: 'reviewer', name: 'Reviewer' },
 }).identity;
+
+/** A loaded session over a memory store whose `save` is a spy. */
+async function openSession(data: string[][]) {
+  const inner = createMemoryHost({ workbooks: { book: createWorkbook(data) } }).workbooks;
+  const store = {
+    inner,
+    load: inner.load,
+    save: vi.fn<WorkbookStoreAdapter['save']>((id, save) => inner.save(id, save)),
+  };
+  const session = createWorkbookSession({
+    workbooks: store,
+    workbookId: 'book',
+    autosaveDelay: Infinity,
+  });
+  await session.ready;
+  return { session, store };
+}
 
 describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
   it('restores an uncommitted host draft and controls host panels through the stable handle', () => {
@@ -240,19 +259,12 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     );
   });
   it('rejects the host transaction before accepting data/history and retains its draft for save/flush', async () => {
-    const editorRef = createRef<SpreadsheetEditorHandle>(),
-      onSave = vi.fn();
+    const editorRef = createRef<SpreadsheetEditorHandle>();
+    const { session, store } = await openSession([['before']]);
     const onChange = vi.fn(() => {
       throw new Error('Stale row identity');
     });
-    const { result } = renderHook(() =>
-      useSpreadsheetEditor({
-        defaultValue: createWorkbook([['before']]),
-        editorRef,
-        onChange,
-        onSave,
-      }),
-    );
+    const { result } = renderHook(() => useSpreadsheetEditor({ session, editorRef, onChange }));
     act(() => result.current.setDraftValue('after'));
     act(() => expect(() => editorRef.current!.commitDraft()).toThrow('Stale row identity'));
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('before');
@@ -264,59 +276,51 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     await act(async () => {
       await expect(editorRef.current!.flush()).rejects.toThrow('Stale row identity');
     });
-    expect(onSave).not.toHaveBeenCalled();
+    expect(store.save).not.toHaveBeenCalled();
+    expect(session.status().dirty).toBe(false);
     expect(result.current.notice).toBe('Stale row identity');
   });
-  it('commits a draft once before the durability barrier without a manual snapshot', async () => {
+  it('SE-SESSION-4: commits a draft once, then saves it through the session', async () => {
     const editorRef = createRef<SpreadsheetEditorHandle>(),
-      order: string[] = [],
-      onSave = vi.fn();
+      order: string[] = [];
+    const { session, store } = await openSession([['0']]);
+    store.save.mockImplementation(async (id, save) => {
+      order.push('stored');
+      expect(save.content.worksheets[0].data[0][0]).toBe('1E-25');
+      return store.inner.save(id, save);
+    });
     const onChange = vi.fn((_next, context) => {
       order.push('transaction');
       expect(context.operations[0].kind).toBe('cells');
     });
-    const onFlush = vi.fn(async (snapshot) => {
-      order.push('stored');
-      expect(snapshot.worksheets[0].data[0][0]).toBe('1E-25');
-    });
-    const { result } = renderHook(() =>
-      useSpreadsheetEditor({
-        defaultValue: createWorkbook([['0']]),
-        editorRef,
-        onChange,
-        onSave,
-        onFlush,
-      }),
-    );
+    const { result } = renderHook(() => useSpreadsheetEditor({ session, editorRef, onChange }));
     const handle = editorRef.current!;
     act(() => result.current.setDraftValue('1E-25'));
     await act(() => handle.flush());
     expect(order).toEqual(['transaction', 'stored']);
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onSave).not.toHaveBeenCalled();
     expect(editorRef.current).toBe(handle);
     expect(handle.getState().dirty).toBe(false);
+    expect(session.status().revision).toBe('r2');
     const snapshot = handle.getSnapshot();
     snapshot.worksheets[0].data[0][0] = 'tampered';
     expect(handle.getSnapshot().worksheets[0].data[0][0]).toBe('1E-25');
   });
-  it('keeps later local edits dirty while an earlier flush receipt is pending', async () => {
+  it('SE-SESSION-2: keeps later local edits dirty while an earlier save is pending', async () => {
     let finish!: () => void;
     const editorRef = createRef<SpreadsheetEditorHandle>();
-    const { result } = renderHook(() =>
-      useSpreadsheetEditor({
-        defaultValue: createWorkbook([['a']]),
-        editorRef,
-        onFlush: () =>
-          new Promise<void>((resolve) => {
-            finish = resolve;
-          }),
-      }),
+    const { session, store } = await openSession([['a']]);
+    store.save.mockImplementation(
+      (id, save) =>
+        new Promise((resolve) => {
+          finish = () => resolve(store.inner.save(id, save));
+        }),
     );
+    const { result } = renderHook(() => useSpreadsheetEditor({ session, editorRef }));
     act(() => result.current.proposeCells([['b']], 0, 0));
     let flush!: Promise<void>;
     act(() => {
-      flush = editorRef.current!.flush();
+      flush = session.save();
     });
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     act(() => result.current.proposeCells([['c']], 0, 0));
@@ -325,24 +329,23 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
       await flush;
     });
     expect(editorRef.current!.getState().dirty).toBe(true);
+    expect(store.save.mock.calls[0][1].content.worksheets[0].data[0][0]).toBe('b');
   });
-  it('rejects a failed durability barrier and invalidates a disposed handle', async () => {
+  it('rejects a failed save and invalidates a disposed handle', async () => {
     const editorRef = createRef<SpreadsheetEditorHandle>();
-    const { result, unmount } = renderHook(() =>
-      useSpreadsheetEditor({
-        defaultValue: createWorkbook([['a']]),
-        editorRef,
-        onFlush: async () => {
-          throw new Error('Receipt refused');
-        },
-      }),
-    );
+    const { session, store } = await openSession([['a']]);
+    store.save.mockResolvedValue({
+      ok: false,
+      error: { kind: 'unavailable', message: 'Receipt refused' },
+    });
+    const { result, unmount } = renderHook(() => useSpreadsheetEditor({ session, editorRef }));
     const handle = editorRef.current!;
     act(() => result.current.setDraftValue('b'));
     await act(async () => {
       await expect(handle.flush()).rejects.toThrow('Receipt refused');
     });
     expect(handle.getState()).toMatchObject({ dirty: true, error: 'Receipt refused' });
+    expect(result.current.savePhase).toBe('error');
     unmount();
     expect(() => handle.getSnapshot()).toThrow('session has ended');
     await expect(handle.flush()).rejects.toThrow('session has ended');

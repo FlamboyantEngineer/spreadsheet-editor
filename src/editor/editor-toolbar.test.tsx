@@ -13,6 +13,8 @@ import { editorCommandMetadata } from './editor-commands.js';
 import { editorMenus } from './editor-menus.js';
 import { EditorToolbar } from './editor-toolbar.js';
 import { FULL_CAPABILITIES } from '../host/capabilities.js';
+import { createMemoryHost } from '../host/memory-host.js';
+import { createWorkbookSession } from '../host/workbook-session.js';
 
 function fixture(
   props: Partial<SpreadsheetEditorProps> = {},
@@ -115,10 +117,15 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+function openSession() {
+  const host = createMemoryHost({ workbooks: { book: createWorkbook() } });
+  return createWorkbookSession({ workbooks: host.workbooks, workbookId: 'book' });
+}
+
 describe('SE-CHROME-1 / SE-CONTEXT-1: shared command presentation', () => {
   it('gives every app-owned context/menu action and submenu a public icon, with only supported shortcuts', () => {
     const { editor } = fixture({
-      onSave: vi.fn(),
+      session: openSession(),
       onRefresh: vi.fn(),
       onImportXlsx: vi.fn(),
       onExportXlsx: vi.fn(),
@@ -230,7 +237,7 @@ describe('SE-CHROME-4: embedded icon toolbar', () => {
 
   it('renders named glyph-only controls using the public toolbar layout, including unit and Save actions', () => {
     const { editor } = fixture(
-      { chrome: 'embedded', onSave: vi.fn() },
+      { chrome: 'embedded', session: openSession() },
       { cellFormat: { kind: 'unit', unit: 'mm' } },
     );
     const { container } = render(<EditorToolbar editor={editor} />);
@@ -266,7 +273,10 @@ describe('SE-CHROME-4: embedded icon toolbar', () => {
 
   it('keeps save retry available through the icon action after a failed embedded save', async () => {
     const user = userEvent.setup();
-    const { editor } = fixture({ chrome: 'embedded', onSave: vi.fn() }, { savePhase: 'error' });
+    const { editor } = fixture(
+      { chrome: 'embedded', session: openSession() },
+      { savePhase: 'error' },
+    );
     const { container } = render(<EditorToolbar editor={editor} />);
     for (const button of container.querySelectorAll('button')) expect(buttonText(button)).toBe('');
     await user.click(screen.getByRole('button', { name: 'Save' }));

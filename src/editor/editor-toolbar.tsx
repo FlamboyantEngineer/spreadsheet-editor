@@ -127,15 +127,15 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             {e.props.title ?? e.workbook.name ?? 'Untitled spreadsheet'}
           </h2>
         )}
-        {e.props.onSave && (
+        {e.props.session && (
           <SaveStatus
             phase={e.savePhase}
             onRetry={embedded ? undefined : () => void e.save()}
             hideSavedAfter={3000}
             labels={{
               dirty: 'Modified.',
-              saving: e.saveKind === 'autosave' ? 'Autosaving…' : 'Saving snapshot…',
-              saved: e.saveKind === 'autosave' ? 'Autosaved.' : 'Snapshot saved.',
+              saving: e.saveAutomatic ? 'Autosaving…' : 'Saving…',
+              saved: e.saveAutomatic ? 'Autosaved.' : 'Saved.',
             }}
           />
         )}
@@ -206,7 +206,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
               onChange={(value) => e.setMode(value as typeof e.mode)}
             />
           ))}
-        {e.props.onSave && (
+        {e.props.session && (
           <Button
             size="sm"
             icon={editorGlyphs.save}

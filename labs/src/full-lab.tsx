@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
-import { SpreadsheetEditor } from '../../src/index.js';
+import { SpreadsheetEditor, useWorkbookSession } from '../../src/index.js';
 import {
   createMemoryHost,
   createMemoryPresenceRoom,
@@ -48,7 +48,6 @@ const LAB_WORKBOOK = 'lab-workbook';
 export function FullLab() {
   const excel = useExcelLab();
   const [workbook, setWorkbook] = useState(sample);
-  const [saved, setSaved] = useState<Workbook | null>(null);
   const [snapshots, setSnapshots] = useState<(SpreadsheetHistoryEntry & { workbook: Workbook })[]>(
     [],
   );
@@ -63,7 +62,12 @@ export function FullLab() {
   const hosts = useMemo(() => {
     const room = createMemoryPresenceRoom();
     return {
-      alex: createMemoryHost({ reader: alex, people: [morgan], presence: room }),
+      alex: createMemoryHost({
+        reader: alex,
+        people: [morgan],
+        presence: room,
+        workbooks: { [LAB_WORKBOOK]: sample },
+      }),
       morgan: createMemoryHost({ reader: morgan, people: [alex], presence: room }),
     };
   }, []);
@@ -73,6 +77,46 @@ export function FullLab() {
     hosts.morgan.presence?.publish(LAB_WORKBOOK, { at: place, editLock: place, status: 'active' });
     return () => hosts.morgan.presence?.publish(LAB_WORKBOOK, null);
   }, [presence, hosts]);
+  // Both readers save to the first host's store, as two people would to one server.
+  const store = hosts.alex;
+  const session = useWorkbookSession({
+    workbooks: store.workbooks,
+    drafts: store.drafts,
+    workbookId: LAB_WORKBOOK,
+    autosaveDelay: autosave ? 1000 : Infinity,
+  });
+  useEffect(
+    () =>
+      store.workbooks.subscribe?.(LAB_WORKBOOK, (state) => {
+        void store.workbooks.load(LAB_WORKBOOK).then((result) => {
+          if (!result.ok) return;
+          setSnapshots((entries) => [
+            ...entries,
+            {
+              id: state.revision,
+              timestamp: new Date().toISOString(),
+              author: actorId === 'alex' ? alex : morgan,
+              message: 'Saved workbook version',
+              state: 'Draft',
+              revision: String(state.sequence),
+              workbook: result.value.content,
+            },
+          ]);
+        });
+      }),
+    [store, actorId],
+  );
+  /** Replaces the editor's workbook with `next` as an unsaved change, as an import would. */
+  function replaceWorkbook(next: Workbook) {
+    if (!session?.workbook()) return;
+    session.change(structuredClone(next), {
+      transactionId: crypto.randomUUID(),
+      source: 'host-command',
+      baseline: session.workbook()!,
+      operations: [],
+    });
+    setWorkbook(next);
+  }
   const [mode, setMode] = useState<'client' | 'server'>('client');
   const [digits, setDigits] = useState('32');
   const [insertion, setInsertion] = useState<DocumentInsertion | null>(null);
@@ -114,7 +158,8 @@ export function FullLab() {
           onImportXlsx={excel.requestImport}
           onExportXlsx={excel.exportWorkbook}
           sessionKey={historical?.id ?? 'current'}
-          value={historical?.workbook ?? workbook}
+          value={historical?.workbook}
+          session={session}
           historical={
             historical
               ? { timestamp: historical.timestamp, onReturnCurrent: () => setHistorical(null) }
@@ -125,7 +170,6 @@ export function FullLab() {
             onOpen: (entry) =>
               setHistorical(snapshots.find((snapshot) => snapshot.id === entry.id) ?? null),
           }}
-          autosaveMs={autosave ? 1000 : undefined}
           capabilities={
             readOnly
               ? READ_ONLY_CAPABILITIES
@@ -142,23 +186,6 @@ export function FullLab() {
           display={display}
           onInsert={setInsertion}
           identity={hosts[actorId === 'alex' ? 'alex' : 'morgan'].identity}
-          onSave={async (snapshot, context) => {
-            if (context.signal.aborted) return;
-            setSaved(snapshot);
-            if (context.kind === 'manual')
-              setSnapshots((entries) => [
-                ...entries,
-                {
-                  id: crypto.randomUUID(),
-                  timestamp: new Date().toISOString(),
-                  author: { id: actorId, name: actorId === 'alex' ? 'Alex' : 'Morgan' },
-                  message: 'Saved workbook version',
-                  state: 'Draft',
-                  revision: String(entries.length + 1),
-                  workbook: snapshot,
-                },
-              ]);
-          }}
         />
       </section>
       <section className="lab-section" aria-labelledby="settings-title">
@@ -196,12 +223,17 @@ export function FullLab() {
           <Button isSelected={readOnly} onPress={() => setReadOnly(!readOnly)}>
             Read-only host
           </Button>
-          <Button isDisabled={!saved} onPress={() => saved && setWorkbook(structuredClone(saved))}>
+          <Button
+            isDisabled={!session}
+            onPress={() =>
+              void session?.takeStored().then(() => setWorkbook(session.workbook() ?? sample))
+            }
+          >
             Reload saved workbook
           </Button>
           <Button
             onPress={() => {
-              setWorkbook(structuredClone(sample));
+              replaceWorkbook(sample);
               setInsertion(null);
             }}
           >

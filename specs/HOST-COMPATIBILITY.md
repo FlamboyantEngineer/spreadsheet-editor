@@ -29,7 +29,7 @@ Hosts may instead publish authoritative or immutable captured results through ex
 
 ## Host responsibilities
 
-A host may connect semantic operations to its existing shared document, supply its own local undo manager, enforce permissions and generation state, publish safe cell presentation, and await an established durability receipt from `onFlush`. It owns provider lifetime, navigation barriers, immutable history and rich-content sanitation. A failed flush retains the current session and edits until retry or explicit host abandonment.
+A host may connect semantic operations to its existing shared document, supply its own local undo manager, enforce permissions and generation state, publish safe cell presentation, and report durability through a workbook store whose `save` is its durability barrier, or through the session's `acknowledge`. It owns provider lifetime, navigation barriers, immutable history and rich-content sanitation. A failed flush retains the current session and edits until retry or explicit host abandonment.
 
 Formula descriptors advertise host capabilities without authorizing execution. Excel capabilities explicitly identify permitted host functions and captured-text policy; exports use stored operands without live resolution. Unknown functions return `#NAME?` in native calculation.
 

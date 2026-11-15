@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
-import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
-import { READ_ONLY_CAPABILITIES } from '../../src/host/index.js';
+import { SpreadsheetEditor, createWorkbook, useWorkbookSession } from '../../src/index.js';
+import {
+  READ_ONLY_CAPABILITIES,
+  createMemoryHost,
+  type WorkbookStoreAdapter,
+} from '../../src/host/index.js';
 import type {
   SpreadsheetEditorHandle,
   SpreadsheetEditorState,
@@ -85,10 +89,36 @@ export function HostLab() {
   const [rejectChanges, setRejectChanges] = useState(false);
   const [transactions, setTransactions] = useState(0);
   const [saves, setSaves] = useState(0);
-  const [receipts, setReceipts] = useState(0);
   const [saved, setSaved] = useState<Workbook | null>(null);
   const [error, setError] = useState<string | null>(null);
   const revision = useRef(0);
+  const rejecting = useRef(rejectDurability);
+  rejecting.current = rejectDurability;
+  // The application's own store: it counts saves and can refuse them, as an unreachable server would.
+  const store = useMemo<WorkbookStoreAdapter>(() => {
+    const memory = createMemoryHost({ workbooks: { host: exampleWorkbook() } }).workbooks;
+    return {
+      load: (id, signal) => memory.load(id, signal),
+      async save(id, save) {
+        if (rejecting.current)
+          return {
+            ok: false,
+            error: { kind: 'unavailable', message: 'Host durability receipt was rejected.' },
+          };
+        const result = await memory.save(id, save);
+        if (result.ok) {
+          setSaved(structuredClone(save.content));
+          setSaves((count) => count + 1);
+        }
+        return result;
+      },
+    };
+  }, []);
+  const session = useWorkbookSession({
+    workbooks: store,
+    workbookId: 'host',
+    autosaveDelay: Infinity,
+  });
   const [captured, setCaptured] = useState('Captured source');
   const client = useMemo(() => ({ mode: 'client' as const, host: host('Captured source') }), []);
   const calculation = useMemo(
@@ -166,15 +196,7 @@ export function HostLab() {
           }
           capabilities={readOnly ? READ_ONLY_CAPABILITIES : undefined}
           features={{ comments: false, suggestions: false, panels: false, modeControl: false }}
-          onSave={async (next) => {
-            setSaved(structuredClone(next));
-            setSaves((count) => count + 1);
-          }}
-          onFlush={async (_next, context) => {
-            if (context.signal.aborted) throw new Error('The host session ended.');
-            if (rejectDurability) throw new Error('Host durability receipt was rejected.');
-            setReceipts((count) => count + 1);
-          }}
+          session={session}
         />
       </section>
       <section className="lab-controls" aria-label="Example host controls">
@@ -226,7 +248,7 @@ export function HostLab() {
         <Button onPress={() => void attempt(() => handle?.save())}>Save host editor</Button>
         <Button onPress={() => void attempt(() => handle?.flush())}>Flush host editor</Button>
         <Button onPress={() => setRejectDurability((value) => !value)}>
-          {rejectDurability ? 'Allow durability receipts' : 'Reject durability receipts'}
+          {rejectDurability ? 'Allow saves' : 'Reject saves'}
         </Button>
         <Button onPress={() => setRejectChanges((value) => !value)}>
           {rejectChanges ? 'Allow workbook changes' : 'Reject workbook changes'}
@@ -254,13 +276,9 @@ export function HostLab() {
           <dd>
             <output aria-label="Host transaction count">{transactions}</output>
           </dd>
-          <dt>Manual saves</dt>
+          <dt>Saves</dt>
           <dd>
             <output aria-label="Host save count">{saves}</output>
-          </dd>
-          <dt>Durability receipts</dt>
-          <dd>
-            <output aria-label="Host receipt count">{receipts}</output>
           </dd>
         </dl>
         {error && <p role="alert">{error}</p>}
