@@ -84,6 +84,10 @@ The headless `/model` entry point also exports `applyWorkbookTransaction` and `c
 
 The headless `/model` entry point exposes the same immutable comment, suggestion, formatting, clipboard-text and structure helpers. See [REVIEW.md](specs/REVIEW.md) and [EDITOR-CHROME.md](specs/EDITOR-CHROME.md).
 
+## Host adapters
+
+The headless `/host` entry point holds the host contract the editor is moving to: one `SpreadsheetHost` object with `identity`, `permissions`, a workbook store with revisions, versions, presence, drafts and the page lifecycle. Its names and shapes follow the document editor's host adapters, so a host that embeds both editors passes the same identity, permissions and versions adapters to each. Requests resolve to `{ ok, value }` or `{ ok: false, error: { kind } }` instead of throwing. `createMemoryHost()` is a complete in-memory host for labs and tests. See [HOST-ADAPTERS.md](specs/HOST-ADAPTERS.md).
+
 The host loads the vendor grid's structural CSS:
 
 ```ts
