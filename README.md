@@ -80,6 +80,8 @@ Comments and suggestions are optional, additive fields of the version-1 workbook
 - In Reviewing mode, direct grid edits, bulk paste, formula-bar edits and formatting create proposals with linked discussions. Each reviewer sees their own pending values and calculated preview; Authoring and exported document tables use canonical values. Repeat edits on the same target coalesce. Save, structure, resize, merge and decision commands require Authoring; permissions may further restrict them. Rejected and accepted proposals retain their author and decision metadata.
 - Acceptance checks the recorded baseline before applying a proposal. Conflicting values or formatting are reported without overwriting current data. Row/column commands move references, formatting and comment anchors together; deleted anchors and affected proposals are marked as unavailable/outdated.
 
+The headless `/model` entry point also exports `applyWorkbookTransaction` and `createWorkbookOperationBinding` for atomic, granular application against the latest accepted host snapshot. Entity and reaction changes preserve independent concurrent edits; ambiguous structural targets and conflicting scalar writes reject. The host owns serialized acceptance, permissions, transport and history.
+
 The headless `/model` entry point exposes the same immutable comment, suggestion, formatting, clipboard-text and structure helpers. See [REVIEW.md](specs/REVIEW.md) and [EDITOR-CHROME.md](specs/EDITOR-CHROME.md).
 
 The host loads the vendor grid's structural CSS:
@@ -91,7 +93,7 @@ import 'jspreadsheet-ce/dist/jspreadsheet.css';
 
 Hosts can constrain stored format capabilities with `formatting={{ kinds, decimalPlaces }}` and keep creation/import in their application by setting `features={{ newWorkbook: false, import: false }}`.
 
-The editor loads no CSS or application URLs itself. Style its documented [`se-*` hooks](specs/HOOK-CONTRACT.md), and the base components' public hooks, in your own stylesheet. The lab's `labs/src/reference.css` is an example, not a package import. The grid loads lazily; headless entry points and the root import are safe in Node without a DOM.
+The editor loads no CSS or application URLs itself. Style its documented [`se-*` hooks](specs/HOOK-CONTRACT.md), and the base components' public hooks, in your own stylesheet. An opt-in `@flamboyantengineer/spreadsheet-editor/reference.css` export provides the lab reference presentation (including the UI library reference stylesheet). Import it explicitly in your host; editor JavaScript still imports no CSS. The grid loads lazily; headless entry points and the root import are safe in Node without a DOM.
 
 ## Choose the calculation location
 
@@ -185,6 +187,8 @@ Import discards Excel formula caches and preserves authored decimal XML, formula
 | `spreadsheet` | A deep copy of the full source workbook, selected sheet and range  | Store the payload in an embedded node and mount `SpreadsheetEditor` in its React node view; persist changes through `onChange`. |
 
 Live insertion retains the complete workbook so formulas can read cells and sheets outside the visible selection. It is a snapshot independent of the source, not a link to an external workbook. Normal tables contain the current calculated values with no live formulas. A normal-table insertion is disabled while results are pending or unavailable.
+
+For source-linked embeds, `/document` exports `createLinkedSpreadsheetInsertion` and `updateLinkedSpreadsheetInsertion`: opaque source identity/revision, captured workbook, matching authoritative publication and a deterministic ordinary-table fallback. Refresh is explicit and checks the previously captured revision. Historical/printed views use the captured table without calculation.
 
 The server-safe `createDocumentInsertion(workbook, result, options)` helper exposes the same contract without mounting the editor. The existing `document-editor` table schema accepts the ordinary table JSON; registration and persistence of an embedded live node belong to its later consumer migration. See [DOCUMENT-INSERTION.md](specs/DOCUMENT-INSERTION.md).
 

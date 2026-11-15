@@ -1,6 +1,7 @@
 import type { Ref } from 'react';
 import {
   SpreadsheetEditor,
+  createWorkbookOperationBinding,
   type CellPresentationSnapshot,
   type ExternalCalculationSnapshot,
   type FormulaFunctionDescriptor,
@@ -11,7 +12,16 @@ import {
   type WorkbookChangeContext,
 } from '@flamboyantengineer/spreadsheet-editor';
 
-/** Implemented by the host's existing workbook binding, outside the editor. */
+/** Project the host's current accepted state and commit synchronously in its serialized lane. */
+export function createHostWorkbookBinding(host: {
+  getSnapshot(): Workbook;
+  /** Authorize and commit atomically; throw before mutation on rejection. */
+  commit(next: Workbook, transaction: WorkbookChangeContext): void;
+}): HostWorkbookBinding {
+  return createWorkbookOperationBinding(host);
+}
+
+/** Host persistence and transport remain independent of operation application. */
 export interface HostWorkbookBinding {
   /** Preflight the complete transaction before mutation; throw only before applying it. */
   applyTransaction(next: Workbook, transaction: WorkbookChangeContext): void;
