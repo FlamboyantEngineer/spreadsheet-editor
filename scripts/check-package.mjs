@@ -20,11 +20,20 @@ const {
   calculationCellKey,
 } = await import('@flamboyantengineer/spreadsheet-editor/calculation');
 const { createDocumentInsertion } = await import('@flamboyantengineer/spreadsheet-editor/document');
-const { createMemoryHost, resolveSpreadsheetMode } =
+const { createMemoryHost, resolveSpreadsheetMode, createTransactionReceiptTracker } =
   await import('@flamboyantengineer/spreadsheet-editor/host');
 assert.equal(
   resolveSpreadsheetMode(await createMemoryHost().permissions.capabilities('a')),
   'author',
+);
+const receipts = createTransactionReceiptTracker();
+const acceptedTransaction = { transactionId: 'existing-editor-transaction' };
+receipts.record(acceptedTransaction.transactionId, 1);
+assert.equal(receipts.acknowledge(acceptedTransaction.transactionId), 1);
+assert.equal(
+  'createTransactionReceiptTracker' in
+    (await import('@flamboyantengineer/spreadsheet-editor/model')),
+  false,
 );
 const { SpreadsheetEditor } = await import('@flamboyantengineer/spreadsheet-editor');
 assert.equal(typeof SpreadsheetEditor, 'function');
@@ -171,10 +180,17 @@ try {
     import assert from 'node:assert/strict';
     import { readFile } from 'node:fs/promises';
     import { createWorkbook, createWorkbookOperationBinding } from '@flamboyantengineer/spreadsheet-editor/model';
+    import * as model from '@flamboyantengineer/spreadsheet-editor/model';
+    import { createTransactionReceiptTracker } from '@flamboyantengineer/spreadsheet-editor/host';
     import { createLinkedSpreadsheetInsertion } from '@flamboyantengineer/spreadsheet-editor/document';
     import { SpreadsheetEditor } from '@flamboyantengineer/spreadsheet-editor';
     assert.equal(createWorkbook().schemaVersion, 1);
     assert.equal(typeof createWorkbookOperationBinding, 'function');
+    assert.equal('createTransactionReceiptTracker' in model, false);
+    const receipts = createTransactionReceiptTracker();
+    const accepted = { transactionId: 'existing-editor-transaction' };
+    receipts.record(accepted.transactionId, 1);
+    assert.equal(receipts.acknowledge(accepted.transactionId), 1);
     assert.equal(typeof createLinkedSpreadsheetInsertion, 'function');
     assert.equal(typeof SpreadsheetEditor, 'function');
     const css = await readFile(new URL(import.meta.resolve('@flamboyantengineer/spreadsheet-editor/reference.css')), 'utf8');

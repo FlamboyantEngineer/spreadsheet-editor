@@ -1,6 +1,6 @@
 # Host adapters
 
-The editor reaches what lies outside it through adapters the host passes in: who the reader is, what they may do, where workbooks and their versions are stored, where the other people in a workbook are, and the page's lifecycle. The adapters follow the document editor's host adapters by name and shape, so a host that embeds both editors passes the same identity, permissions and versions adapters to each. The `./host` entry holds the types and an in-memory host; it needs no DOM.
+The editor reaches what lies outside it through adapters the host passes in: who the reader is, what they may do, where workbooks and their versions are stored, where the other people in a workbook are, and the page's lifecycle. The adapters follow the document editor's host adapters by name and shape, so a host that embeds both editors passes the same identity, permissions and versions adapters to each. The `./host` entry holds the types, an in-memory host and pure causal transaction receipt bookkeeping; it needs no DOM.
 
 The editor is switched to these adapters one concern at a time (identity, presence and permissions, saving, history). Until then [HOST-INTEGRATION.md](HOST-INTEGRATION.md) describes the props the editor takes.
 
@@ -26,6 +26,8 @@ A stored workbook shall come with its saved state: `revision`, the host's own id
 
 Implementation: `src/host/adapters.ts`, `src/host/memory-host.ts`
 Verification: `src/host/memory-host.test.ts`
+
+The pure `createTransactionReceiptTracker` in `./host` records the existing editor transaction IDs with local coverage revisions and releases acknowledged IDs. It creates no transaction identity, provider or saving state. [HOST-INTEGRATION.md](HOST-INTEGRATION.md) specifies causal coverage and the pending workbook-session wiring.
 
 ### SE-ADAPTERS-1.4 - Identity
 

@@ -220,10 +220,11 @@ export const legacyElement = <SpreadsheetEditor {...legacyProps} />;
 export {
   createWorkbookOperationBinding,
   initializeWorkbookIdentities,
-  createTransactionReceiptTracker,
 } from '@flamboyantengineer/spreadsheet-editor/model';
 export {
   createLinkedSpreadsheetInsertion,
   updateLinkedSpreadsheetInsertion,
   type LinkedSpreadsheetInsertion,
 } from '@flamboyantengineer/spreadsheet-editor/document';
+
+export { createTransactionReceiptTracker } from '@flamboyantengineer/spreadsheet-editor/host';

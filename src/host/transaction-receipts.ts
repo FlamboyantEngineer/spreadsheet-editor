@@ -1,4 +1,7 @@
-/** Session-local causal coverage; owns no saving, scheduling, provider or UI state. */
+/**
+ * Session-local causal coverage; owns no saving, scheduling, provider or UI state.
+ * Callers supply existing editor transaction IDs; local revisions express coverage order only.
+ */
 export function createTransactionReceiptTracker() {
   const pending = new Map<string, number>();
   let latestRevision = 0;
