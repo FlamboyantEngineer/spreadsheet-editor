@@ -28,7 +28,6 @@ export interface UnitDefinition {
 }
 
 export interface UnitCategoryDefinition {
-  requirementId: string;
   name: string;
   canonicalUnit: string;
   units: readonly Readonly<UnitDefinition>[];
@@ -333,7 +332,6 @@ export const BINARY_PREFIXES: readonly Readonly<UnitPrefixDefinition>[] = Object
 
 export const UNIT_DEFINITIONS = Object.freeze({
   time: freezeCategory({
-    requirementId: 'PT-UN-3.1',
     name: 'Time',
     canonicalUnit: 's',
     units: [
@@ -364,7 +362,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   length: freezeCategory({
-    requirementId: 'PT-UN-3.2',
     name: 'Length',
     canonicalUnit: 'm',
     units: [
@@ -435,7 +432,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   mass: freezeCategory({
-    requirementId: 'PT-UN-3.3',
     name: 'Mass',
     canonicalUnit: 'kg',
     units: [
@@ -474,7 +470,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   temperature: freezeCategory({
-    requirementId: 'PT-UN-3.4',
     name: 'Temperature',
     canonicalUnit: 'K',
     units: [
@@ -507,7 +502,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   volume: freezeCategory({
-    requirementId: 'PT-UN-3.5',
     name: 'Volume',
     canonicalUnit: 'm\u00b3',
     units: [
@@ -570,7 +564,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   electrical: freezeCategory({
-    requirementId: 'PT-UN-3.6',
     name: 'Electrical',
     canonicalUnit: 'A',
     units: [
@@ -633,7 +626,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   dataStorage: freezeCategory({
-    requirementId: 'PT-UN-3.7',
     name: 'Data Storage',
     canonicalUnit: 'b',
     units: [
@@ -700,7 +692,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   energy: freezeCategory({
-    requirementId: 'PT-UN-3.8',
     name: 'Energy',
     canonicalUnit: 'J',
     units: [
@@ -723,7 +714,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   pressure: freezeCategory({
-    requirementId: 'PT-UN-3.9',
     name: 'Pressure',
     canonicalUnit: 'Pa',
     units: [
@@ -786,7 +776,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   speed: freezeCategory({
-    requirementId: 'PT-UN-3.10',
     name: 'Speed',
     canonicalUnit: 'm/s',
     units: [
@@ -825,7 +814,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   angle: freezeCategory({
-    requirementId: 'PT-UN-3.11',
     name: 'Angle',
     canonicalUnit: 'rad',
     units: [
@@ -864,7 +852,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   frequency: freezeCategory({
-    requirementId: 'PT-UN-3.12',
     name: 'Frequency',
     canonicalUnit: 'Hz',
     units: [
@@ -879,7 +866,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   light: freezeCategory({
-    requirementId: 'PT-UN-3.13',
     name: 'Light',
     canonicalUnit: 'cd',
     units: [
@@ -910,7 +896,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   force: freezeCategory({
-    requirementId: 'PT-UN-3.14',
     name: 'Force',
     canonicalUnit: 'N',
     units: [
@@ -934,7 +919,6 @@ export const UNIT_DEFINITIONS = Object.freeze({
     ],
   }),
   amountOfSubstance: freezeCategory({
-    requirementId: 'PT-UN-3.15',
     name: 'Amount of Substance',
     canonicalUnit: 'mol',
     units: [
