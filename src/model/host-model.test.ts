@@ -1,6 +1,6 @@
 import { parseDelimited } from './editing.js';
 import { describe, expect, it } from 'vitest';
-import { assertWorkbook, createWorkbook, setWorkbookCell } from './workbook.js';
+import { assertWorkbook, createWorkbook } from './workbook.js';
 import { worksheetExtent } from './extent.js';
 import { changeWorkbookStructure } from './structure.js';
 import {
@@ -45,7 +45,7 @@ describe('SE-HOST-MODEL-1: canonical authored quantities and stable extent', () 
     const workbook = createWorkbook([['tiny']]);
     workbook.worksheets[0].inputValues = { A1: rational };
     expect(
-      setWorkbookCell(workbook, 'sheet-1', 0, 0, '2').worksheets[0].inputValues?.A1,
+      writeCells(workbook, 'sheet-1', 0, 0, [['2']]).worksheets[0].inputValues?.A1,
     ).toBeUndefined();
     expect(
       writeCells(workbook, 'sheet-1', 0, 0, [['3']]).worksheets[0].inputValues?.A1,
@@ -199,7 +199,7 @@ describe('SE-HOST-MODEL-2: semantic transactions', () => {
         changes: [{ address: 'B2', rowId: 'row-host-1', columnId: 'column-host-2' }],
       },
     ]);
-    const single = setWorkbookCell(workbook, 'sheet-1', 0, 1, 'new', factory);
+    const single = writeCells(workbook, 'sheet-1', 0, 1, [['new']], factory);
     expect(single.worksheets[0].rowIds).toEqual(['row-original', 'row-host-3']);
     expect(workbook.worksheets[0].rowIds).toEqual(['row-original']);
     expect(workbook.worksheets[0].columnIds).toEqual(['column-original']);
@@ -376,13 +376,7 @@ describe('SE-HOST-MODEL-3: authored clipboard and canonical review baselines', (
     expect(moved.worksheets[0].data[1]).toBeUndefined();
     expect(workbook.worksheets[0].data[0]).toEqual(['1', '=A1']);
     expect(() =>
-      pasteSpreadsheetCopy(
-        setWorkbookCell(workbook, 'sheet-1', 0, 0, 'peer'),
-        'sheet-1',
-        2,
-        0,
-        cut,
-      ),
+      pasteSpreadsheetCopy(writeCells(workbook, 'sheet-1', 0, 0, [['peer']]), 'sheet-1', 2, 0, cut),
     ).toThrow('cut source');
   });
   it('keeps canonical suggestion baselines through preview/acceptance and detects canonical-only conflicts', () => {

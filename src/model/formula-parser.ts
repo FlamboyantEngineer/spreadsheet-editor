@@ -258,12 +258,3 @@ export function parseFormula(source: string): FormulaNode {
   skipWhitespace();
   return index === source.length ? tree : fail();
 }
-
-export function isSpreadsheetFormulaParseable(expression: string): boolean {
-  try {
-    parseFormula(String(expression ?? ''));
-    return true;
-  } catch {
-    return false;
-  }
-}
