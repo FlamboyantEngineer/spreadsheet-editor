@@ -1425,25 +1425,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (!targets.length) return 0;
     mutateWithDraft(
       (base) => {
-        let next = base;
+        // Matches are authored cells, so every replacement lands in one copy (SE-8).
+        const next = copyWorkbook(base),
+          pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
         for (const match of targets) {
-          const value = String(
-            next.worksheets.find((sheet) => sheet.id === match.sheetId)!.data[match.y][match.x] ??
-              '',
+          const target = next.worksheets.find((sheet) => sheet.id === match.sheetId)!;
+          target.data[match.y][match.x] = String(target.data[match.y][match.x] ?? '').replace(
+            pattern,
+            () => text,
           );
-          const pattern = new RegExp(
-            query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-            all ? 'gi' : 'i',
-          );
-          next = writeCells(
-            next,
-            match.sheetId,
-            match.x,
-            match.y,
-            [[value.replace(pattern, () => text)]],
-            props.idFactory,
-          );
+          if (target.inputValues)
+            delete target.inputValues[formatSpreadsheetAddress(match.x, match.y)];
         }
+        assertWorkbook(next);
         return next;
       },
       all ? 'Replace all matches' : 'Replace match',
