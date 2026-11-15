@@ -1,4 +1,4 @@
-import { createWorkbookEntityId, type WorksheetExtent,worksheetExtent } from './extent.js';
+import { createWorkbookEntityId, type WorksheetExtent, worksheetExtent } from './extent.js';
 import {
   interval,
   mapReferences,

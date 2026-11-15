@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
 import { parseDelimited, serializeDelimited } from './delimited.js';
 import { writeCells } from './editing.js';
-import { addComment, proposeWorkbookChange } from './review.js';
 import { rewriteStructureReferences } from './formula-references.js';
+import { addComment, proposeWorkbookChange } from './review.js';
 import {
   changeWorkbookStructure,
   deleteWorksheet,
