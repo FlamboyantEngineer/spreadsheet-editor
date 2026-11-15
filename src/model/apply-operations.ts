@@ -249,7 +249,10 @@ export function applyWorkbookOperations(
           },
           'annotations',
         ) as Pick<Workbook, 'comments' | 'suggestions'>;
-        Object.assign(next, value);
+        // A list neither side had stays absent, so an inverse restores the workbook exactly.
+        for (const key of ['comments', 'suggestions'] as const)
+          if (next[key] !== undefined || operation.after[key] !== undefined || value[key]?.length)
+            next[key] = value[key] as never;
         break;
       }
       case 'geometry':

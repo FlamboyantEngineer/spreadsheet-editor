@@ -74,7 +74,7 @@ import { matchTargets, replaceMatches, useFind } from './use-find.js';
 import { useNotice } from './use-notice.js';
 import { usePersonNames } from './use-person-names.js';
 import { useSessionActions } from './use-session-actions.js';
-import { sessionSavePhase, useSessionState } from './use-session-state.js';
+import { sessionErrorMessage, sessionSavePhase, useSessionState } from './use-session-state.js';
 import { useVersionActions } from './use-version-actions.js';
 import { useWorkbookPresence } from './use-workbook-presence.js';
 import { useWorkbookVersions } from './use-workbook-versions.js';
@@ -954,7 +954,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     draftDirty: draftDirty || !!nativeDraft,
     saving: savePhase === 'saving',
     flushing,
-    error: noticeTone === 'danger' ? notice : null,
+    error: sessionErrorMessage(session.status) ?? (noticeTone === 'danger' ? notice : null),
     calculation: {
       inputKey: visibleCalculation.inputKey,
       revision: visibleCalculation.revision,

@@ -15,7 +15,7 @@ import {
 } from '@flamboyantengineer/ui-components/toolbar-row';
 import { Tooltip } from '@flamboyantengineer/ui-components/tooltip';
 import { UNIT_PRESETS } from '../calculation/units.js';
-import { collaboratorColorIndex } from '../model/presence.js';
+import { collaboratorColorIndex } from '../engine/collaborator-color.js';
 import { editorCommandMetadata, editorGlyphs, numberFormatGlyphs } from './editor-commands.js';
 import { editorMenus } from './editor-menus.js';
 import { EditorColorControl, EditorFontSize } from './text-format-controls.js';

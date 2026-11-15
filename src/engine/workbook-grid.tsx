@@ -21,11 +21,7 @@ import {
   FORMULA_REFERENCE_HIGHLIGHT_COLORS,
   type FormulaReferenceHighlight,
 } from '../model/formula-reference-parser.js';
-import {
-  collaboratorColorIndex,
-  selectionLock,
-  type SpreadsheetCollaborator,
-} from '../model/presence.js';
+import { selectionLock, type SpreadsheetCollaborator } from '../model/presence.js';
 import { requireDefined } from '../model/require-defined.js';
 import type { SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
 import { type CellInput, createWorkbook, type Worksheet } from '../model/workbook.js';
@@ -37,6 +33,7 @@ import {
   renderContributors,
   renderReviewMarkers,
 } from './cell-renderer.js';
+import { collaboratorColorIndex } from './collaborator-color.js';
 import {
   clipGridSelectionHandle,
   gridBodyBounds,

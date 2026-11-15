@@ -14,11 +14,6 @@ export interface SpreadsheetCollaborator {
   selection?: CellSelection;
   editLock?: CellSelection;
 }
-export function collaboratorColorIndex(id: string): number {
-  let hash = 0;
-  for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return hash % 8;
-}
 function placeSelection(workbook: Workbook, place: PresencePlace | null | undefined) {
   if (!place || !workbook.worksheets.some((sheet) => sheet.id === place.sheetId)) return undefined;
   const range = parseSpreadsheetRange(place.range);

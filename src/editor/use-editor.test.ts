@@ -152,6 +152,80 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
 });
 
 describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
+  it('SE-SESSION-4: exposes background session failures through the imperative state', async () => {
+    vi.useFakeTimers();
+    const { session, store } = await openSession([['before']], { autosaveDelay: 10 });
+    store.save.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'denied', message: 'Save refused' },
+    });
+    const { result } = renderHook(() => useSpreadsheetEditor({ session }));
+    const listener = vi.fn();
+    const stop = result.current.handle.subscribe(listener);
+    act(() => {
+      result.current.proposeCells([['first']], 0, 0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(result.current.savePhase).toBe('error');
+    expect(result.current.handle.getState()).toMatchObject({
+      dirty: true,
+      saving: false,
+      error: 'Save refused',
+    });
+    expect(listener).toHaveBeenCalled();
+    act(() => {
+      result.current.proposeCells([['later']], 0, 0);
+    });
+    expect(result.current.savePhase).toBe('error');
+    expect(result.current.handle.getState().error).toBe('Save refused');
+    await act(() => result.current.save());
+    expect(result.current.handle.getState()).toMatchObject({ dirty: false, error: null });
+    stop();
+    session.close();
+  });
+
+  it('SE-SESSION-4: applies causal external receipts to a controlled editor without saving', async () => {
+    const { session, store } = await openSession([['before']]);
+    const onChange = vi.fn();
+    const props: SpreadsheetEditorProps = {
+      session,
+      onChange,
+      value: requireDefined(session.workbook()),
+      calculation: { mode: 'external', snapshot: null },
+    };
+    const { result, rerender } = renderHook(
+      (value: SpreadsheetEditorProps) => useSpreadsheetEditor(value),
+      { initialProps: props },
+    );
+    act(() => {
+      result.current.proposeCells([['first']], 0, 0);
+    });
+    rerender({ ...props, value: onChange.mock.calls[0][0] });
+    act(() => {
+      result.current.proposeCells([['later']], 0, 0);
+    });
+    rerender({ ...props, value: onChange.mock.calls[1][0] });
+    act(() => {
+      session.acknowledge(onChange.mock.calls[0][1].transactionId);
+    });
+    expect(result.current.handle.getState().dirty).toBe(true);
+    act(() => {
+      session.acknowledge(onChange.mock.calls[1][1].transactionId);
+    });
+    expect(result.current.handle.getState().dirty).toBe(false);
+    act(() => {
+      result.current.setDraftValue('uncommitted');
+    });
+    act(() => {
+      session.acknowledge(onChange.mock.calls[1][1].transactionId);
+    });
+    expect(result.current.handle.getState()).toMatchObject({ dirty: true, draftDirty: true });
+    expect(store.save).not.toHaveBeenCalled();
+    session.close();
+  });
+
   it('joins a save in flight and keeps changes made during it dirty', async () => {
     const { session, store, held } = await openSession([['1']], { hold: true });
     const { result } = renderHook(() => useSpreadsheetEditor({ session }));

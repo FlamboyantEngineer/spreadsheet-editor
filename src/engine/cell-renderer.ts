@@ -4,13 +4,13 @@ import type { DisplayOptions } from '../calculation/format.js';
 import type { CellValue } from '../calculation/values.js';
 import type { CellPresentationSnapshot, RenderCellContent } from '../editor/public-host.js';
 import type { CellSelection } from '../model/editing.js';
-import { collaboratorColorIndex } from '../model/presence.js';
 import type { CellFormat, SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetRange,
 } from '../model/spreadsheet-addressing.js';
 import type { CellInput, Worksheet } from '../model/workbook.js';
+import { collaboratorColorIndex } from './collaborator-color.js';
 import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 function worksheetFrom(handle: JSpreadsheetHostHandle): JSpreadsheetWorksheetInstance | undefined {

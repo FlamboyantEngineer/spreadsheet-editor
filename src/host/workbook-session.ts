@@ -154,7 +154,13 @@ export function createWorkbookSession(options: WorkbookSessionOptions): Workbook
   function scheduleAutosave() {
     clearTimer(autosaveTimer);
     autosaveTimer = null;
-    if (closed || status.phase === 'conflict' || !Number.isFinite(autosaveDelay)) return;
+    if (
+      closed ||
+      status.phase === 'conflict' ||
+      status.phase === 'error' ||
+      !Number.isFinite(autosaveDelay)
+    )
+      return;
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null;
       void run(true).catch(() => {});
@@ -227,7 +233,10 @@ export function createWorkbookSession(options: WorkbookSessionOptions): Workbook
       const requested = localRevision;
       return inFlight.then(() => (savedThrough < requested ? run(automatic) : undefined));
     }
-    if (status.phase === 'conflict' && baseRevision === undefined)
+    if (
+      (status.phase === 'conflict' && baseRevision === undefined) ||
+      (automatic && status.phase === 'error')
+    )
       return Promise.reject(new HostRequestError(status.error ?? { kind: 'conflict' }));
     if (localRevision <= savedThrough) return Promise.resolve();
     clearTimer(autosaveTimer);
@@ -313,7 +322,11 @@ export function createWorkbookSession(options: WorkbookSessionOptions): Workbook
       localRevision++;
       tracker.record(context.transactionId, localRevision);
       workbook = next;
-      setStatus(status.phase === 'saving' || status.phase === 'conflict' ? {} : { phase: 'dirty' });
+      setStatus(
+        status.phase === 'saving' || status.phase === 'conflict' || status.phase === 'error'
+          ? {}
+          : { phase: 'dirty' },
+      );
       scheduleDraft();
       scheduleAutosave();
     },
