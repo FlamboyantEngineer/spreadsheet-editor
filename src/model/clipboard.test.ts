@@ -3,7 +3,7 @@ import { createSpreadsheetCopy, pasteSpreadsheetCopy } from './clipboard.js';
 import { translateFormulaReferences } from './structure.js';
 import { createWorkbook } from './workbook.js';
 
-describe('SE-CR-2.3: authored clipboard references', () => {
+describe('SE-HOST-MODEL-3.1: authored clipboard references', () => {
   it('shifts relative axes and leaves quoted text, absolute axes and scientific numbers intact', () => {
     expect(translateFormulaReferences('=SUM(A1:B3)+$C4+D$5+$E$6+1E-25+"A1"', 2, 3)).toBe(
       '=SUM(C4:D6)+$C7+F$5+$E$6+1E-25+"A1"',
@@ -26,7 +26,7 @@ describe('SE-CR-2.3: authored clipboard references', () => {
     );
     expect(workbook.worksheets[0].data).toEqual([['1', '=A1*2']]);
   });
-  it('SE-HOST-MODEL-3: uses the host factory when pasted data extends tracked lines', () => {
+  it('SE-HOST-MODEL-3.1: uses the host factory when pasted data extends tracked lines', () => {
     const workbook = createWorkbook([['1']]);
     workbook.worksheets[0].rowIds = ['row-1'];
     workbook.worksheets[0].columnIds = ['column-1'];

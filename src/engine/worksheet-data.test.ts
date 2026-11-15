@@ -8,7 +8,7 @@ import {
   syncWorksheetData,
 } from './worksheet-data.js';
 
-describe('SE-UI-1: logical vendor worksheet dimensions', () => {
+describe('SE-UI-1.1: logical vendor worksheet dimensions', () => {
   it('rejects an oversized vendor batch or far-away write before extending authored data', () => {
     const sheet = createWorkbook([['1']]).worksheets[0];
     const original = structuredClone(sheet);

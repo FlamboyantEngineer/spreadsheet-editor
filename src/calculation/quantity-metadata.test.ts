@@ -19,7 +19,7 @@ const numeric = createArithmetic(),
   math = createQuantityArithmetic();
 const evaluate = (formula: string) =>
   calculateWorkbook(createWorkbook([[formula]])).worksheets[0].values[0][0];
-describe('SE-CALC-4: complete quantity metadata and registry', () => {
+describe('SE-CALC-4.1: complete quantity metadata and registry', () => {
   it('audits every reviewed alias and prefix without binary conversions', () => {
     for (const [category, data] of Object.entries(UNIT_DEFINITIONS))
       for (const unit of data.units)
@@ -217,7 +217,7 @@ describe('SE-CALC-4: complete quantity metadata and registry', () => {
     expect(result.context?.hostContext).toEqual({ revision: 'v1' });
   });
 });
-describe('SE-CALC-6: exact localized formatting', () => {
+describe('SE-CALC-6.1: exact localized formatting', () => {
   it('formats USD/EUR, large integers, percentages and leap day without Number', () => {
     expect(
       formatWorksheetCell(numeric.parse('9007199254740993'), {

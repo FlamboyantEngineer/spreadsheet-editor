@@ -24,7 +24,7 @@ export function blockTargets(
     ],
   ]);
 }
-/** A detached, deeply frozen copy of `workbook`, the baseline a host may read (SE-PERF-1). */
+/** A detached, deeply frozen copy of `workbook`, the baseline a host may read (SE-PERF-2.1). */
 export function immutableBaseline(workbook: Workbook): Workbook {
   const snapshot = copyWorkbook(workbook),
     pending: object[] = [snapshot];

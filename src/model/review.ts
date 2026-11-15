@@ -145,7 +145,7 @@ export function updateComment(
   return next;
 }
 
-/** Resolve or reopen a thread, recording who resolved it and when (SE-REVIEW-1.7). */
+/** Resolve or reopen a thread, recording who resolved it and when (SE-REVIEW-1.1). */
 export function setCommentState(
   workbook: Workbook,
   id: string,

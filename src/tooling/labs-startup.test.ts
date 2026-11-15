@@ -125,7 +125,7 @@ function calls(directory: string) {
   return JSON.parse(readFileSync(join(directory, 'install-calls.json'), 'utf8'));
 }
 
-describe('SE-LABS-2: self-bootstrapping portable startup', () => {
+describe('SE-LABS-2.1: self-bootstrapping portable startup', () => {
   it.each(['labs.mjs', 'build-labs.mjs'])(
     'installs before building %s from a fresh checkout, including under production/omit settings',
     (script) => {

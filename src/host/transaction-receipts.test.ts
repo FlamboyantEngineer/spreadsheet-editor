@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTransactionReceiptTracker } from './transaction-receipts.js';
 
-describe('SE-HOST-5: causal receipt bookkeeping for host sessions', () => {
+describe('SE-HOST-5.1: causal receipt bookkeeping for host sessions', () => {
   it('cannot infer later-edit coverage from an earlier or unknown receipt', () => {
     const tracker = createTransactionReceiptTracker();
     tracker.record('first', 1);

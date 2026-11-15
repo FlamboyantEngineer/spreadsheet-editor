@@ -12,7 +12,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-it('SE-HOST-1: late grid teardown cannot release a newer keyboard owner', () => {
+it('SE-HOST-1.1: late grid teardown cannot release a newer keyboard owner', () => {
   const oldElement = document.createElement('div'),
     nextElement = document.createElement('div');
   const old = { element: oldElement } as unknown as JSpreadsheetWorksheetInstance;

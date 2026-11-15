@@ -3,7 +3,7 @@ import { calculateWorkbook } from '../calculation/evaluator.js';
 import { createWorkbook } from '../model/workbook.js';
 import { createDocumentInsertion } from './insertion.js';
 
-describe('SE-DOC-1: document insertion modes', () => {
+describe('SE-DOC-1.1: document insertion modes', () => {
   it('creates an ordinary table from calculated text, with no live formulas', () => {
     const workbook = createWorkbook([['=1-1e-25', '<img src=x onerror=alert(1)>']]);
     const insertion = createDocumentInsertion(workbook, calculateWorkbook(workbook), {

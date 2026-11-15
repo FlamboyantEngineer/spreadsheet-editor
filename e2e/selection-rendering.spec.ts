@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { requireDefined } from '../src/model/require-defined.js';
 
-test('SE-CHROME-5: drag highlight and border reach the same range in one paint frame', async ({
+test('SE-CHROME-5.1: drag highlight and border reach the same range in one paint frame', async ({
   page,
 }) => {
   await page.goto('/full.html');
@@ -60,7 +60,7 @@ test('SE-CHROME-5: drag highlight and border reach the same range in one paint f
 });
 
 for (const theme of ['light', 'dark'])
-  test(`SE-CHROME-5: scrolled selection overlays exclude both header bands in ${theme}`, async ({
+  test(`SE-CHROME-5.1: scrolled selection overlays exclude both header bands in ${theme}`, async ({
     page,
   }) => {
     await page.goto(`/full.html?theme=${theme}`);
@@ -94,7 +94,7 @@ for (const theme of ['light', 'dark'])
     await expect(editor.locator('.se-editor__selection-outline')).toHaveCount(1);
   });
 
-test('SE-CHROME-5: the native fill handle cannot cover headers when selection scrolls out of view', async ({
+test('SE-CHROME-5.1: the native fill handle cannot cover headers when selection scrolls out of view', async ({
   page,
 }) => {
   await page.goto('/full.html');
@@ -137,7 +137,7 @@ test('SE-CHROME-5: the native fill handle cannot cover headers when selection sc
     .toBe(true);
 });
 
-test('SE-CHROME-5: frozen selection fragments remain inside the cell body at 150% zoom', async ({
+test('SE-CHROME-5.1: frozen selection fragments remain inside the cell body at 150% zoom', async ({
   page,
 }) => {
   await page.goto('/full.html?theme=dark');
@@ -175,7 +175,7 @@ test('SE-CHROME-5: frozen selection fragments remain inside the cell body at 150
     .toBe(true);
 });
 
-test('SE-CHROME-5: ending a drag preserves grid scroll instead of revealing its offscreen anchor', async ({
+test('SE-CHROME-5.1: ending a drag preserves grid scroll instead of revealing its offscreen anchor', async ({
   page,
 }) => {
   await page.goto('/full.html');

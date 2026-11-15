@@ -136,7 +136,7 @@ export function syncWorksheetData(
     }));
     options.rows = structuredClone(next.rows ?? {});
     options.mergeCells = structuredClone(next.mergeCells ?? {});
-    // A rebuild attaches only the first rows; the row window places the rest (SE-PERF-1).
+    // A rebuild attaches only the first rows; the row window places the rest (SE-PERF-1.1).
     withLazyRebuild(engine, () => engine.setData?.(next.data.map((row) => [...row])));
   } finally {
     options.allowInsertColumn = permissions.allowInsertColumn;

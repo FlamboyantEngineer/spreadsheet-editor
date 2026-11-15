@@ -64,7 +64,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-describe('SE-PERF-1: the grid attaches only the rows near the viewport', () => {
+describe('SE-PERF-1.1: the grid attaches only the rows near the viewport', () => {
   it('keeps the detached rows as spacer height above and below the window', () => {
     const { engine } = engineRows(300);
     windowGridRows(engine, () => {});

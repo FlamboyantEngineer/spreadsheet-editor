@@ -87,7 +87,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('SE-CR-2.18: grid-only zoom keeps authored geometry and pixel strokes', () => {
+describe('SE-CHROME-5.1: grid-only zoom keeps authored geometry and pixel strokes', () => {
   it('scales explicit and default measures, typography and headers without compounding', () => {
     const { engine, sheet, table, records, cols } = grid();
     sheet.columns = [{ width: 120.5 }];
@@ -155,7 +155,7 @@ describe('SE-CR-2.18: grid-only zoom keeps authored geometry and pixel strokes',
   });
 });
 
-describe('SE-UI-1: local selection geometry', () => {
+describe('SE-UI-1.1: local selection geometry', () => {
   it('clips the native fill handle to the cell body and restores it after scrolling back', () => {
     const { engine, viewport } = grid();
     const handle = document.createElement('div');

@@ -60,7 +60,7 @@ const paintedCells = new WeakMap<HTMLElement, PaintedCell>();
 /**
  * What a row was last painted from. A values row keeps its identity only while no cell in it
  * changes value or readiness, so a row whose values, input, formats, hints and settings are all
- * the same objects is left as it is without visiting its cells (SE-PERF-1).
+ * the same objects is left as it is without visiting its cells (SE-PERF-1.1).
  */
 interface PaintedRow {
   settings: object;

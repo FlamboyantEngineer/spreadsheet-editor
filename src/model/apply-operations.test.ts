@@ -35,7 +35,7 @@ const base = () => {
   return workbook;
 };
 const stamp = (id: string) => ({ id, time: '2026-01-01T00:00:00Z', actor: { id, name: id } });
-describe('SE-HOST-1: atomic serialized operation application', () => {
+describe('SE-HOST-1.1: atomic serialized operation application', () => {
   it('preserves concurrent cells and per-actor inverse without changing canonical numeric inputs', () => {
     const initial = base();
     initial.worksheets[0].inputValues = {

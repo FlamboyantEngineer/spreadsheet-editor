@@ -42,7 +42,7 @@ export function readyValues<T>(
 /**
  * Blank a draft's pending cells; rows without one keep their identity. A row with a pending cell
  * is always a new row, even when that cell is already blank: the grid does not paint a row whose
- * identity is unchanged, so it would miss the cell's change of readiness (SE-PERF-1).
+ * identity is unchanged, so it would miss the cell's change of readiness (SE-PERF-2.1).
  */
 export function withoutPendingValues<T>(
   values: (T | null)[][] | undefined,

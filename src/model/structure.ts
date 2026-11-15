@@ -278,7 +278,7 @@ export function changeWorkbookStructure(
         return next ? [[next, value]] : [];
       }),
     );
-  // A map the worksheet did not have stays absent, so an inverse restores it exactly (SE-HOST-5).
+  // A map the worksheet did not have stays absent, so an inverse restores it exactly (SE-HOST-5.1).
   if (sheet.style) sheet.style = remap(sheet.style);
   if (sheet.formats) sheet.formats = remap(sheet.formats);
   if (sheet.cellProvenance) sheet.cellProvenance = remap(sheet.cellProvenance);

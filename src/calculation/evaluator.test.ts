@@ -14,7 +14,7 @@ const exact = (numerator: string, denominator = '1') => ({
   approximate: false,
 });
 
-describe('SE-CALC-1: exact arithmetic', () => {
+describe('SE-CALC-1.1: exact arithmetic', () => {
   it('reads a formula whose value is empty as empty, not as an error', () => {
     const [values] = calculateWorkbook(
       createWorkbook([['=B1', '=C1', null, '=B1&"x"']]),
@@ -73,7 +73,7 @@ describe('SE-CALC-1: exact arithmetic', () => {
   });
 });
 
-describe('SE-CALC-2: text order does not follow the runtime locale', () => {
+describe('SE-CALC-2.1: text order does not follow the runtime locale', () => {
   afterEach(() => vi.restoreAllMocks());
   it('compares text with one fixed collation', () => {
     const localeCompare = vi.spyOn(String.prototype, 'localeCompare');
@@ -83,7 +83,7 @@ describe('SE-CALC-2: text order does not follow the runtime locale', () => {
   });
 });
 
-describe('SE-CALC-2: workbook formulas', () => {
+describe('SE-CALC-2.1: workbook formulas', () => {
   it('reads other sheets, named values, ranges, and absolute references', () => {
     const workbook: Workbook = {
       schemaVersion: 1,

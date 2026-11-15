@@ -11,7 +11,7 @@ import {
 } from './structure.js';
 import { createWorkbook } from './workbook.js';
 
-describe('SE-EDIT-1: structure and exact formula text', () => {
+describe('SE-CHROME-2.1: structure and exact formula text', () => {
   it('rewrites relative and absolute references and preserves strings and scientific literals', () => {
     const formula = '=SUM($A$1:A3)+Other!B2+\'Sheet one\'!B2+1E-25+IF(TRUE,"A2",LOG10(100))';
     expect(
@@ -113,7 +113,7 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
     expect(deleteWorksheet(renamed, 'inputs').worksheets[0].data[0][0]).toBe('=#REF!+1E-25');
     expect(() => renameWorksheet(workbook, 'inputs', 'Bad:Name')).toThrow('unique worksheet');
   });
-  it('SE-CHROME-2: shares normalized worksheet validation with inline renaming', () => {
+  it('SE-CHROME-2.1: shares normalized worksheet validation with inline renaming', () => {
     const workbook = createWorkbook([["='  Input   Data  '!$A$1+1E-25"]]);
     workbook.worksheets.push({ id: 'inputs', name: '  Input   Data  ', data: [['3']] });
     const original = structuredClone(workbook);
@@ -127,7 +127,7 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
     expect(workbook).toEqual(original);
   });
   it.each(['', ' \t\n ', 'sheet1', ' Sheet1 ', 'x'.repeat(257), ...'[]:*?/\\!'])(
-    'SE-CHROME-2: refuses invalid inline worksheet name %j in validation and mutation',
+    'SE-CHROME-2.1: refuses invalid inline worksheet name %j in validation and mutation',
     (name) => {
       const workbook = createWorkbook();
       workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['']] });
@@ -136,7 +136,7 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
       expect(workbook.worksheets[1].name).toBe('Inputs');
     },
   );
-  it('SE-CHROME-2: rejects stale worksheet ids and case/whitespace-equivalent names', () => {
+  it('SE-CHROME-2.1: rejects stale worksheet ids and case/whitespace-equivalent names', () => {
     const workbook = createWorkbook();
     workbook.worksheets.push({ id: 'inputs', name: ' Input   Data ', data: [['']] });
     expect(() => validateWorksheetName(workbook, 'sheet-1', '  input\n data ')).toThrow(TypeError);
@@ -148,7 +148,7 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
     expect(parseDelimited(serializeDelimited(rows, ','), ',')).toEqual(rows);
     expect(parseDelimited('1E-25\t=1-A1\r\n')).toEqual([['1E-25', '=1-A1']]);
   });
-  it('SE-CHROME-2: reads, rewrites, renames and deletes sheet names outside ASCII', () => {
+  it('SE-CHROME-2.1: reads, rewrites, renames and deletes sheet names outside ASCII', () => {
     const workbook = createWorkbook([['=Données!A2*2', '=Δ_1!A1']]);
     workbook.worksheets.push(
       { id: 'data', name: 'Données', data: [['x'], ['21']] },
@@ -173,7 +173,7 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
       "='Résultats'!A2*2",
     );
   });
-  it('SE-CHROME-2: compares sheet names the same way when renaming, restructuring and deleting', () => {
+  it('SE-CHROME-2.1: compares sheet names the same way when renaming, restructuring and deleting', () => {
     const workbook = createWorkbook([["='  Input   Data '!A1", '=input data!A1']]);
     workbook.worksheets.push({ id: 'inputs', name: 'Input Data', data: [['3']] });
     const insert = { axis: 'row', kind: 'insert', index: 0, count: 1 } as const;
@@ -183,7 +183,7 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
     ]);
     expect(deleteWorksheet(workbook, 'inputs').worksheets[0].data[0]).toEqual(['=#REF!', '=#REF!']);
   });
-  it('SE-CHROME-2: renaming a sheet rewrites formulas held in pending suggestions', () => {
+  it('SE-CHROME-2.1: renaming a sheet rewrites formulas held in pending suggestions', () => {
     const workbook = createWorkbook([['1']]);
     workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['3']] });
     const proposed = writeCells(workbook, 'sheet-1', 0, 0, [['=Inputs!A1*2']]);
@@ -195,7 +195,7 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
     const renamed = renameWorksheet(suggested, 'inputs', 'Sources');
     expect(renamed.suggestions?.[0].changes[0].after).toBe("='Sources'!A1*2");
   });
-  it('SE-CHROME-2: scans long formulas in linear time', () => {
+  it('SE-CHROME-2.1: scans long formulas in linear time', () => {
     const insert = { axis: 'row', kind: 'insert', index: 0, count: 1 } as const;
     const references =
       '=' + Array.from({ length: 20_000 }, (_, index) => `A${index + 1}`).join('+');

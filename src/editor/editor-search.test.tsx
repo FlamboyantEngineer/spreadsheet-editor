@@ -6,7 +6,7 @@ import { workbookCalculationKey } from '../calculation/publication.js';
 import { createWorkbook } from '../model/workbook.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 
-describe('SE-CHROME-1/3: search, clipboard and selection statistics', () => {
+describe('SE-CHROME-1.1 and SE-CHROME-3.1: search, clipboard and selection statistics', () => {
   it('starts Previous at the last match and resets the active match for a new query', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['alpha', 'alpha', 'blue', 'alpha']]) }),

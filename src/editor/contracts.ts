@@ -78,7 +78,7 @@ export interface SpreadsheetEditorProps {
   workbookId?: string;
   /**
    * The stored workbook's session (`createWorkbookSession`): the editor shows its workbook,
-   * records each accepted change in it, and saves and flushes through it (SE-SESSION-4). Null
+   * records each accepted change in it, and saves and flushes through it (SE-SESSION-1.4). Null
    * shows the editor as opening, as `useWorkbookSession` returns before its session exists.
    */
   session?: WorkbookSession | null;

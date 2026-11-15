@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { requireDefined } from '../src/model/require-defined.js';
 
-test('SE-UI-3: delayed initial grid adoption does not interrupt a held toolbar press', async ({
+test('SE-UI-3.1: delayed initial grid adoption does not interrupt a held toolbar press', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1400 });
@@ -42,7 +42,7 @@ test('SE-UI-3: delayed initial grid adoption does not interrupt a held toolbar p
   await expect(editor.locator('td[data-x="0"][data-y="0"]').first()).toHaveText('');
 });
 
-test('SE-UI-3: a refused native batch restores accepted cells and can be retried', async ({
+test('SE-UI-3.1: a refused native batch restores accepted cells and can be retried', async ({
   page,
 }) => {
   await page.goto('/host.html');
@@ -71,7 +71,7 @@ test('SE-UI-3: a refused native batch restores accepted cells and can be retried
 });
 
 for (const key of ['Delete', 'Backspace'])
-  test(`SE-UI-1: ${key} clears a native multi-cell selection in one undo step`, async ({
+  test(`SE-UI-1.1: ${key} clears a native multi-cell selection in one undo step`, async ({
     page,
   }) => {
     await page.goto('/full.html');
@@ -90,7 +90,7 @@ for (const key of ['Delete', 'Backspace'])
       await expect(cells[x]).toHaveText(requireDefined(original[x]));
   });
 
-test('SE-UI-3: native bulk clear creates one review proposal without changing accepted cells', async ({
+test('SE-UI-3.1: native bulk clear creates one review proposal without changing accepted cells', async ({
   page,
 }) => {
   await page.goto('/full.html');
@@ -112,7 +112,7 @@ test('SE-UI-3: native bulk clear creates one review proposal without changing ac
     await expect(cells[x]).toHaveText(requireDefined(original[x]));
 });
 
-test('SE-UI-1: final blank rows and columns synchronize with the live vendor without replacing its root', async ({
+test('SE-UI-1.1: final blank rows and columns synchronize with the live vendor without replacing its root', async ({
   page,
 }) => {
   await page.goto('/full.html');
@@ -134,7 +134,7 @@ test('SE-UI-1: final blank rows and columns synchronize with the live vendor wit
   await expect(engine).toHaveAttribute('data-core-stable-root', 'true');
 });
 
-test('SE-UI-1: selection changes write no frozen styles on an unchanged 26 by 100 grid', async ({
+test('SE-UI-1.1: selection changes write no frozen styles on an unchanged 26 by 100 grid', async ({
   page,
 }) => {
   await page.goto('/full.html');

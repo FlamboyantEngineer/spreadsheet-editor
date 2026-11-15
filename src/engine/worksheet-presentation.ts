@@ -105,7 +105,7 @@ export function syncWorksheetPresentation(
   for (const cell of deferredCells.get(engine) ?? []) if (cell.isConnected) pending.add(cell);
   const editing = new Set([...pending].filter((cell) => cell.classList.contains('editor')));
   deferredCells.set(engine, editing);
-  // Detached rows are presented when the row window attaches them (SE-PERF-1).
+  // Detached rows are presented when the row window attaches them (SE-PERF-1.1).
   const attached: HTMLElement[] = [];
   for (const cell of pending) {
     if (editing.has(cell)) continue;

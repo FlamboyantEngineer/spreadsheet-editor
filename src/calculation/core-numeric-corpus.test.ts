@@ -31,7 +31,7 @@ function expectDecimal(value: CellValue, expected: string) {
     denominator: parsed.denominator,
   });
 }
-describe('SE-CALC-5: portable pinned behavior corpus', () => {
+describe('SE-CALC-5.1: portable pinned behavior corpus', () => {
   for (const family of ['basic', 'calendar', 'dateOverflow', 'quantities'])
     it.each(corpus.cases[family])(`${family} %s`, (formula, expected) =>
       expectDecimal(evaluate(formula), expected),

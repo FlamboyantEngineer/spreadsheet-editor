@@ -10,7 +10,7 @@ const request = (body: unknown) =>
     body: JSON.stringify(body),
   });
 
-describe('SE-CALC-3: interchangeable server calculation', () => {
+describe('SE-CALC-3.1: interchangeable server calculation', () => {
   it('round-trips the exact browser result through JSON and the server handler', async () => {
     const workbook = createWorkbook([['1E-25', '=1-A1', '=1-B1', '=1/3', '=SQRT(2)']]);
     const server = createHttpCalculator('http://localhost/calculate', {

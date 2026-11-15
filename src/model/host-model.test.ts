@@ -23,7 +23,7 @@ const rational: NumericValue = {
 };
 const stamp = { id: 'proposal', time: '2026-11-11T12:00:00Z', actor: { id: 'alex', name: 'Alex' } };
 
-describe('SE-HOST-MODEL-1: canonical authored quantities and stable extent', () => {
+describe('SE-HOST-MODEL-1.1: canonical authored quantities and stable extent', () => {
   it('roundtrips canonical values and validates nonformula targets and rational metadata', () => {
     const workbook = createWorkbook([['authored in another unit']]);
     workbook.worksheets[0].inputValues = { A1: rational };
@@ -124,7 +124,7 @@ describe('SE-HOST-MODEL-1: canonical authored quantities and stable extent', () 
   });
 });
 
-describe('SE-HOST-MODEL-1: structure commands on a tall, narrow sheet', () => {
+describe('SE-HOST-MODEL-1.1: structure commands on a tall, narrow sheet', () => {
   it('inserts rows and columns without padding the sheet past the cell limit', () => {
     const workbook = createWorkbook(
       Array.from({ length: 10_000 }, (_, y) => Array.from({ length: 20 }, () => String(y))),
@@ -152,8 +152,8 @@ describe('SE-HOST-MODEL-1: structure commands on a tall, narrow sheet', () => {
   });
 });
 
-describe('SE-HOST-MODEL-2: semantic transactions', () => {
-  it('SE-PERF-1: compares cells in place and reports only those that differ', () => {
+describe('SE-HOST-MODEL-2.1: semantic transactions', () => {
+  it('SE-PERF-2.1: compares cells in place and reports only those that differ', () => {
     const before = createWorkbook([
       ['1', '2', '3'],
       ['4', '5', '6'],
@@ -274,7 +274,7 @@ describe('SE-HOST-MODEL-2: semantic transactions', () => {
   });
 });
 
-describe('SE-HOST-MODEL-4: inverse command metadata and bounded foreign input', () => {
+describe('SE-HOST-MODEL-2.1: inverse command metadata and bounded foreign input', () => {
   it('retains removed authored metadata for a semantic line undo', () => {
     const workbook = createWorkbook([['first'], ['tiny'], ['last']]);
     const sheet = workbook.worksheets[0];
@@ -326,7 +326,7 @@ describe('SE-HOST-MODEL-4: inverse command metadata and bounded foreign input', 
   });
 });
 
-describe('SE-HOST-MODEL-3: authored clipboard and canonical review baselines', () => {
+describe('SE-HOST-MODEL-3.1 and SE-REVIEW-8.1: authored clipboard and canonical review baselines', () => {
   it('tiles exact multiples with independent reference offsets and copies canonical metadata', () => {
     const workbook = createWorkbook([['1', '=A1+$A1+A$1+$A$1']]);
     const sheet = workbook.worksheets[0];

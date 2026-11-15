@@ -6,7 +6,7 @@ import { formatCellValue } from './format.js';
 const evaluate = (formula: string) =>
   calculateWorkbook(createWorkbook([[formula]])).worksheets[0].values[0][0];
 
-describe('SE-CALC-4: calendar month shifts stay inside supported serial bounds', () => {
+describe('SE-CALC-4.1: calendar month shifts stay inside supported serial bounds', () => {
   it.each([
     ['=EDATE(0,0)', '0'],
     ['=EOMONTH(0,0)', '0'],

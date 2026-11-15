@@ -6,7 +6,7 @@ import { formatWorksheetCell } from './cell-format.js';
 import { calculateWorkbook } from './evaluator.js';
 import { formatCellValue } from './format.js';
 
-describe('SE-NUM-1: exact engineering quantities', () => {
+describe('SE-CALC-4.1: exact engineering quantities', () => {
   it('converts tiny authored inputs to SI exactly and preserves their input unit when display changes', () => {
     const workbook = createWorkbook([['1E-25', '=A1*2', '=A1+A2'], ['3 mm']]);
     workbook.worksheets[0].formats = {
@@ -52,7 +52,7 @@ describe('SE-NUM-1: exact engineering quantities', () => {
   });
 });
 
-describe('SE-CR-2.5a: calendar serial formats', () => {
+describe('SE-CALC-4.1: calendar serial formats', () => {
   it('renders calendar formats in UTC and preserves Excel day 60', () => {
     const result = calculateWorkbook(
       createWorkbook([['46290', '60', '=DATE(2026,9,25)', '=TIME(12,30,0)']]),
@@ -66,7 +66,7 @@ describe('SE-CR-2.5a: calendar serial formats', () => {
   });
 });
 
-it('SE-CR-2.6f: captures a viewer-zone calendar clock once per pass', () => {
+it('SE-CALC-5.1: captures a viewer-zone calendar clock once per pass', () => {
   let calls = 0;
   const workbook = createWorkbook([['=TODAY()', '=NOW()', '=TODAY()']]);
   const host = {
@@ -84,7 +84,7 @@ it('SE-CR-2.6f: captures a viewer-zone calendar clock once per pass', () => {
     'Sep 24, 2026 17:30:00',
   );
 });
-it('SE-NUM-1: negative affine literals apply their sign before SI conversion and invalid units fail predictably', () => {
+it('SE-CALC-4.1: negative affine literals apply their sign before SI conversion and invalid units fail predictably', () => {
   const result = calculateWorkbook(createWorkbook([['=-1 °C', '=1 constructor']]));
   expect(formatWorksheetCell(result.worksheets[0].values[0][0], { kind: 'unit', unit: '°C' })).toBe(
     '-1 °C',

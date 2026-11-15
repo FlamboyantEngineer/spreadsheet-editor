@@ -3,7 +3,7 @@ import { createWorkbook } from '../model/workbook.js';
 import { formatWorksheetCell } from './cell-format.js';
 import { calculateWorkbook } from './evaluator.js';
 
-describe('SE-EDIT-2: number formats preserve exact calculations', () => {
+describe('SE-CHROME-1.1: number formats preserve exact calculations', () => {
   it('formats a near-one value as percent without altering its comparison result', () => {
     const result = calculateWorkbook(createWorkbook([['=1-1E-25', '=A1=1']]));
     const value = result.worksheets[0].values[0][0];

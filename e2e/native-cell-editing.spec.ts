@@ -3,7 +3,7 @@ import { requireDefined } from '../src/model/require-defined.js';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
-test('SE-UI-3: finishing unchanged native entries preserves logical types and canonical inputs', async ({
+test('SE-UI-3.1: finishing unchanged native entries preserves logical types and canonical inputs', async ({
   page,
 }) => {
   await page.goto('/full.html');
@@ -38,7 +38,7 @@ test('SE-UI-3: finishing unchanged native entries preserves logical types and ca
   await expect(cell(3)).toHaveText(requireDefined(canonicalResult));
 });
 
-test('SE-HOST-1: native completion includes host function documentation', async ({ page }) => {
+test('SE-HOST-1.1: native completion includes host function documentation', async ({ page }) => {
   await page.goto('/host.html');
   const editor = page.getByRole('region', { name: 'Host spreadsheet', exact: true });
   const cell = editor.locator('td[data-x="0"][data-y="0"]').first();
@@ -51,7 +51,7 @@ test('SE-HOST-1: native completion includes host function documentation', async 
 
 for (const theme of ['light', 'dark'])
   for (const merged of [false, true])
-    test(`SE-CHROME-4: ${merged ? 'merged' : 'ordinary'} native editing preserves geometry and visible text in ${theme}`, async ({
+    test(`SE-CHROME-4.1: ${merged ? 'merged' : 'ordinary'} native editing preserves geometry and visible text in ${theme}`, async ({
       page,
     }) => {
       await page.goto(`/full.html?theme=${theme}`);

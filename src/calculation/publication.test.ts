@@ -46,7 +46,7 @@ const mutate = (workbook: Workbook, change: (next: Workbook) => void) => {
   return next;
 };
 
-describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
+describe('SE-HOST-3.1: deterministic authored calculation identity', () => {
   it('uses ordered JSON independent of object insertion order and omits undefined fields', () => {
     expect(orderedJson({ z: [1, { b: 2, a: null }], a: 'x', missing: undefined })).toBe(
       orderedJson({ a: 'x', z: [1, { a: null, b: 2 }] }),
@@ -259,7 +259,7 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
   });
 });
 
-describe('SE-HOST-CALC-2: external snapshot ingress', () => {
+describe('SE-HOST-3.1: external snapshot ingress', () => {
   it('accepts a detached ready publication with finite opaque context and valid quantity metadata', () => {
     const workbook = workbookFixture(),
       snapshot = publication(workbook);
@@ -496,7 +496,7 @@ describe('SE-HOST-CALC-2: external snapshot ingress', () => {
   });
 });
 
-describe('SE-HOST-CALC-3: bounded draft invalidation', () => {
+describe('SE-HOST-3.1: bounded draft invalidation', () => {
   it('invalidates transitive readers and keeps unrelated results outside the pending set', () => {
     const workbook = createWorkbook([['1', '=A1+1', '=B1+1', '=42']]);
     const result = calculateWorkbook(workbook),

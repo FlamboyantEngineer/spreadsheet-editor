@@ -10,7 +10,7 @@ async function open(page: Page, theme = 'light', lab = 'full') {
 }
 
 for (const theme of ['light', 'dark']) {
-  test(`SE-CHROME-5: fixed chrome, scaled cells and four selection edges in ${theme}`, async ({
+  test(`SE-CHROME-5.1: fixed chrome, scaled cells and four selection edges in ${theme}`, async ({
     page,
   }) => {
     const editor = await open(page, theme);
@@ -80,7 +80,7 @@ for (const theme of ['light', 'dark']) {
   });
 }
 
-test('SE-CHROME-5: embedded chrome uses accessible icon actions and public formula composition', async ({
+test('SE-CHROME-5.1: embedded chrome uses accessible icon actions and public formula composition', async ({
   page,
 }) => {
   const editor = await open(page, 'light', 'embedded');
@@ -99,7 +99,7 @@ test('SE-CHROME-5: embedded chrome uses accessible icon actions and public formu
     await expect(editor.getByRole('button', { name, exact: true })).toHaveCount(0);
 });
 
-test('SE-CHROME-5: pending formula survives formatting and inactive inline worksheet rename', async ({
+test('SE-CHROME-5.1: pending formula survives formatting and inactive inline worksheet rename', async ({
   page,
 }) => {
   const editor = await open(page);
@@ -133,7 +133,7 @@ test('SE-CHROME-5: pending formula survives formatting and inactive inline works
   await expect(editor.locator('td[data-x="1"][data-y="6"]').first()).toHaveText('9e-25');
 });
 
-test('SE-CHROME-5: cancelling an existing formula restores ordinary grid selection', async ({
+test('SE-CHROME-5.1: cancelling an existing formula restores ordinary grid selection', async ({
   page,
 }) => {
   const editor = await open(page);

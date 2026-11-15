@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   await expect(cell(editor(page), 2)).toHaveText('42');
 });
 
-test('SE-HOST-1: protected formula drafts paint immediately, invalidate dependents and commit exactly once', async ({
+test('SE-HOST-1.1: protected formula drafts paint immediately, invalidate dependents and commit exactly once', async ({
   page,
 }) => {
   const root = editor(page);
@@ -39,7 +39,7 @@ test('SE-HOST-1: protected formula drafts paint immediately, invalidate dependen
   await expect(cell(root, 1)).toHaveText('15');
 });
 
-test('SE-HOST-1: native drafts preserve accepted inputs, support cancellation and commit once', async ({
+test('SE-HOST-1.1: native drafts preserve accepted inputs, support cancellation and commit once', async ({
   page,
 }) => {
   const root = editor(page);
@@ -61,7 +61,7 @@ test('SE-HOST-1: native drafts preserve accepted inputs, support cancellation an
   await expect(page.getByLabel('Host transaction count')).toHaveText('1');
 });
 
-test('SE-HOST-1: both formula surfaces advertise host functions, bare equals and IME completion priority', async ({
+test('SE-HOST-1.1: both formula surfaces advertise host functions, bare equals and IME completion priority', async ({
   page,
 }) => {
   const root = editor(page);
@@ -102,7 +102,7 @@ test('SE-HOST-1: both formula surfaces advertise host functions, bare equals and
   await expect(page.getByLabel('Host transaction count')).toHaveText('0');
 });
 
-test('SE-HOST-1: external results update without edits, rich content and pins clear when pending, and result-only replacement preserves formulas', async ({
+test('SE-HOST-1.1: external results update without edits, rich content and pins clear when pending, and result-only replacement preserves formulas', async ({
   page,
 }) => {
   const root = editor(page);
@@ -148,7 +148,7 @@ test('SE-HOST-1: external results update without edits, rich content and pins cl
   await expect(cell(root, 0).getByRole('textbox')).toHaveCount(0);
 });
 
-test('SE-HOST-1: sheet switches restore selection, scroll and focus and commit the active draft', async ({
+test('SE-HOST-1.1: sheet switches restore selection, scroll and focus and commit the active draft', async ({
   page,
 }) => {
   const root = editor(page);
@@ -182,7 +182,7 @@ test('SE-HOST-1: sheet switches restore selection, scroll and focus and commit t
   ).toBe(true);
 });
 
-test('SE-SESSION-4: host saves include active drafts and flush saves only what is pending', async ({
+test('SE-SESSION-1.4: host saves include active drafts and flush saves only what is pending', async ({
   page,
 }) => {
   const root = editor(page);
@@ -211,7 +211,7 @@ test('SE-SESSION-4: host saves include active drafts and flush saves only what i
   await expect(page.getByLabel('Host save count')).toHaveText('2');
 });
 
-test('SE-HOST-1: annotation-only worksheet edges reach the mounted grid without an authored edit', async ({
+test('SE-HOST-1.1: annotation-only worksheet edges reach the mounted grid without an authored edit', async ({
   page,
 }) => {
   const root = editor(page);

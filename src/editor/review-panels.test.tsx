@@ -23,7 +23,7 @@ function Panels(props: SpreadsheetEditorProps) {
   );
 }
 
-describe('SE-HOST-1: panel commands use accepted host capabilities', () => {
+describe('SE-HOST-1.1: panel commands use accepted host capabilities', () => {
   it('refreshes an untouched title from the host while retaining a local title draft', async () => {
     const user = userEvent.setup();
     const workbook = { ...createWorkbook(), name: 'Initial title' };

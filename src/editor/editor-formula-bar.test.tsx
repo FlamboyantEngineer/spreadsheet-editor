@@ -51,7 +51,7 @@ function address() {
   return screen.getByRole('textbox', { name: 'Selected cell or range' }) as HTMLInputElement;
 }
 
-describe('SE-CHROME-4: public formula bar editing surface', () => {
+describe('SE-CHROME-4.1: public formula bar editing surface', () => {
   it('uses the library code surface and semantic reference tokens without field actions', () => {
     const { container } = render(<EditorFormulaBar {...configuration()} />);
     expect(formula().tagName).toBe('TEXTAREA');

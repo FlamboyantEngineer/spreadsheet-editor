@@ -93,7 +93,7 @@ describe('SE-ADAPTERS-3: in-memory host', () => {
     expect((await createMemoryHost().workbooks.load('a')).ok).toBe(false);
   });
 
-  it('SE-ADAPTERS-3.3: finds people by name and resolves known ids', async () => {
+  it('SE-ADAPTERS-1.4 and SE-ADAPTERS-3.3: finds people by name and resolves known ids', async () => {
     const host = createMemoryHost({
       reader: { id: 'r', name: 'Robin' },
       people: [
@@ -113,7 +113,7 @@ describe('SE-ADAPTERS-3: in-memory host', () => {
     ]);
   });
 
-  it('SE-ADAPTERS-3.4: keeps every saved state as a version, newest first, and restores one', async () => {
+  it('SE-ADAPTERS-1.5 and SE-ADAPTERS-3.4: keeps every saved state as a version, newest first, and restores one', async () => {
     const host = createMemoryHost({ workbooks: { a: createWorkbook([['1']]) }, now: () => at });
     await host.workbooks.save('a', { content: createWorkbook([['2']]), baseRevision: 'r1' });
     const changes: string[] = [];
@@ -165,7 +165,7 @@ describe('SE-ADAPTERS-3: in-memory host', () => {
 });
 
 describe('SE-ADAPTERS-4: presence', () => {
-  it('SE-ADAPTERS-4.2: people in one room see each other, not themselves, by name', () => {
+  it('SE-ADAPTERS-4.1 and SE-ADAPTERS-4.2: people in one room see each other, not themselves, by name', () => {
     const room = createMemoryPresenceRoom();
     const robin = createMemoryHost({ reader: { id: 'r', name: 'Robin' }, presence: room });
     const alex = createMemoryHost({

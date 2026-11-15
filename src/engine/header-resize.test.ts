@@ -73,7 +73,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('SE-CR-2.18: resize commits logical geometry once at grid zoom', () => {
+describe('SE-CHROME-5.1: resize commits logical geometry once at grid zoom', () => {
   it.each([50, 75, 100, 125, 150])('compensates a fractional column resize at %s%%', (zoom) => {
     const { result, event, col, onChange, sheet } = setup(zoom);
     act(() => {

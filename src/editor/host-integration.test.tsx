@@ -39,7 +39,7 @@ async function openSession(data: string[][]) {
   return { session, store };
 }
 
-describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
+describe('SE-HOST-1.1 and SE-HOST-2.1: accepted transactions and session lifecycle', () => {
   it('restores an uncommitted host draft and controls host panels through the stable handle', () => {
     const editorRef = createRef<SpreadsheetEditorHandle>(),
       onChange = vi.fn(),
@@ -312,7 +312,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     expect(session.status().dirty).toBe(false);
     expect(result.current.notice).toBe('Stale row identity');
   });
-  it('SE-SESSION-4: commits a draft once, then saves it through the session', async () => {
+  it('SE-SESSION-1.4: commits a draft once, then saves it through the session', async () => {
     const editorRef = createRef<SpreadsheetEditorHandle>(),
       order: string[] = [];
     const { session, store } = await openSession([['0']]);
@@ -340,7 +340,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     snapshot.worksheets[0].data[0][0] = 'tampered';
     expect(handle.getSnapshot().worksheets[0].data[0][0]).toBe('1E-25');
   });
-  it('SE-SESSION-2: keeps later local edits dirty while an earlier save is pending', async () => {
+  it('SE-SESSION-1.2: keeps later local edits dirty while an earlier save is pending', async () => {
     let finish!: () => void;
     const editorRef = createRef<SpreadsheetEditorHandle>();
     const { session, store } = await openSession([['a']]);
@@ -442,7 +442,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
   });
 });
 
-describe('SE-HOST-3/4: authoritative values, drafts and result search', () => {
+describe('SE-HOST-3.1 and SE-HOST-4.1: authoritative values, drafts and result search', () => {
   it('accepts publications without an edit, rejects conflicting revisions and never calculates externally', () => {
     const workbook = createWorkbook([['=NOW()']]),
       onChange = vi.fn();
@@ -530,7 +530,7 @@ describe('SE-HOST-3/4: authoritative values, drafts and result search', () => {
   });
 });
 
-describe('SE-REVIEW-1.6: comment authors are named through identity', () => {
+describe('SE-REVIEW-1.1: comment authors are named through identity', () => {
   it('resolves stored person ids and shows an unknown id as itself', async () => {
     const workbook = createWorkbook([['1']]);
     workbook.comments = [

@@ -23,7 +23,7 @@ export function useCalculation(
   provider: CalculationProvider,
   options?: CalculationOptions,
   enabled = true,
-  /** The built-in client calculator's own results are not re-validated (SE-PERF-1). */
+  /** The built-in client calculator's own results are not re-validated (SE-PERF-2.1). */
   trusted = false,
 ) {
   const inputKey = useMemo(() => acceptedCalculationKey(workbook), [workbook]);

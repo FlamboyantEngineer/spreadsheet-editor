@@ -8,7 +8,7 @@ import { createQuantityArithmetic, makeQuantity } from './units.js';
 const arithmetic = createArithmetic(),
   quantities = createQuantityArithmetic();
 
-describe('SE-CALC-4: exact and dimensionally valid selection statistics', () => {
+describe('SE-CALC-4.1: exact and dimensionally valid selection statistics', () => {
   it('counts nonempty values and keeps rational statistics exact', () => {
     const third = arithmetic.divide(arithmetic.parse('1'), arithmetic.parse('3'));
     const summary = summarizeCellValues([third, third, third, null, '', 'label', false]);

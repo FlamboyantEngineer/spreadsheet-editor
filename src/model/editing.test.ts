@@ -6,7 +6,7 @@ import { createWorkbook } from './workbook.js';
 
 const range = { x1: 0, y1: 0, x2: 5, y2: 5 };
 
-describe('SE-CHROME-1: borders share the cell style spelling', () => {
+describe('SE-CHROME-1.1: borders share the cell style spelling', () => {
   it('leaves no empty style entries and keeps the extent of an unstyled range', () => {
     const workbook = createWorkbook([['1']]);
     const cleared = borderCells(workbook, 'sheet-1', range, 'none');
@@ -41,7 +41,7 @@ describe('SE-CHROME-1: borders share the cell style spelling', () => {
   });
 });
 
-describe('SE-CHROME-2: commands name an unknown worksheet', () => {
+describe('SE-CHROME-2.1: commands name an unknown worksheet', () => {
   it('throws a range error instead of failing inside the command', () => {
     const workbook = createWorkbook([['1']]);
     for (const command of [

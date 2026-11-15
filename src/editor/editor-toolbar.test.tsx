@@ -126,7 +126,7 @@ function openSession() {
   return createWorkbookSession({ workbooks: host.workbooks, workbookId: 'book' });
 }
 
-describe('SE-CHROME-1 / SE-CONTEXT-1: shared command presentation', () => {
+describe('SE-CHROME-1.1 / SE-CHROME-8.1: shared command presentation', () => {
   it('gives every app-owned context/menu action and submenu a public icon, with only supported shortcuts', () => {
     const { editor } = fixture({
       session: openSession(),
@@ -211,7 +211,7 @@ describe('SE-CHROME-1 / SE-CONTEXT-1: shared command presentation', () => {
   });
 });
 
-describe('SE-CHROME-4: embedded icon toolbar', () => {
+describe('SE-CHROME-4.1: embedded icon toolbar', () => {
   it('renders new border and merge glyphs through public provider overrides and retains their commands', async () => {
     const user = userEvent.setup();
     const { editor } = fixture({ chrome: 'embedded' });
@@ -349,7 +349,7 @@ describe('SE-CHROME-4: embedded icon toolbar', () => {
   });
 });
 
-describe('SE-CHROME-7: public text formatting controls', () => {
+describe('SE-CHROME-7.1: public text formatting controls', () => {
   it('steps a font size between presets with the public glyphs and accepts a custom fractional size', async () => {
     const user = userEvent.setup();
     const { editor } = fixture({ chrome: 'full' }, { style: { 'font-size': '13px' } });

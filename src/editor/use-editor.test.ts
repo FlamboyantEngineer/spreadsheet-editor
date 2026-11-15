@@ -91,7 +91,7 @@ async function openSession(
   await session.ready;
   return { session, store, held };
 }
-describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
+describe('SE-CHROME-1.1: capability and preview boundaries', () => {
   it('clamps reviewers, previews only their proposals, and blocks structural/save/decision commands', async () => {
     const { session, store } = await openSession([['1E-25']]);
     const { result, rerender } = renderHook(
@@ -151,8 +151,8 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   });
 });
 
-describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
-  it('SE-SESSION-4: exposes background session failures through the imperative state', async () => {
+describe('SE-SESSION-1.4: saving through the session', () => {
+  it('SE-SESSION-1.4: exposes background session failures through the imperative state', async () => {
     vi.useFakeTimers();
     const { session, store } = await openSession([['before']], { autosaveDelay: 10 });
     store.save.mockResolvedValueOnce({
@@ -186,7 +186,7 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     session.close();
   });
 
-  it('SE-SESSION-4: applies causal external receipts to a controlled editor without saving', async () => {
+  it('SE-SESSION-1.4: applies causal external receipts to a controlled editor without saving', async () => {
     const { session, store } = await openSession([['before']]);
     const onChange = vi.fn();
     const props: SpreadsheetEditorProps = {
@@ -377,7 +377,7 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
   });
 });
 
-it('SE-CR-2.5: preserves a protected draft across a controlled update until apply or cancel', () => {
+it('SE-CHROME-4.1: preserves a protected draft across a controlled update until apply or cancel', () => {
   const first = createWorkbook([['1']]);
   const { result, rerender } = renderHook(({ value }) => useSpreadsheetEditor({ value }), {
     initialProps: { value: first },
@@ -394,7 +394,7 @@ it('SE-CR-2.5: preserves a protected draft across a controlled update until appl
   expect(result.current.draftValue).toBe('9');
 });
 
-describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', () => {
+describe('SE-CHROME-2.1 and SE-CHROME-4.1: worksheet targets and protected formula transactions', () => {
   it('discards pending drafts for toolbar undo/redo without adding them to workbook history', () => {
     const onChange = vi.fn();
     const { result } = renderHook(() =>
@@ -617,7 +617,7 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
   });
 });
 
-describe('SE-CHROME-3: asynchronous clipboard and protected drafts', () => {
+describe('SE-CHROME-3.1: asynchronous clipboard and protected drafts', () => {
   it('keeps a later cell draft when an earlier paste resolves after selection changes', async () => {
     let resolveRead!: (text: string) => void;
     const onChange = vi.fn();
@@ -707,7 +707,7 @@ describe('SE-CHROME-3: asynchronous clipboard and protected drafts', () => {
   });
 });
 
-describe('SE-CHROME-5: workbook replacement', () => {
+describe('SE-CHROME-5.1: workbook replacement', () => {
   it('clears an old formula draft when a replacement reuses the active sheet id', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]) }),
@@ -727,7 +727,7 @@ describe('SE-CHROME-5: workbook replacement', () => {
   });
 });
 
-describe('SE-HOST-MODEL-2 and SE-PERF-1: change context', () => {
+describe('SE-HOST-MODEL-2.1 and SE-PERF-2.1: change context', () => {
   it('gives the host a detached, frozen baseline and patches for the edited cell only', () => {
     const onChange = vi.fn<NonNullable<SpreadsheetEditorProps['onChange']>>();
     const { result } = renderHook(() =>
@@ -769,7 +769,7 @@ describe('SE-HOST-MODEL-2 and SE-PERF-1: change context', () => {
   });
 });
 
-describe('SE-PERF-1: recalculating after an edit', () => {
+describe('SE-PERF-2.1: recalculating after an edit', () => {
   it('keeps cells that do not read the edited cell ready while the result is pending', async () => {
     const replies: { workbook: Workbook; finish(result: CalculationResult): void }[] = [];
     const provider = {

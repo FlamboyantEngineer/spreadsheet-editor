@@ -53,7 +53,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('SE-PERF-1: grid work scales with what changed', () => {
+describe('SE-PERF-1.1: grid work scales with what changed', () => {
   it('repaints only cells whose value changed, and cells the engine rewrote', () => {
     const { handle, records } = engineGrid([]);
     const values = [['a', 'b', 'c']];
