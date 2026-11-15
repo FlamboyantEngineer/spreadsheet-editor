@@ -3,7 +3,7 @@ import { requireDefined } from '../model/require-defined.js';
 // A workbook session: one stored workbook, loaded through the host's workbook store, edited, and
 // saved against the revision it was edited from. It needs no framework or DOM; the editor takes it
 // as its `session` prop. Coverage is causal: a save covers the local transactions accepted before
-// it started, and only its answer clears them (SE-SESSION-2).
+// it started, and only its answer clears them (SE-SESSION-1.2).
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
 import type {
   DraftsAdapter,
@@ -106,7 +106,7 @@ class HostRequestError extends Error {
   }
 }
 
-/** Opens a stored workbook (SE-SESSION-1). */
+/** Opens a stored workbook (SE-SESSION-1.1). */
 export function createWorkbookSession(options: WorkbookSessionOptions): WorkbookSession {
   const { workbooks, workbookId, drafts } = options;
   const autosaveDelay = options.autosaveDelay ?? DEFAULT_AUTOSAVE_DELAY;

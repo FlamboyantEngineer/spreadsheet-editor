@@ -56,7 +56,7 @@ class RejectedServer extends EventEmitter {
   }
 }
 
-describe('SE-LABS-1: shared lab port policy with custom API handlers', () => {
+describe('SE-LABS-1.1: shared lab port policy with custom API handlers', () => {
   it('binds an assigned port, reports it and retains request and existing event handlers', async () => {
     const instance = server();
     const listening = vi.fn();

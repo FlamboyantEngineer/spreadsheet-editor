@@ -28,7 +28,7 @@ function attachedRows(editor: Locator) {
   return editor.locator('.jss_worksheet tbody tr[data-y]').count();
 }
 
-test('SE-PERF-1: a 50,000-cell worksheet attaches only the rows near the viewport', async ({
+test('SE-PERF-1.1: a 50,000-cell worksheet attaches only the rows near the viewport', async ({
   page,
 }) => {
   const editor = await openLarge(page);
@@ -54,7 +54,7 @@ test('SE-PERF-1: a 50,000-cell worksheet attaches only the rows near the viewpor
   await expect.poll(() => cellAt(editor, 'top')).toBe(`${expected}:Item ${expected + 1}.4`);
 });
 
-test('SE-PERF-1: keyboard moves past the attached rows scroll to the selected cell', async ({
+test('SE-PERF-1.1: keyboard moves past the attached rows scroll to the selected cell', async ({
   page,
 }) => {
   const editor = await openLarge(page);
@@ -69,7 +69,7 @@ test('SE-PERF-1: keyboard moves past the attached rows scroll to the selected ce
   await expect(first).toBeInViewport();
 });
 
-test('SE-PERF-1: rows attached after a zoom change carry the zoomed text metrics', async ({
+test('SE-PERF-1.1: rows attached after a zoom change carry the zoomed text metrics', async ({
   page,
 }) => {
   const editor = await openLarge(page);
@@ -91,7 +91,7 @@ test('SE-PERF-1: rows attached after a zoom change carry the zoomed text metrics
   expect(await fontSize(far)).toBe(zoomed);
 });
 
-test('SE-PERF-1: a far cell can be edited and recalculates its row', async ({ page }) => {
+test('SE-PERF-1.1: a far cell can be edited and recalculates its row', async ({ page }) => {
   const editor = await openLarge(page);
   await editor.locator('.jss_content').evaluate((content) => {
     content.scrollTop = content.scrollHeight;
@@ -109,7 +109,7 @@ test('SE-PERF-1: a far cell can be edited and recalculates its row', async ({ pa
   await expect(editor.locator(`td[data-x="1"][data-y="${y + 1}"]`)).toBeInViewport();
 });
 
-test('SE-PERF-1: find reveals a match in a detached row', async ({ page }) => {
+test('SE-PERF-1.1: find reveals a match in a detached row', async ({ page }) => {
   const editor = await openLarge(page);
   await editor.locator('td[data-x="3"][data-y="2"]').click();
   await page.keyboard.press('Control+f');
@@ -121,7 +121,7 @@ test('SE-PERF-1: find reveals a match in a detached row', async ({ page }) => {
   await expect(match).toBeInViewport();
 });
 
-test('SE-PERF-1: a selection reaching detached rows keeps its outline on the attached ones', async ({
+test('SE-PERF-1.1: a selection reaching detached rows keeps its outline on the attached ones', async ({
   page,
 }) => {
   const editor = await openLarge(page);

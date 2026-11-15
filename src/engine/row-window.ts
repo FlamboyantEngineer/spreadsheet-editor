@@ -4,7 +4,7 @@ import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 /**
  * The engine builds a row element for every worksheet row; only the rows near the viewport are
- * attached to its table body (SE-PERF-1). Two spacer rows stand in for the detached rows above
+ * attached to its table body (SE-PERF-1.1). Two spacer rows stand in for the detached rows above
  * and below, so the scrollbar spans the whole worksheet and every attached row sits where it
  * would if all rows were attached.
  */

@@ -21,7 +21,7 @@ async function token(editor: Locator, name: string) {
   }, name);
 }
 
-test('SE-CONTEXT-1: cell context menus cancel the browser menu and retain usable commands', async ({
+test('SE-CHROME-8.1: cell context menus cancel the browser menu and retain usable commands', async ({
   page,
 }) => {
   const editor = await open(page);
@@ -50,7 +50,7 @@ test('SE-CONTEXT-1: cell context menus cancel the browser menu and retain usable
 });
 
 for (const theme of ['light', 'dark']) {
-  test(`SE-CHROME-6: cells, headers and chrome use the shared background tokens in ${theme}`, async ({
+  test(`SE-CHROME-6.1: cells, headers and chrome use the shared background tokens in ${theme}`, async ({
     page,
   }) => {
     const editor = await open(page, 'full', theme);
@@ -91,7 +91,7 @@ for (const theme of ['light', 'dark']) {
 
 for (const lab of ['full', 'embedded']) {
   for (const width of [1440, 390]) {
-    test(`SE-CHROME-6: ${lab} worksheet add and scrollbar stay inside their lanes at ${width}px`, async ({
+    test(`SE-CHROME-6.1: ${lab} worksheet add and scrollbar stay inside their lanes at ${width}px`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 1000 });
@@ -171,7 +171,7 @@ for (const lab of ['full', 'embedded']) {
   }
 }
 
-test('SE-CHROME-6: the full toolbar has one row and icon actions, with readable field controls', async ({
+test('SE-CHROME-6.1: the full toolbar has one row and icon actions, with readable field controls', async ({
   page,
 }) => {
   const editor = await open(page);
@@ -198,7 +198,7 @@ test('SE-CHROME-6: the full toolbar has one row and icon actions, with readable 
   await expect(toolbar.getByRole('textbox', { name: 'Font size', exact: true })).toBeVisible();
 });
 
-test('SE-CHROME-6: the embedded menu uses the public three-line glyph with an intact button border', async ({
+test('SE-CHROME-6.1: the embedded menu uses the public three-line glyph with an intact button border', async ({
   page,
 }) => {
   const editor = await open(page, 'embedded');

@@ -23,7 +23,7 @@ async function open(page: Page, chrome: 'full' | 'embedded') {
 }
 
 for (const chrome of ['full', 'embedded'] as const) {
-  test(`SE-CHROME-7: custom font sizes and preset stepping format the range in ${chrome}`, async ({
+  test(`SE-CHROME-7.1: custom font sizes and preset stepping format the range in ${chrome}`, async ({
     page,
   }) => {
     const editor = await open(page, chrome);
@@ -50,7 +50,7 @@ for (const chrome of ['full', 'embedded'] as const) {
         );
   });
 
-  test(`SE-CHROME-7: glyph color palettes, custom entry and clear format cells in ${chrome}`, async ({
+  test(`SE-CHROME-7.1: glyph color palettes, custom entry and clear format cells in ${chrome}`, async ({
     page,
   }) => {
     const editor = await open(page, chrome);
@@ -86,7 +86,7 @@ for (const chrome of ['full', 'embedded'] as const) {
   });
 }
 
-test('SE-CHROME-7: palette formatting commits a pending formula with one undoable change', async ({
+test('SE-CHROME-7.1: palette formatting commits a pending formula with one undoable change', async ({
   page,
 }) => {
   const editor = await open(page, 'embedded');

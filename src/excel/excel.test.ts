@@ -14,7 +14,7 @@ import { decodeImportRequest, encodeImportRequest } from './protocol.js';
 import { exportNumberFormat, importNumberFormat } from './styles.js';
 import { exportXlsx, exportXlsxWithReport } from './write.js';
 
-describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
+describe('SE-XLSX-1.1 and SE-XLSX-2.1: Excel conversion and loss reporting', () => {
   it('keeps formulas and geometry while discarding caches and reporting unsupported content', async () => {
     const document = new ExcelJS.Workbook(),
       sheet = document.addWorksheet('Inputs');
@@ -85,7 +85,7 @@ describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
   });
 });
 
-describe('SE-XL-3: bounded OOXML input', () => {
+describe('SE-XLSX-1.1: bounded OOXML input', () => {
   it('rejects malformed inputs, XML entities and files over the configured input limit', async () => {
     expect(() => inspectXlsx(new Uint8Array([1, 2, 3]))).toThrow();
     const document = new ExcelJS.Workbook();
@@ -104,7 +104,7 @@ describe('SE-XL-3: bounded OOXML input', () => {
   });
 });
 
-it('SE-XL-5.2: exports immutable operands, aliases and exact caches without live resolution', async () => {
+it('SE-XLSX-2.1: exports immutable operands, aliases and exact caches without live resolution', async () => {
   const workbook = createWorkbook([
     [
       '=CAPTURED.VALUE("mass")+1',
@@ -148,7 +148,7 @@ it('SE-XL-5.2: exports immutable operands, aliases and exact caches without live
   expect(sheet.getCell('G1').formula).toBe('"EXPM1("');
 });
 
-it('SE-XL-1.2: resolves theme tints and indexed colors to authored hex styles', async () => {
+it('SE-XLSX-1.1: resolves theme tints and indexed colors to authored hex styles', async () => {
   const document = new ExcelJS.Workbook(),
     sheet = document.addWorksheet('Colors');
   sheet.getCell('A1').value = 1;
@@ -177,7 +177,7 @@ const exampleCapabilities: ExcelFormulaCapabilities = {
   })),
 };
 
-describe('SE-XLSX-3: explicit serializable host capabilities', () => {
+describe('SE-XLSX-3.1: explicit serializable host capabilities', () => {
   it('requires explicit host descriptors during import, including aliases and every example function', async () => {
     const document = new ExcelJS.Workbook(),
       sheet = document.addWorksheet('Inputs');
@@ -340,7 +340,7 @@ describe('SE-XLSX-3: explicit serializable host capabilities', () => {
   });
 });
 
-describe('SE-XLSX-4: locale, exact decimals and explicit metadata losses', () => {
+describe('SE-XLSX-4.1: locale, exact decimals and explicit metadata losses', () => {
   it('round trips EUR/de-DE and USD/en-US format metadata without rounding stored decimals', async () => {
     const formats = [
       { kind: 'currency' as const, currency: 'EUR', locale: 'de-DE', decimals: 2 },
@@ -381,7 +381,7 @@ describe('SE-XLSX-4: locale, exact decimals and explicit metadata losses', () =>
   });
 });
 
-it('SE-XLSX-4: keeps exact numeric text beyond display precision instead of rounding it', async () => {
+it('SE-XLSX-4.1: keeps exact numeric text beyond display precision instead of rounding it', async () => {
   const workbook = createWorkbook([['1']]),
     result = calculateWorkbook(workbook);
   const numerator = '1' + '0'.repeat(10000) + '1';
@@ -397,7 +397,7 @@ it('SE-XLSX-4: keeps exact numeric text beyond display precision instead of roun
   expect(opened.worksheets[0].getCell('A1').value).toBe(numerator);
 });
 
-it('SE-XLSX-4: projects canonical quantities once, preserves temperature differences and reports typed losses', async () => {
+it('SE-XLSX-4.1: projects canonical quantities once, preserves temperature differences and reports typed losses', async () => {
   const workbook = createWorkbook([
     ['alternate authored text', 'another representation', '2'],
     ['=30 °C-25 °C'],
@@ -454,7 +454,7 @@ it('SE-XLSX-4: projects canonical quantities once, preserves temperature differe
   expect(imported.workbook.worksheets[0].data[0]).toEqual(['9 °F', '≈0 °C', '1 rad']);
 });
 
-it('SE-XLSX-4: rejects malformed quantity and provenance result metadata at the export boundary', async () => {
+it('SE-XLSX-4.1: rejects malformed quantity and provenance result metadata at the export boundary', async () => {
   const workbook = createWorkbook([['1']]);
   for (const metadata of [
     { temperature: 'relative' },
@@ -467,7 +467,7 @@ it('SE-XLSX-4: rejects malformed quantity and provenance result metadata at the 
   }
 });
 
-it('SE-CHROME-1: an imported style and the same style applied in the editor store the same text', async () => {
+it('SE-CHROME-1.1: an imported style and the same style applied in the editor store the same text', async () => {
   const document = new ExcelJS.Workbook(),
     sheet = document.addWorksheet('Styles');
   sheet.getCell('A1').value = 'Label';

@@ -55,7 +55,7 @@ async function heldSession(data: string[][]) {
   return { session, save, answers };
 }
 
-describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => {
+describe('SE-HOST-2.1 and SE-SESSION-1.4: flushes cover each requested edit', () => {
   it('commits a newer draft and waits for a newer save when another flush is pending', async () => {
     const editorRef = createRef<SpreadsheetEditorHandle>();
     const { session, save, answers } = await heldSession([['before']]);

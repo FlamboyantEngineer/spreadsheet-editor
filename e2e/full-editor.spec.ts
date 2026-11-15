@@ -19,7 +19,7 @@ async function contextOn(page: Page, x: number, y: number) {
   return menu;
 }
 
-test('SE-CHROME-1: full chrome formats cells without rounding canonical calculations', async ({
+test('SE-CHROME-1.1: full chrome formats cells without rounding canonical calculations', async ({
   page,
 }) => {
   await openLab(page);
@@ -46,7 +46,7 @@ test('SE-CHROME-1: full chrome formats cells without rounding canonical calculat
   );
 });
 
-test('SE-CONTEXT-1: mouse and keyboard menus use React and rewrite row references', async ({
+test('SE-CHROME-8.1: mouse and keyboard menus use React and rewrite row references', async ({
   page,
 }) => {
   await openLab(page);
@@ -69,7 +69,7 @@ test('SE-CONTEXT-1: mouse and keyboard menus use React and rewrite row reference
   ).not.toBeVisible();
 });
 
-test('SE-REVIEW-3: comments support replies, resolve/reopen, and host persistence', async ({
+test('SE-REVIEW-1.1: comments support replies, resolve/reopen, and host persistence', async ({
   page,
 }) => {
   await openLab(page);
@@ -114,7 +114,7 @@ test('SE-REVIEW-3: comments support replies, resolve/reopen, and host persistenc
   await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveText('1e-25');
 });
 
-test('SE-REVIEW-4: native grid edits create suggestions and accept/reject preserves canonical data', async ({
+test('SE-REVIEW-2.1: native grid edits create suggestions and accept/reject preserves canonical data', async ({
   page,
 }) => {
   await openLab(page);
@@ -144,7 +144,7 @@ test('SE-REVIEW-4: native grid edits create suggestions and accept/reject preser
   await expect(cell).toHaveText('2e-25');
 });
 
-test('SE-CHROME-2: worksheet context actions rename and preserve cross-sheet formulas', async ({
+test('SE-CHROME-2.1: worksheet context actions rename and preserve cross-sheet formulas', async ({
   page,
 }) => {
   await openLab(page);
@@ -162,7 +162,7 @@ test('SE-CHROME-2: worksheet context actions rename and preserve cross-sheet for
   await expect(editor.getByRole('tab', { name: 'Parameters', exact: true })).toBeVisible();
 });
 
-test('SE-REVIEW-5: host read-only mode locks edits, comments, decisions and context actions', async ({
+test('SE-REVIEW-5.1: host read-only mode locks edits, comments, decisions and context actions', async ({
   page,
 }) => {
   await openLab(page);
@@ -188,7 +188,7 @@ test('SE-REVIEW-5: host read-only mode locks edits, comments, decisions and cont
   ).toBeDisabled();
 });
 
-test('SE-CHROME-3: search fields receive keyboard input without editing the selected grid cell', async ({
+test('SE-CHROME-3.1: search fields receive keyboard input without editing the selected grid cell', async ({
   page,
 }) => {
   await openLab(page);
@@ -212,7 +212,7 @@ test('SE-CHROME-3: search fields receive keyboard input without editing the sele
   );
 });
 
-test('SE-REVIEW-6: bulk clipboard paste becomes one proposal and never edits canonical cells directly', async ({
+test('SE-REVIEW-2.1: bulk clipboard paste becomes one proposal and never edits canonical cells directly', async ({
   page,
   context,
 }) => {
@@ -234,7 +234,7 @@ test('SE-REVIEW-6: bulk clipboard paste becomes one proposal and never edits can
   await expect(editor.locator('td[data-x="1"][data-y="1"]').first()).toHaveText('2e-25');
 });
 
-test('SE-REVIEW-7: server calculations retain comments and accepted exact suggestions', async ({
+test('SE-REVIEW-7.1: server calculations retain comments and accepted exact suggestions', async ({
   page,
 }) => {
   await openLab(page);
@@ -275,7 +275,7 @@ test('SE-REVIEW-7: server calculations retain comments and accepted exact sugges
   await expect(editor.locator('td[data-x="1"][data-y="3"]').first()).toHaveText('2e-25');
 });
 
-test('SE-CHROME-1: the history pane saves a named version and opens it read-only', async ({
+test('SE-CHROME-1.1: the history pane saves a named version and opens it read-only', async ({
   page,
 }) => {
   await openLab(page);

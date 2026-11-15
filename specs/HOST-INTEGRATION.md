@@ -1,6 +1,8 @@
 # Host integration
 
-## SE-HOST-1 — Semantic accepted changes
+## SE-HOST-1 - Semantic accepted changes
+
+### SE-HOST-1.1 - Semantic accepted changes
 
 `onChange(next, context)` emits one local transaction per accepted command. The context includes a detached baseline, transaction ID, source and ordered `WorkbookOperation` patches. Line commands carry explicit stable identities and neighbors even for blank rows. Ordinary writes beyond existing identities emit the appended line insertions before cell patches, using the host's ID factory. Workbook-title changes emit invertible `workbook-metadata` operations. Remote controlled values never emit a local change. Synchronous host rejection retains accepted data, history and drafts and fails navigation/save/flush. Hosts preflight before mutating shared state; asynchronous durability failures belong to the workbook session. External undo owns its lifetime and every undo surface, including the history pane, delegates when configured.
 
@@ -8,7 +10,9 @@ Implementation: `src/model/operations.ts`, `src/editor/command-operations.ts`, `
 
 Verification: `src/model/host-model.test.ts`, `src/editor/host-integration.test.tsx`, `src/editor/review-panels.test.tsx`.
 
-## SE-HOST-2 — Session lifecycle
+## SE-HOST-2 - Session lifecycle
+
+### SE-HOST-2.1 - Session lifecycle
 
 `editorRef` exposes a stable session handle for detached snapshots, draft commit/cancel, selection, state subscription, Save and Flush. Commit synchronously publishes native/formula-bar input once. Save and Flush go through the editor's workbook session ([HOST-ADAPTERS.md](HOST-ADAPTERS.md), SE-SESSION): Flush commits the active draft and waits until every change accepted before it is saved, without waiting for later ones. A failed save leaves local changes dirty and retains the error through newer edits until explicit retry or success. The handle reports session failures even when a background autosave produced them. Remote object replacement is not a local change; an earlier save cannot cover a later local edit. Unmount/session replacement invalidates handles and subscriptions. Providers remain host-owned. `restoreDraft` restores retained uncommitted input without changing accepted data, and `setPanel` opens or collapses a host-selected panel. `panelRef`, `panelId`, `panelData` and `onPanelChange` allow the host to connect its existing dock lifecycle without discovering or modifying package markup. `onPanelChange` is called once on mount and then only when the panel id or its expanded state changes, never because the host passed a new callback, so a host may store the state from an inline callback.
 
@@ -18,7 +22,9 @@ Implementation: `src/editor/contracts.ts`, `src/editor/public-host.ts`, `src/edi
 
 Verification: `src/editor/host-integration.test.tsx`, `src/editor/use-editor.test.ts`, `src/editor/editor-lifecycle.test.tsx`.
 
-## SE-HOST-3 — Authoritative publications
+## SE-HOST-3 - Authoritative publications
+
+### SE-HOST-3.1 - Authoritative publications
 
 External mode accepts bounded version-one results tied to `workbookCalculationKey` and a monotonic session revision. The key is a short digest (`wck1-` and 28 hexadecimal digits) of the canonical calculation inputs, so equal inputs share a key across transports whatever the workbook's size; it is a freshness token, not an authorization signature. The editor computes it once per accepted workbook. Reusing a revision for different content is rejected. It never invokes local calculation. `reviewCalculation` supplies an independently keyed publication for the current actor’s suggestion projection; missing or stale review publications remain pending rather than calculating locally. Per-cell pending/unavailable states cannot retain cached values as current. Exports and ordinary document insertion require current ready values for all requested authored cells. Native calculation records actual dependencies; protected drafts invalidate their cell and transitive dependents without evaluation.
 
@@ -28,7 +34,9 @@ Implementation: `src/calculation/publication.ts`, `src/editor/use-publication.ts
 
 Verification: `src/calculation/publication.test.ts`, `src/editor/host-integration.test.tsx`, `src/editor/use-calculation.test.ts`.
 
-## SE-HOST-4 — Catalog and safe presentation
+## SE-HOST-4 - Catalog and safe presentation
+
+### SE-HOST-4.1 - Catalog and safe presentation
 
 Host descriptors extend both formula entry surfaces without overriding built-ins or authorizing execution. `includeBuiltinFormulaFunctions={false}` makes the supplied descriptors the complete catalog in both formula entry surfaces; a host can then advertise only its authorized evaluator capabilities, including names also present in the native catalog. Host `formatting.kinds` and `formatting.decimalPlaces` constrain both visible formatting controls and accepted formatting commands to the host’s storage capabilities. `features.newWorkbook` and `features.import` can hide replacement actions when the host owns workbook creation and import. Comment-only permissions retain Reviewing mode for comment actions without permitting cell changes, suggestions or decisions. Matching input/revision presentation may supply bounded text, accessible descriptions, default units and semantic decorations. Explicit formats take precedence. Current ready cells may mount React content through engine-owned portals; pending drafts and stale publications clear external content. Search includes authored expressions and current formatted results; replacement only changes authored matches.
 
@@ -40,7 +48,9 @@ Verification: `src/editor/host-integration.test.tsx`, `src/editor/editor-search.
 
 See [the implementation plan](../docs/CORE-EDITOR-PLAN.md) for compatibility and acceptance requirements. Host application storage, authorization, transport, immutable history and rich-content sanitation remain outside the package.
 
-## SE-HOST-5 — Atomic operation application
+## SE-HOST-5 - Atomic operation application
+
+### SE-HOST-5.1 - Atomic operation application
 
 The headless `/model` exports `applyWorkbookTransaction(current, context, { appliedTransactionIds? })`, `applyWorkbookOperations` and `createWorkbookOperationBinding`. The binding reads the latest accepted host snapshot, applies the full semantic transaction in memory, validates it, and calls the host's synchronous atomic `commit` exactly once. It retains up to `rememberTransactions` accepted transaction IDs (default 10,000) across transport/provider replacement and rejects duplicates in that window. The host’s synchronous `hasTransaction(id)` lookup extends deduplication to older receipts or session restart using durable history. No full transaction contexts are retained. No global document, provider, undo manager or calculator is created. Hosts authorize actor ownership and permissions before their atomic commit; these functions are not an authorization boundary.
 
@@ -56,4 +66,4 @@ The current callback-based editor still marks controlled local changes dirty unt
 
 Implementation: `src/model/apply-operations.ts`, `src/host/transaction-receipts.ts`.
 
-Verification: `src/model/apply-operations.test.ts`, `src/host/transaction-receipts.test.ts`, packed public consumers in `scripts/check-package.mjs`.
+Verification: `src/model/apply-operations.test.ts`, `src/host/transaction-receipts.test.ts`, and the packed public consumers that the package check imports.

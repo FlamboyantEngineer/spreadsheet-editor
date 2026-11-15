@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('SE-LABS-3: index links to three independent editor configurations', async ({ page }) => {
+test('SE-LABS-3.1: index links to three independent editor configurations', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Spreadsheet editor labs' })).toBeVisible();
   for (const [name, chrome] of [
@@ -20,7 +20,7 @@ test('SE-LABS-3: index links to three independent editor configurations', async 
   }
 });
 
-test('SE-LABS-3: stylesheet and theme choices follow navigation', async ({ page }) => {
+test('SE-LABS-3.1: stylesheet and theme choices follow navigation', async ({ page }) => {
   await page.goto('/?theme=dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('link', { name: 'Minimal', exact: true }).click();
@@ -35,7 +35,7 @@ test('SE-LABS-3: stylesheet and theme choices follow navigation', async ({ page 
   await expect(page.locator('td[data-x="3"][data-y="1"]').first()).toHaveText('4');
 });
 
-test('SE-LABS-4: shared shadow-root bar applies and remembers custom styles and theme attributes', async ({
+test('SE-LABS-4.1: shared shadow-root bar applies and remembers custom styles and theme attributes', async ({
   page,
 }) => {
   await page.route('**/custom-lab.css', (route) =>
@@ -69,7 +69,7 @@ test('SE-LABS-4: shared shadow-root bar applies and remembers custom styles and 
   await expect(bar.getByRole('textbox', { name: 'Theme value', exact: true })).toHaveValue('night');
 });
 
-test('SE-LABS-4: system theme follows browser changes and labs work when storage is refused', async ({
+test('SE-LABS-4.1: system theme follows browser changes and labs work when storage is refused', async ({
   page,
 }) => {
   await page.addInitScript(() =>
@@ -90,7 +90,7 @@ test('SE-LABS-4: system theme follows browser changes and labs work when storage
   await expect(page.locator('td[data-x="0"][data-y="1"]').first()).toHaveText('Apples');
 });
 
-test('SE-LABS-4: the head bootstrap applies settings without waiting for the editor bundle', async ({
+test('SE-LABS-4.1: the head bootstrap applies settings without waiting for the editor bundle', async ({
   page,
 }) => {
   await page.route('**/labs.js', (route) => route.abort());
@@ -102,7 +102,7 @@ test('SE-LABS-4: the head bootstrap applies settings without waiting for the edi
 });
 
 for (const width of [1440, 768, 390]) {
-  test(`SE-CHROME-4: formula and toolbar layout stays within ${width}px`, async ({ page }) => {
+  test(`SE-CHROME-4.1: formula and toolbar layout stays within ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/full.html');
     const editor = page.locator('.se-editor').first();
@@ -143,7 +143,7 @@ for (const width of [1440, 768, 390]) {
   });
 }
 
-test('SE-CR-2.5: formula cancellation and reference picking preserve authored cells', async ({
+test('SE-CHROME-4.1: formula cancellation and reference picking preserve authored cells', async ({
   page,
 }) => {
   await page.goto('/full.html');
@@ -165,7 +165,7 @@ test('SE-CR-2.5: formula cancellation and reference picking preserve authored ce
   ).toHaveValue('A2');
 });
 
-test('SE-LABS-3: dark grid uses the active theme and compact controls show their values', async ({
+test('SE-LABS-3.1: dark grid uses the active theme and compact controls show their values', async ({
   page,
 }) => {
   await page.goto('/full.html?theme=dark');

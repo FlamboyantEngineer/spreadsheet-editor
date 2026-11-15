@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { requireDefined } from '../model/require-defined.js';
 import { createSelectionPublication } from './selection-publication.js';
 
-describe('SE-UI-1: bounded selection publication', () => {
+describe('SE-UI-1.1: bounded selection publication', () => {
   it('coalesces pointer bursts once per frame and publishes final selection', () => {
     const frames = new Map<number, FrameRequestCallback>();
     let id = 0;

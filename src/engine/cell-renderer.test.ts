@@ -15,7 +15,7 @@ const key = JSON.stringify(['sheet', 0, 0]);
 const publication = { inputKey: 'accepted', revision: 2 };
 afterEach(() => document.body.replaceChildren());
 
-describe('SE-HOST-1: current presentation and protected draft painting', () => {
+describe('SE-HOST-1.1: current presentation and protected draft painting', () => {
   it('paints masked nonready results as pending rather than an empty calculated value', () => {
     const { handle, cells } = grid();
     renderCalculatedCells(

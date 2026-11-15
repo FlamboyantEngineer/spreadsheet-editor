@@ -11,7 +11,7 @@ import {
  * Opens a workbook session while the component is mounted, and a new one when the store, the
  * workbook id or the drafts or lifecycle adapters change; the previous one closes, keeping its
  * draft. It is null until the first effect runs, which the editor's `session` prop shows as
- * opening (SE-SESSION-4).
+ * opening (SE-SESSION-1.4).
  */
 export function useWorkbookSession(options: WorkbookSessionOptions): WorkbookSession | null {
   const { workbooks, workbookId, drafts, lifecycle, autosaveDelay, draftDelay, now } = options;

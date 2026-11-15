@@ -6,7 +6,7 @@ import { formatCellValue } from './format.js';
 
 const evaluate = (formula: string) =>
   calculateWorkbook(createWorkbook([[formula]])).worksheets[0].values[0][0];
-describe('SE-CR-2.6f: enabled function catalog', () => {
+describe('SE-CALC-5.1: enabled function catalog', () => {
   it('covers every supported worksheet name and alias at the reviewed commit', () => {
     const { worksheetFunctions } = JSON.parse(
       readFileSync(new URL('../../specs/FUNCTION-CATALOG.json', import.meta.url), 'utf8'),

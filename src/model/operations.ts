@@ -166,7 +166,7 @@ function sameEntry(a: unknown, b: unknown): boolean {
 /**
  * Addresses whose authored state may differ, found by comparing values in place: data by
  * position, then each metadata map by key. Nothing is copied or serialized for an unchanged
- * cell, so an untargeted diff stays cheap on a large sheet (SE-PERF-1).
+ * cell, so an untargeted diff stays cheap on a large sheet (SE-PERF-2.1).
  */
 function changedAddresses(sheet: Worksheet, next: Worksheet): Set<string> {
   const addresses = new Set<string>();

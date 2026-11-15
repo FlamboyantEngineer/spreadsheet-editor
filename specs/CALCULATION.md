@@ -1,6 +1,8 @@
 # Calculation contract
 
-## SE-CALC-1 — Exact values
+## SE-CALC-1 - Exact values
+
+### SE-CALC-1.1 - Exact values
 
 Numeric literals, including exponent notation, parse from strings into reduced rational values. Exact results serialize as `{ kind: 'number', numerator: string, denominator: string, approximate: false }`, with a positive denominator. Arithmetic and comparisons never convert these values through binary floating point. `1E-25`, `1-1E-25`, `1-(1-1E-25)`, `1/3*3` and cancellation at `1E-250` remain exact. JavaScript numeric input is accepted for compatibility but cannot restore digits already lost by its caller.
 
@@ -10,9 +12,11 @@ Non-rational operations use a per-calculation decimal context (default 80 signif
 
 Implementation: `src/calculation/rational.ts`, `src/calculation/values.ts`, `src/calculation/format.ts`.
 
-Verification: `src/calculation/evaluator.test.ts`, `e2e/editor.spec.ts` (SE-UI-1, SE-UI-4).
+Verification: `src/calculation/evaluator.test.ts`, `e2e/editor.spec.ts` (SE-UI-1.1, SE-CALC-1.1).
 
-## SE-CALC-2 — Workbook evaluation
+## SE-CALC-2 - Workbook evaluation
+
+### SE-CALC-2.1 - Workbook evaluation
 
 Formulas parse into a syntax tree; no authored formula reaches JavaScript evaluation or code generation. Cross-sheet references are case-insensitive, unquoted names may use letters and digits of any script, quoted names and absolute addresses are supported, and whole-row/column ranges are bounded by calculation extents (authored data, canonical inputs, identities, explicit geometry, merges and unit formats). Visual styles, comments, contributor markers and display-only formats can extend the viewport without changing calculation ranges. Cells are memoized within one calculation. Cycles, invalid references, numerical errors, unknown functions and work-limit failures produce typed error values. IF and IFERROR evaluate only the selected branch. Text compares case-insensitively with one fixed collation (`en-US`), never the runtime's locale, so client and server calculation agree. Hosts may resolve names and synchronous custom functions explicitly.
 
@@ -32,7 +36,9 @@ Implementation: `src/model/formula-parser.ts`, `src/calculation/evaluator.ts`, `
 
 Verification: `src/calculation/evaluator.test.ts`, `src/model/workbook.test.ts`.
 
-## SE-CALC-3 — Server transport and parity
+## SE-CALC-3 - Server transport and parity
+
+### SE-CALC-3.1 - Server transport and parity
 
 `CalculationProvider.calculate(workbook, options, signal)` returns a versioned result. The HTTP provider posts a versioned request with a per-provider request id, and validates the response id, workbook dimensions, error tokens and rational fields. Exact numerator/denominator strings, temperature tags, provenance, captured host JSON and dependency keys survive transport unchanged. Response validation checks every numeric value, captured operand and dependency tuple. Host JSON contains finite primitives, arrays or plain objects, with a depth limit of 32 and transport byte limits.
 
@@ -40,9 +46,11 @@ Verification: `src/calculation/evaluator.test.ts`, `src/model/workbook.test.ts`.
 
 Implementation: `src/calculation/provider.ts`, `src/calculation/http.ts`.
 
-Verification: `src/calculation/http.test.ts`, `e2e/editor.spec.ts` (SE-UI-2, SE-UI-5).
+Verification: `src/calculation/http.test.ts`, `e2e/editor.spec.ts` (SE-UI-2.1).
 
-## SE-CALC-4 — Quantities and calendar values
+## SE-CALC-4 - Quantities and calendar values
+
+### SE-CALC-4.1 - Quantities and calendar values
 
 Numeric values may carry the unchanged seven-axis SI dimension vector, physical `quantityKind`, `temperature: 'absolute' | 'difference'`, and opaque namespace/revision `provenance`. Angle and information remain distinct even with zero SI vectors; their derived powers remain explicit kind metadata. Scalar operations preserve physical kind. Incompatible explicit kinds (including torque/energy) or conflicting revisions in one provenance namespace return `#VALUE!`. Provenance unions across arithmetic, aggregates, rounding and host-derived dependencies.
 
@@ -58,11 +66,13 @@ Selection statistics reuse the same exact quantity kernel. Count includes nonemp
 
 Calendar values remain rational serials. DATE resolves month and day overflow in Excel serial space, including fictitious 1900-02-29; EDATE/EOMONTH preserve day 60 and valid boundaries from serial zero through December 9999. Internal calendar fields never reapply DATE's short-year convention, and out-of-domain month shifts return `#NUM!`. Date presentation formats calendar fields in UTC without viewer-zone shifts. TODAY/NOW capture one clock per pass in `options.timeZone` (headless UTC). WEEKDAY supports modes 1–3 and 11–17.
 
-Implementation: `src/calculation/values.ts`, `units.ts`, `unit-catalog.ts`, `calendar.ts`, `evaluator.ts`, `http.ts`.
+Implementation: `src/calculation/values.ts`, `src/calculation/units.ts`, `src/calculation/unit-catalog.ts`, `src/calculation/calendar.ts`, `src/calculation/evaluator.ts`, `src/calculation/http.ts`.
 
-Verification: `src/calculation/quantity-metadata.test.ts`, `units.test.ts`, `dimensional-arguments.test.ts`, `calendar-boundaries.test.ts`, `summary.test.ts`, `core-numeric-corpus.test.ts`, HTTP/provider tests and Excel stored-context tests.
+Verification: `src/calculation/quantity-metadata.test.ts`, `src/calculation/units.test.ts`, `src/calculation/dimensional-arguments.test.ts`, `src/calculation/calendar-boundaries.test.ts`, `src/calculation/summary.test.ts`, `src/calculation/core-numeric-corpus.test.ts`, HTTP/provider tests and Excel stored-context tests.
 
-## SE-CALC-5 — Portable function semantics and dependencies
+## SE-CALC-5 - Portable function semantics and dependencies
+
+### SE-CALC-5.1 - Portable function semantics and dependencies
 
 [NUMERIC-CORPUS.json](NUMERIC-CORPUS.json) records portable formula/quantity cases and their source revision. It supplements catalog membership with semantic aggregate, lookup, text, calendar, quantity and INDEX-shape fixtures. [NUMERIC-INTENTIONAL-DIFFERENCES.json](NUMERIC-INTENTIONAL-DIFFERENCES.json) records individual rational/default-precision/display/limit differences; it grants no family-wide exceptions.
 
@@ -70,14 +80,16 @@ TEXT accepts a bounded explicit set of numeric masks (`0`, `#,##0`, optional 1�
 
 `CalculationResult.dependencies` records actually-read serialized `[sheetId,x,y]` cell tuples and used-extent worksheet IDs. The native calculator records an entry for every formula cell and none for value cells, and marks this with `scope: 'formulas'`; without that mark a cell with no entry has unknown dependencies and a draft treats it as pending. A formula that reads a value cell does not suspend; reading a formula cell that is not calculated yet suspends the reader without capturing a stack, so evaluation cost does not depend on whether a range sits above or below its data. Each worksheet's calculation extent is read once per calculation. Lazy untaken branches add no dependencies. Collection shares addressed-cell budgets and resumable evaluation; existing 1,200-cell chains and limits remain supported. FormulaHost name/call callbacks receive the originating formula and cell context. Optional bounded `hostContext` is captured separately from native values in result context and span-keyed operands, for immutable later export.
 
-Implementation: `src/calculation/evaluator.ts`, `extended-functions.ts`, `text-format.ts`, `rational.ts`.
+Implementation: `src/calculation/evaluator.ts`, `src/calculation/extended-functions.ts`, `src/calculation/text-format.ts`, `src/calculation/rational.ts`.
 
-Verification: `src/calculation/core-numeric-corpus.test.ts`, `quantity-metadata.test.ts`, `parity.test.ts`, `catalog.test.ts`, `evaluator.test.ts` and `publication.test.ts` (SE-4).
+Verification: `src/calculation/core-numeric-corpus.test.ts`, `src/calculation/quantity-metadata.test.ts`, `src/calculation/parity.test.ts`, `src/calculation/catalog.test.ts`, `src/calculation/evaluator.test.ts` and `src/calculation/publication.test.ts` (SE-4).
 
-## SE-CALC-6 — Exact locale and currency formatting
+## SE-CALC-6 - Exact locale and currency formatting
+
+### SE-CALC-6.1 - Exact locale and currency formatting
 
 Optional `CellFormat.locale` and `.currency` default to en-US/USD. Unsupported locales or currency codes fail workbook ingress with useful errors. Existing default decimal counts remain unchanged. Currency uses Intl currency codes and locale placement/grouping; percentages and serial calendars use the same requested locale. Fixed/scientific numeric formatting never converts authored values through binary Number arithmetic. Exact decimal-string Intl formatting is used on supporting runtimes, with a tested BigInt/string/format-parts fallback. The fictitious leap date is localized using calendar fields, not converted through a viewer time zone.
 
-Implementation: `src/calculation/cell-format.ts`, `calendar.ts`, `src/model/workbook.ts`.
+Implementation: `src/calculation/cell-format.ts`, `src/calculation/calendar.ts`, `src/model/workbook.ts`.
 
-Verification: `src/calculation/cell-format.test.ts`, `quantity-metadata.test.ts` (EUR/de-DE, USD/en-US, integers beyond 2^53, negative currency, percent, leap day, forced fallback).
+Verification: `src/calculation/cell-format.test.ts`, `src/calculation/quantity-metadata.test.ts` (EUR/de-DE, USD/en-US, integers beyond 2^53, negative currency, percent, leap day, forced fallback).

@@ -33,7 +33,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('SE-UI-1: one visible pixel at authored shared borders', () => {
+describe('SE-UI-1.1: one visible pixel at authored shared borders', () => {
   it('deduplicates interior edges while retaining the complete outer perimeter', () => {
     const { engine, cells } = fixture();
     syncSharedGridBorders(engine);

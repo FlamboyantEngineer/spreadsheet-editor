@@ -27,7 +27,7 @@ const stamp = (id: string, actor = alex): ReviewStamp => ({
   time: '2026-11-10T12:00:00.000Z',
 });
 
-describe('SE-REVIEW-1: persisted threaded comments', () => {
+describe('SE-REVIEW-1.1: persisted threaded comments', () => {
   it('round-trips anchors, authors, replies, resolution and reactions without changing cells', () => {
     const source = createWorkbook([['1E-25', '=1-A1']]);
     let next = addComment(source, 'sheet-1', 'B1', 'Check the precision', stamp('thread'));
@@ -94,7 +94,7 @@ describe('SE-REVIEW-1: persisted threaded comments', () => {
     delete thread.state;
     expect(() => copyWorkbook(earlierShape as never)).toThrow('comment thread');
   });
-  it('SE-REVIEW-1.7: records who resolved a thread and clears it on reopening', () => {
+  it('SE-REVIEW-1.1: records who resolved a thread and clears it on reopening', () => {
     const open = addComment(createWorkbook(), 'sheet-1', 'A1', 'Text', stamp('thread'));
     const resolved = setCommentState(open, 'thread', 'resolved', stamp('r', morgan));
     expect(resolved.comments?.[0]).toMatchObject({
@@ -109,7 +109,7 @@ describe('SE-REVIEW-1: persisted threaded comments', () => {
   });
 });
 
-describe('SE-REVIEW-2: tracked suggestions', () => {
+describe('SE-REVIEW-2.1: tracked suggestions', () => {
   it('keeps canonical values unchanged until acceptance and retains the decision record', () => {
     const source = createWorkbook([['1E-25', '=1-A1']]);
     const proposed = writeCells(source, 'sheet-1', 0, 0, [['2E-25']]);
@@ -180,7 +180,7 @@ describe('SE-REVIEW-2: tracked suggestions', () => {
   });
 });
 
-describe('SE-CR-3.1/3.4/3.5: conversation and reviewer overlay contracts', () => {
+describe('SE-REVIEW-7.1: conversation and reviewer overlay contracts', () => {
   it('prevents overlapping open threads, keeps workbook scope, and reopens a resolved range', () => {
     let workbook = addComment(createWorkbook(), 'sheet-1', 'A1:B2', 'Range', stamp('range'));
     expect(findOpenComment(workbook, 'sheet-1', 'B2:C3')?.id).toBe('range');

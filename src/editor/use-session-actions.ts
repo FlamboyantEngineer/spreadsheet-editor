@@ -5,7 +5,7 @@ import type { Workbook } from '../model/workbook.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { saveFailure } from './use-session-state.js';
 
-/** Saving, flushing and conflict choices through the host's workbook session (SE-SESSION-4). */
+/** Saving, flushing and conflict choices through the host's workbook session (SE-SESSION-1.4). */
 export function useSessionActions({
   commitDraft,
   live,
@@ -20,7 +20,7 @@ export function useSessionActions({
   warn: (message: string) => void;
 }) {
   const [flushing, setFlushing] = useState(false);
-  /** Saves through the workbook session now (SE-SESSION-4). */
+  /** Saves through the workbook session now (SE-SESSION-1.4). */
   async function save() {
     if (!alive.current) throw new Error('The editor session has ended.');
     commitDraft();
@@ -38,7 +38,7 @@ export function useSessionActions({
       throw error;
     }
   }
-  /** Commits the draft and waits until the session holds no unsaved change (SE-SESSION-4). */
+  /** Commits the draft and waits until the session holds no unsaved change (SE-SESSION-1.4). */
   async function flush(): Promise<void> {
     if (!alive.current) throw new Error('The editor session has ended.');
     commitDraft();

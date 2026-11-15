@@ -8,11 +8,11 @@ Before every commit, run the checks that cover your change. All of them must pas
 
 ```sh
 npm run lint && npm run format:check && npm run typecheck
-npm run check:references && npm run check:structure && npm run check:exports
+npm run check:references && npm run check:specs && npm run check:structure && npm run check:exports
 npm run test:changed   # unit tests related to your changes since origin/dev
 ```
 
-The reference, structure and export checks and the shared ESLint and Prettier configuration come from ui-components' tooling (its `specs/TOOLING.md`), at the pinned commit; `tooling.config.mjs` holds this repository's settings. The shared size limits (complexity, depth, parameters, function and file length) are being adopted one area at a time: `SIZE_LIMITS_PENDING` in `eslint.config.js` lists the areas still to refactor, and a change only ever removes entries from it.
+The reference, spec, structure and export checks and the shared ESLint and Prettier configuration come from ui-components' tooling (its `specs/TOOLING.md`), at the pinned commit; `tooling.config.mjs` holds this repository's settings. The shared size limits (complexity, depth, parameters, function and file length) are being adopted one area at a time: `SIZE_LIMITS_PENDING` in `eslint.config.js` lists the areas still to refactor, and a change only ever removes entries from it.
 
 - `npm run test:changed` runs `vitest --changed` against `origin/dev`. A change to `package.json` or the Vitest config reruns everything; for those changes run the tests of what you touched by path instead (`npx vitest run src/model/workbook.test.ts`).
 - Changes to exports, public types, entry points or package contents also run `npm run build && npm run check:package`.
@@ -28,7 +28,7 @@ Run `npm run format` to fix formatting. Never weaken a lint rule, the denylist o
 - Components emit hooks only: `se-` hook classes, data attributes and the properties documented in `specs/HOOK-CONTRACT.md`. Package source loads no CSS, fixed application URLs, global storage or application services. Reference presentation lives in `labs/`.
 - Everything outside the editor is reached through explicit host callbacks or calculation providers (`specs/HOST-INTEGRATION.md`): no globals, no singletons, no direct browser storage.
 - Never name a host application or its domain terms anywhere in the repository, including commit messages and pull request text. Use neutral sample data in labs and tests.
-- Every behaviour change updates its spec (`specs/`) and its TypeScript tests, which name the `SE-` requirement ids.
+- Every behaviour change updates its spec (`specs/`) and its TypeScript tests, which name the `SE-` requirement ids; [specs/README.md](specs/README.md) gives the format.
 - The versioned workbook and rational JSON formats are compatibility contracts: keep them unchanged unless a spec change says otherwise. Numerical operations never pass authored values through JavaScript `Number` arithmetic.
 - APIs and styling hooks are experimental until `1.0.0`: use minor changesets for API additions, removals and reorganizations, and patches for fixes that preserve the API. Remove obsolete APIs without deprecation periods or compatibility shims. Add a changeset (`npx changeset`) to every pull request that changes the package.
 - Keep generated builds, browser test output, scratch files and credentials out of commits.

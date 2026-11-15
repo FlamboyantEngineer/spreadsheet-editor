@@ -9,7 +9,7 @@ const numeric = createArithmetic();
 const evaluate = (formula: string) =>
   calculateWorkbook(createWorkbook([[formula]])).worksheets[0].values[0][0];
 
-describe('SE-CALC-4: dimensionless function arguments and compatible coordinates', () => {
+describe('SE-CALC-4.1: dimensionless function arguments and compatible coordinates', () => {
   it.each([
     '=LEFT("abc",1 m)',
     '=ROUND(1,1 rad)',

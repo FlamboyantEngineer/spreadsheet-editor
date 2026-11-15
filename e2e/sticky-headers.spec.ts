@@ -19,7 +19,7 @@ async function headerPixels(page: Page, header: Locator) {
 
 for (const theme of ['light', 'dark'])
   for (const zoom of [100, 125])
-    test(`SE-CHROME-6: sticky headers stay opaque and retain their fixed edges in ${theme} at ${zoom}%`, async ({
+    test(`SE-CHROME-6.1: sticky headers stay opaque and retain their fixed edges in ${theme} at ${zoom}%`, async ({
       page,
     }) => {
       await page.goto(`/full.html?theme=${theme}`);

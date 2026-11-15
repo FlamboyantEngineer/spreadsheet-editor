@@ -8,7 +8,7 @@ import type { ReviewActor, SpreadsheetComment } from '../model/review.js';
  * Names the people who wrote, resolved or reacted to the workbook's comments, and the `others`
  * the editor shows, such as the authors of saved versions. Comments and versions store person ids
  * only; the host's identity adapter resolves them, and an id it does not know stands for itself
- * (SE-REVIEW-1.6).
+ * (SE-REVIEW-1.1).
  */
 export function usePersonNames(
   identity: IdentityAdapter | undefined,

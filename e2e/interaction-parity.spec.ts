@@ -8,7 +8,7 @@ async function open(page: Page) {
   await expect(source(page).locator('td[data-x="1"][data-y="1"]').first()).toHaveText('1e-25');
 }
 
-test('SE-CR-2.2/2.18: resize previews, cancel, zoom and undo preserve the engine root', async ({
+test('SE-CHROME-4.1 and SE-CHROME-5.1: resize previews, cancel, zoom and undo preserve the engine root', async ({
   page,
 }) => {
   await open(page);
@@ -57,7 +57,7 @@ test('SE-CR-2.2/2.18: resize previews, cancel, zoom and undo preserve the engine
     .toBeCloseTo(zoomed.width, 0);
 });
 
-test('SE-CR-2.7: native formula completion and reference picking', async ({ page }) => {
+test('SE-CHROME-4.1: native formula completion and reference picking', async ({ page }) => {
   await open(page);
   const editor = source(page),
     cell = editor.locator('td[data-x="1"][data-y="1"]').first();
@@ -74,7 +74,9 @@ test('SE-CR-2.7: native formula completion and reference picking', async ({ page
   await expect(cell).toHaveText('1e-25');
 });
 
-test('SE-CR-3.6 and collaboration: reviewer controls and advisory peer locks', async ({ page }) => {
+test('SE-CHROME-4.1 and collaboration: reviewer controls and advisory peer locks', async ({
+  page,
+}) => {
   await open(page);
   const editor = source(page);
   await page.getByRole('button', { name: 'Show collaborator lock', exact: true }).click();
@@ -92,7 +94,7 @@ test('SE-CR-3.6 and collaboration: reviewer controls and advisory peer locks', a
   ).toHaveAttribute('aria-disabled', 'true');
 });
 
-test('SE-XL-1/2: import preview ignores caches, cancellation preserves the workbook, export uses captured results', async ({
+test('SE-XLSX-1.1 and SE-XLSX-2.1: import preview ignores caches, cancellation preserves the workbook, export uses captured results', async ({
   page,
 }) => {
   const document = new ExcelJS.Workbook(),
@@ -144,7 +146,7 @@ test('SE-XL-1/2: import preview ignores caches, cancellation preserves the workb
   ).toBeVisible();
 });
 
-test('SE-CR-2.11/2.13/2.19: border grid and header dialogs retain selection and keyboard ownership', async ({
+test('SE-CHROME-4.1: border grid and header dialogs retain selection and keyboard ownership', async ({
   page,
 }) => {
   await open(page);
@@ -175,12 +177,12 @@ test('SE-CR-2.11/2.13/2.19: border grid and header dialogs retain selection and 
   await expect(editor.locator('td[data-x="0"][data-y="1"]').first()).toHaveText('Near one');
 });
 
-test('SE-VR-1: saved history opens read-only through context action and returns to current', async ({
+test('SE-ADAPTERS-5.1: saved history opens read-only through context action and returns to current', async ({
   page,
 }) => {
   await open(page);
   const editor = source(page);
-  // Save keeps a change: the session saves nothing for an unchanged workbook (SE-SESSION-2).
+  // Save keeps a change: the session saves nothing for an unchanged workbook (SE-SESSION-1.2).
   await editor.getByRole('textbox', { name: 'Cell value or formula', exact: true }).fill('5');
   await editor.getByRole('button', { name: 'Save', exact: true }).click();
   await editor.getByRole('button', { name: 'History', exact: true }).click();
@@ -199,7 +201,7 @@ test('SE-VR-1: saved history opens read-only through context action and returns 
   await expect(editor.locator('.se-editor__historical')).toHaveCount(0);
 });
 
-test('SE-CR-3.2: comment single-click opens a bubble while double-click keeps native cell editing', async ({
+test('SE-REVIEW-1.1: comment single-click opens a bubble while double-click keeps native cell editing', async ({
   page,
 }) => {
   await open(page);

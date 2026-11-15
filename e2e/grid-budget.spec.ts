@@ -69,11 +69,11 @@ async function openLargeWorksheet(page: Page) {
   return editor;
 }
 
-// SE-PERF-1: 10,000 cells smooth, 50,000 usable. The mutation budgets are exact
+// SE-PERF-1.1: 10,000 cells smooth, 50,000 usable. The mutation budgets are exact
 // and are what hold the grid to work on changed cells only. Wall-clock time on a
 // shared CI runner varies with what else runs there, so the time budgets only catch
 // a gross regression and leave room for a busy runner.
-test('SE-PERF-1: typing into a cell of a 10,000-cell worksheet rewrites no other cell', async ({
+test('SE-PERF-1.1: typing into a cell of a 10,000-cell worksheet rewrites no other cell', async ({
   page,
 }) => {
   const editor = await openLargeWorksheet(page);
@@ -95,7 +95,7 @@ test('SE-PERF-1: typing into a cell of a 10,000-cell worksheet rewrites no other
   expect(typing.longTasks, report).toBeLessThan(2_000);
 });
 
-test('SE-PERF-1: committing a cell of a 10,000-cell worksheet keeps the grid rows', async ({
+test('SE-PERF-1.1: committing a cell of a 10,000-cell worksheet keeps the grid rows', async ({
   page,
 }) => {
   const editor = await openLargeWorksheet(page);

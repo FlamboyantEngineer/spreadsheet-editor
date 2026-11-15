@@ -39,7 +39,7 @@ function host() {
 
 afterEach(() => vi.useRealTimers());
 
-describe('SE-SESSION-1: opening a stored workbook', () => {
+describe('SE-SESSION-1.1: opening a stored workbook', () => {
   it('loads the workbook at its revision and reports a missing one', async () => {
     const memory = host();
     const session = createWorkbookSession({ workbooks: memory.workbooks, workbookId: 'book' });
@@ -53,7 +53,7 @@ describe('SE-SESSION-1: opening a stored workbook', () => {
   });
 });
 
-describe('SE-SESSION-2: causal save coverage', () => {
+describe('SE-SESSION-1.2: causal save coverage', () => {
   it('keeps an edit made while a save is in flight dirty after that save answers', async () => {
     const memory = host();
     const { store, held } = heldStore(memory.workbooks);
@@ -180,7 +180,7 @@ describe('SE-SESSION-2: causal save coverage', () => {
     expect(session.status()).toMatchObject({ phase: 'saved', dirty: false, revision: 'r4' });
   });
 
-  it('SE-SESSION-2: retains a failed-save state through edits until an explicit retry', async () => {
+  it('SE-SESSION-1.2: retains a failed-save state through edits until an explicit retry', async () => {
     vi.useFakeTimers();
     const memory = host();
     const save = vi.spyOn(memory.workbooks, 'save');
@@ -238,7 +238,7 @@ describe('SE-SESSION-2: causal save coverage', () => {
   });
 });
 
-describe('SE-SESSION-3: drafts across a reload', () => {
+describe('SE-SESSION-1.3: drafts across a reload', () => {
   it('keeps unsaved content, offers it to the next session and clears it once saved', async () => {
     vi.useFakeTimers();
     const memory = host();

@@ -6,7 +6,7 @@ import type { CalculationProvider } from '../calculation/provider.js';
 import { createWorkbook } from '../model/workbook.js';
 import { useCalculation } from './use-calculation.js';
 
-describe('SE-UI-6: calculation lifecycle', () => {
+describe('SE-UI-2.1: calculation lifecycle', () => {
   it('retains pending and ready calculations through changes that do not affect authored calculation inputs', async () => {
     const workbook = createWorkbook([['=1/3']]);
     let finish!: (result: CalculationResult) => void;

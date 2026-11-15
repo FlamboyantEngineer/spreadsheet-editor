@@ -166,7 +166,7 @@ interface DependencyIndex {
   dependents: Map<string, string[]>;
 }
 const dependencyIndexes = new WeakMap<CalculationResult, DependencyIndex>();
-/** Built once per result, so a keystroke walks only what its draft cell reaches (SE-PERF-1). */
+/** Built once per result, so a keystroke walks only what its draft cell reaches (SE-PERF-2.1). */
 function dependencyIndex(result: CalculationResult): DependencyIndex {
   const cached = dependencyIndexes.get(result);
   if (cached) return cached;

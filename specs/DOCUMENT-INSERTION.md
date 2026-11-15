@@ -1,6 +1,8 @@
 # Document insertion
 
-## SE-DOC-1 — Portable insertion payloads
+## SE-DOC-1 - Portable insertion payloads
+
+### SE-DOC-1.1 - Portable insertion payloads
 
 The selected range can become a normal table or a live spreadsheet. Payloads carry `schemaVersion: 1`, `sheetId` and normalized A1 range.
 
@@ -13,15 +15,19 @@ Implementation: `src/document/insertion.ts`, `src/editor/spreadsheet-editor.tsx`
 
 Verification: `src/document/insertion.test.ts`.
 
-## SE-DOC-2 — Usable embedding demonstration
+## SE-DOC-2 - Usable embedding demonstration
+
+### SE-DOC-2.1 - Usable embedding demonstration
 
 Labs render the normal table as document content and the live payload as a second editable SpreadsheetEditor instance. Editing the embedded workbook must not mutate the original editor. Both instances can use client or server calculation independently.
 
 Implementation: `labs/src/main.tsx`.
 
-Verification: `e2e/editor.spec.ts` (SE-DOC-2).
+Verification: `e2e/editor.spec.ts` (SE-DOC-2.1).
 
-## SE-DOC-3 — Linked authoritative capture
+## SE-DOC-3 - Linked authoritative capture
+
+### SE-DOC-3.1 - Linked authoritative capture
 
 The optional `/document` `createLinkedSpreadsheetInsertion` helper captures a version-one `linked-spreadsheet`: opaque `source: { id, revision }`, selected `sheetId`/normalized `range`, detached full `workbook`, validated ready `publication`, and ordinary captured `table`. A linked capture never runs a calculator. A stale, missing or non-ready authoritative publication rejects. Captured table JSON/HTML is the deterministic read-only, historical, export and print representation.
 
@@ -29,4 +35,4 @@ The optional `/document` `createLinkedSpreadsheetInsertion` helper captures a ve
 
 Implementation: `src/document/linked.ts`.
 
-Verification: `src/document/linked.test.ts` and packed `/document` imports.
+Verification: `src/document/linked.test.ts` and the packed document entry imports checked by the package check.

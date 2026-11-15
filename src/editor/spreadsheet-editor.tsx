@@ -97,7 +97,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
   const chrome = props.chrome ?? 'full';
   const context = useMenuController(),
     root = useRef<HTMLElement | null>(null);
-  // Grids mounted after the first one may take focus (SE-UI-3).
+  // Grids mounted after the first one may take focus (SE-UI-3.1).
   const [gridMounted, setGridMounted] = useState(false);
   const [contextKind, setContextKind] = useState<'cell' | 'row' | 'column'>('cell');
   const contextItems = () => {

@@ -45,9 +45,9 @@ async function measure(rows: number, columns: number) {
 }
 
 // Budgets are generous for slow CI machines: about four times what a development machine takes.
-// Before SE-PERF-1, 50,000 cells took about 320 ms per commit before calculation and 130 ms per
+// Before SE-PERF-2.1, 50,000 cells took about 320 ms per commit before calculation and 130 ms per
 // keystroke, and about 920 ms for the whole edit, which includes recalculating every formula.
-describe('SE-PERF-1: work per edit and per keystroke', () => {
+describe('SE-PERF-2.1: work per edit and per keystroke', () => {
   it('keeps a 10,000-cell workbook smooth', async () => {
     const time = await measure(1_000, 10);
     expect(time.keystroke).toBeLessThan(25);

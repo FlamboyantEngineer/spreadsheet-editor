@@ -199,7 +199,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   useLayoutEffect(() => {
     live.current = { canEdit, canWrite, props };
   }, [canEdit, canWrite, props]);
-  // Read the callback through `live` so a host's inline callback is not a dependency (SE-HOST-2).
+  // Read the callback through `live` so a host's inline callback is not a dependency (SE-HOST-2.1).
   useEffect(() => {
     live.current.props.onPanelChange?.({ id: panel, expanded: panelOpen });
   }, [panel, panelOpen]);
@@ -259,7 +259,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const context: WorkbookChangeContext = {
       transactionId: (props.idFactory ?? createWorkbookEntityId)('transaction'),
       source,
-      // The detached, frozen copy is made only for a host that reads it (SE-PERF-1).
+      // The detached, frozen copy is made only for a host that reads it (SE-PERF-2.1).
       get baseline() {
         return (baseline ??= immutableBaseline(previous));
       },

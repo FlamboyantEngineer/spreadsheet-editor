@@ -1,6 +1,8 @@
 # Editor chrome
 
-## SE-CHROME-1 — Full reusable shell
+## SE-CHROME-1 - Full reusable shell
+
+### SE-CHROME-1.1 - Full reusable shell
 
 The editor shall provide File, Edit, Insert, Format, View and Review menus; a scrolling formatting toolbar; an address/formula bar with function completions; worksheet tabs; a find/replace bar; docked Properties, History, Comments and Suggestions panes; accessible selection count/sum/average; and sheet-bar zoom controls. Generic controls use `@flamboyantengineer/ui-components`. The host styles documented hooks; grid zoom is engine presentation geometry, independent of chrome layout.
 
@@ -12,17 +14,21 @@ Authoring writes canonical data; Reviewing stages cell/format proposals and priv
 
 Implementation: `src/editor/contracts.ts`, `src/editor/editor-toolbar.tsx`, `src/editor/editor-menus.ts`, `src/editor/spreadsheet-editor.tsx`, `src/editor/use-editor.ts`, `src/calculation/cell-format.ts`.
 
-Verification: `e2e/full-editor.spec.ts` (SE-CHROME-1, SE-REVIEW-5), `src/calculation/cell-format.test.ts`, `src/model/editing.test.ts`, existing browser editor tests.
+Verification: `e2e/full-editor.spec.ts` (SE-CHROME-1.1, SE-REVIEW-5.1), `src/calculation/cell-format.test.ts`, `src/model/editing.test.ts`, existing browser editor tests.
 
-## SE-CHROME-2 — Worksheet and structural commands
+## SE-CHROME-2 - Worksheet and structural commands
+
+### SE-CHROME-2.1 - Worksheet and structural commands
 
 Worksheet actions shall add, duplicate, rename, reorder and delete sheets, retaining at least one. Row/column commands shall insert before/after and delete selections, move authored formatting and merge spans, rewrite qualified/unqualified and absolute formula references across worksheets, and retain quoted literals and scientific numeric text unchanged. Unquoted sheet names in formulas may use letters and digits of any script (for example `=Données!A2`). Every command compares sheet names the same way: case-insensitive with spaces collapsed. Renaming a sheet rewrites its references in cells and in pending suggestions, and the result is validated. A command given an unknown worksheet id throws `RangeError('Unknown worksheet.')`. Rewriting references is linear in the formula length. References to deleted cells/sheets become `#REF!`; partially deleted ranges shrink. Comment anchors move with cells; wholly deleted anchors become orphaned. Affected suggestions become outdated instead of applying to another cell. Imports accept CSV or the versioned workbook JSON; exports expose the complete workbook JSON.
 
 Implementation: `src/model/structure.ts`, `src/model/editing.ts`, `src/editor/editor-menus.ts`.
 
-Verification: `src/model/structure.test.ts`, `src/model/editing.test.ts`, `e2e/full-editor.spec.ts` (SE-CONTEXT-1, SE-CHROME-2).
+Verification: `src/model/structure.test.ts`, `src/model/editing.test.ts`, `e2e/full-editor.spec.ts` (SE-CHROME-8.1, SE-CHROME-2.1).
 
-## SE-CHROME-3 — Search and keyboard ownership
+## SE-CHROME-3 - Search and keyboard ownership
+
+### SE-CHROME-3.1 - Search and keyboard ownership
 
 Find/replace shall search raw values/formulas and current formatted result text across worksheets, deduplicate cells, navigate to matches and replace authored matches one/all through the normal author/review mutation path. Result-only matches are navigable and never replace formulas. Pending or stale result text is excluded. Case-insensitive literal queries must not execute as regular expressions. Typed search/comment/dialog content must never reach the vendor grid's document keyboard handler. Each instance owns its selection, menus and panels. Clipboard text preserves numeric strings and quoting; a host may supply clipboard adapters.
 
@@ -30,17 +36,11 @@ The first Previous command selects the last match. Changing the query resets its
 
 Implementation: `src/editor/use-editor.ts`, `src/engine/workbook-grid.tsx`, `src/model/editing.ts`.
 
-Verification: `e2e/full-editor.spec.ts` (SE-CHROME-3, SE-REVIEW-6), `e2e/host-integration.spec.ts`, `src/editor/editor-search.test.tsx`, `src/editor/review-panels.test.tsx`, `src/model/structure.test.ts`.
+Verification: `e2e/full-editor.spec.ts` (SE-CHROME-3.1, SE-REVIEW-2.1), `e2e/host-integration.spec.ts`, `src/editor/editor-search.test.tsx`, `src/editor/review-panels.test.tsx`, `src/model/structure.test.ts`.
 
-## SE-CONTEXT-1 — Shared React context menu
+## SE-CHROME-4 - Interaction parity
 
-Secondary click, Shift+F10 and the Context Menu key shall open the shared React context menu for the selected cells. Clicking outside the selection first selects the clicked cell; clicking within a range keeps that range. The menu offers clipboard, clear, row/column structure, formatting, comments and suggestion navigation, with disabled states matching the current mode and host permissions. Escape dismisses and restores focus. The vendor context menu shall stay disabled. Worksheet tabs shall expose a shared context menu for sheet actions. Context commands show public library glyphs and only supported shortcut hints. The pinned library supplies dedicated font, numeric-format, decimal, alignment, border, wrap, merge/unmerge, cut, add-row, comment and file glyphs, documented in `docs/UI-COMPONENTS-ICON-REQUEST.md`. Secondary-clicking an inactive worksheet does not activate it.
-
-Implementation: `src/editor/editor-menus.ts`, `src/editor/spreadsheet-editor.tsx`, `src/engine/workbook-grid.tsx`.
-
-Verification: `e2e/full-editor.spec.ts` (SE-CONTEXT-1, SE-CHROME-2, SE-REVIEW-5).
-
-## SE-CHROME-4 — interaction parity
+### SE-CHROME-4.1 - Interaction parity
 
 `chrome` selects minimal, embedded or full controls. The full preset remains the default. Feature flags and host panels support templates and application embedding without platform services. The formula row composes public Cluster, Icon, TextField and CodeEditor controls with a fixed-width accessible address field, a flexible CodeEditor surface, and a constrained calculated result. It has no Cancel, Apply or Restore buttons; Enter commits, Escape cancels, and leaving the editor commits. Completion acceptance and IME composition take priority over commit/navigation. Pending edits are preserved while using editor controls and applied atomically with formatting or worksheet changes. Formula entry supports Escape cancellation, Enter commit/navigation, partial references and genuine pointer reference picking. Native entry uses the same completion vocabulary. Menus and panels release vendor keyboard ownership; dialogs show inline validation and block grid input.
 
@@ -50,11 +50,15 @@ Native text entry shall fit inside the existing cell or complete merged span wit
 
 Initial engine adoption must not steal keyboard focus from chrome controls already being used. Later worksheet switches restore grid focus. Reference presentation reserves the fixed viewport's space during lazy engine loading, so adopting the grid cannot move the worksheet controls between pointer press and release. Hosts retain ownership of viewport sizing through the public grid hook.
 
-Save appears when the editor has a workbook session (SE-SESSION-4); its status reads Saving or Autosaving, then Saved or Autosaved. Saving never starts merely from viewing or selecting; edits made while a save is in flight remain dirty. Historical views force Reading and keep the host-controlled banner until the host restores the current version. The full preset keeps an additional dedicated Suggestions pane; hosts may replace built-in panels.
+Save appears when the editor has a workbook session (SE-SESSION-1.4); its status reads Saving or Autosaving, then Saved or Autosaved. Saving never starts merely from viewing or selecting; edits made while a save is in flight remain dirty. Historical views force Reading and keep the host-controlled banner until the host restores the current version. The full preset keeps an additional dedicated Suggestions pane; hosts may replace built-in panels.
+
+Implementation: `src/editor/use-editor.ts`, `src/editor/editor-formula-bar.tsx`, `src/engine/workbook-grid.tsx`, `src/engine/header-resize.ts`.
 
 Verification: `src/editor/use-editor.test.ts`, `e2e/native-cell-editing.spec.ts`, `e2e/interaction-parity.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-COMPATIBILITY.md).
 
-## SE-CHROME-5 — Grid zoom and visual integration
+## SE-CHROME-5 - Grid zoom and visual integration
+
+### SE-CHROME-5.1 - Grid zoom and visual integration
 
 Zoom scales grid cell text, row heights, column widths and headers inside the fixed grid viewport. Editor width/height, toolbar, formula bar, worksheet tabs, sidebar and zoom controls do not scale. Default and authored grid borders and selection/reference/presence strokes remain one CSS pixel at every supported zoom level. Resizing headers converts pointer deltas back to canonical workbook dimensions; changing zoom never authors workbook geometry. Visible selection edges enclose all four sides in light and dark themes, including ranges clipped by frozen columns or scrolling.
 
@@ -68,7 +72,9 @@ Implementation: `src/engine/workbook-grid.tsx`, `src/engine/worksheet-presentati
 
 Verification: `src/engine/grid-geometry.test.ts`, `src/engine/selection-publication.test.ts`, `e2e/selection-rendering.spec.ts`, and existing editor suites cover geometry, single-frame drag updates, native fill-handle clipping, scrolling, frozen columns, inline rename and formula ownership across the three lab presets.
 
-## SE-CHROME-6 — Chrome surfaces and grid boundaries
+## SE-CHROME-6 - Chrome surfaces and grid boundaries
+
+### SE-CHROME-6.1 - Chrome surfaces and grid boundaries
 
 Cell secondary clicks cancel the browser context menu before opening the shared application menu. Native text-editing fields retain their own text context menu. Header context actions and selection behavior remain available.
 
@@ -78,9 +84,13 @@ Sticky header backgrounds stay opaque, including selected headers: the selection
 
 Add Worksheet sits immediately after the last worksheet inside the scrolling tab list, including when tabs overflow. Zoom remains separate at the trailing end or on a second mobile row. The grid reserves its own vertical scrollbar gutter and confines overlays to its viewport; a collapsed or expanded dock panel cannot cover the scrollbar.
 
+Implementation: `src/editor/spreadsheet-editor.tsx`, `src/editor/sheet-bar.tsx`, `src/engine/workbook-grid.tsx`, `labs/src/reference.css`.
+
 Verification: `e2e/sticky-headers.spec.ts`, `e2e/chrome-layout.spec.ts`, `src/editor/editor-toolbar.test.tsx`, existing editor and lab browser suites.
 
-## SE-CHROME-7 — Text size and color controls
+## SE-CHROME-7 - Text size and color controls
+
+### SE-CHROME-7.1 - Text size and color controls
 
 The full toolbar shall use the public NumberField for font size, with IncreaseFontSizeGlyph and DecreaseFontSizeGlyph step buttons. Buttons and plain arrow keys move to the nearest larger or smaller preset; an arbitrary size, including a fractional size, remains valid between presets. Sizes are CSS pixels, with a visible px suffix, bounded from 1 to 400. Embedded mode opens the same field from its named font-size icon, preserving the icon-only toolbar. Field edits apply on Enter, blur or a step, without restore/apply/cancel controls.
 
@@ -91,3 +101,13 @@ These controls use the existing formatting transaction path: they format the sel
 Implementation: `src/editor/text-format-controls.tsx`, `src/editor/editor-toolbar.tsx`, `src/editor/editor-commands.ts`.
 
 Verification: `src/editor/editor-toolbar.test.tsx`, `e2e/text-format-controls.spec.ts`, `e2e/labs.spec.ts`, `e2e/chrome-layout.spec.ts`.
+
+## SE-CHROME-8 - Shared React context menu
+
+### SE-CHROME-8.1 - Shared React context menu
+
+Secondary click, Shift+F10 and the Context Menu key shall open the shared React context menu for the selected cells. Clicking outside the selection first selects the clicked cell; clicking within a range keeps that range. The menu offers clipboard, clear, row/column structure, formatting, comments and suggestion navigation, with disabled states matching the current mode and host permissions. Escape dismisses and restores focus. The vendor context menu shall stay disabled. Worksheet tabs shall expose a shared context menu for sheet actions. Context commands show public library glyphs and only supported shortcut hints. The pinned library supplies dedicated font, numeric-format, decimal, alignment, border, wrap, merge/unmerge, cut, add-row, comment and file glyphs, documented in `docs/UI-COMPONENTS-ICON-REQUEST.md`. Secondary-clicking an inactive worksheet does not activate it.
+
+Implementation: `src/editor/editor-menus.ts`, `src/editor/spreadsheet-editor.tsx`, `src/engine/workbook-grid.tsx`.
+
+Verification: `e2e/full-editor.spec.ts` (SE-CHROME-8.1, SE-CHROME-2.1, SE-REVIEW-5.1).

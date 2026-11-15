@@ -3,7 +3,7 @@ import { writeCells } from './editing.js';
 import { parseFormula } from './formula-parser.js';
 import { assertWorkbook, createWorkbook } from './workbook.js';
 
-describe('SE-MODEL-1: portable workbook and parser', () => {
+describe('SE-CALC-2.1: portable workbook and parser', () => {
   it('edits without mutating source input', () => {
     const original = createWorkbook([['1E-25']]);
     const next = writeCells(original, 'sheet-1', 1, 0, [['=1-A1']]);

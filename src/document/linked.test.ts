@@ -7,7 +7,7 @@ import {
 import { createWorkbook } from '../model/workbook.js';
 import { createLinkedSpreadsheetInsertion, updateLinkedSpreadsheetInsertion } from './linked.js';
 
-describe('SE-DOC-3: linked authoritative captures', () => {
+describe('SE-DOC-3.1: linked authoritative captures', () => {
   it('captures detached exact results and refreshes through source/revision checks', () => {
     const workbook = createWorkbook([['=1/3']]);
     const publication: ExternalCalculationSnapshot = {

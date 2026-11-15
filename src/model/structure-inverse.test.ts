@@ -91,7 +91,7 @@ const cases: [
   ],
 ];
 
-describe('SE-HOST-5: structure operations and their inverses', () => {
+describe('SE-HOST-5.1: structure operations and their inverses', () => {
   it.each(cases)('%s, then its inverse, restores the workbook exactly', (_name, change) => {
     const initial = rich();
     const changed = change(copyWorkbook(initial));
@@ -125,7 +125,7 @@ describe('SE-HOST-5: structure operations and their inverses', () => {
     ).toThrow('referential-rename-baseline');
   });
   // Expected failure: plain operation application does not rewrite references the operations
-  // do not name (specs/HOST-INTEGRATION.md, SE-HOST-5).
+  // do not name (specs/HOST-INTEGRATION.md, SE-HOST-5.1).
   it.fails(
     'rewrites a later formula when the rename inverse is applied without a transaction',
     () => {
