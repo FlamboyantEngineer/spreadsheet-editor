@@ -188,16 +188,32 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
   it('restyles only cells whose authored style changed while zoom is unchanged', () => {
     const { engine, records } = engineGrid([['1', '2']], 10);
     const sheet = createWorkbook([['1', '2']]).worksheets[0];
-    syncWorksheetPresentation(engine, null, sheet, false, 125);
+    syncWorksheetPresentation(
+      engine,
+      { previous: null, next: sheet },
+      { readOnly: false, zoom: 125 },
+    );
     expect(records[5][5].element.style.padding).not.toBe('');
     const measured = vi.spyOn(window, 'getComputedStyle');
-    syncWorksheetPresentation(engine, sheet, sheet, false, 125);
+    syncWorksheetPresentation(
+      engine,
+      { previous: sheet, next: sheet },
+      { readOnly: false, zoom: 125 },
+    );
     expect(measured).not.toHaveBeenCalled();
     const styled = { ...sheet, style: { B1: 'font-weight: bold' } };
-    syncWorksheetPresentation(engine, sheet, styled, false, 125);
+    syncWorksheetPresentation(
+      engine,
+      { previous: sheet, next: styled },
+      { readOnly: false, zoom: 125 },
+    );
     expect(records[0][1].element.style.fontWeight).toBe('bold');
     expect(measured.mock.calls.length).toBe(1);
-    syncWorksheetPresentation(engine, styled, styled, false, 100);
+    syncWorksheetPresentation(
+      engine,
+      { previous: styled, next: styled },
+      { readOnly: false, zoom: 100 },
+    );
     expect(records[5][5].element.style.padding).toBe('');
   });
 });

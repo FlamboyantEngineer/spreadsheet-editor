@@ -607,11 +607,8 @@ export function WorkbookGrid(props: WorkbookGridProps) {
       const zoomOnly = applied.current === props.worksheet && scale !== previousScale;
       syncWorksheetPresentation(
         sheet,
-        applied.current,
-        props.worksheet,
-        !!props.readOnly,
-        props.zoom,
-        props.logicalExtent,
+        { previous: applied.current, next: props.worksheet },
+        { readOnly: !!props.readOnly, zoom: props.zoom, logicalExtent: props.logicalExtent },
       );
       applied.current = props.worksheet;
       appliedExtent.current = nextExtent;
@@ -910,11 +907,12 @@ export function WorkbookGrid(props: WorkbookGridProps) {
           if (sheet)
             syncWorksheetPresentation(
               sheet,
-              null,
-              latest.current.worksheet,
-              !!latest.current.readOnly,
-              latest.current.zoom,
-              latest.current.logicalExtent,
+              { previous: null, next: latest.current.worksheet },
+              {
+                readOnly: !!latest.current.readOnly,
+                zoom: latest.current.zoom,
+                logicalExtent: latest.current.logicalExtent,
+              },
             );
           if (sheet) refreshGridRowWindow(sheet);
           appliedZoom.current = latest.current.zoom ?? 100;

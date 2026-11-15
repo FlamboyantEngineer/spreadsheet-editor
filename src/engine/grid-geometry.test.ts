@@ -95,7 +95,11 @@ describe('SE-CHROME-5.1: grid-only zoom keeps authored geometry and pixel stroke
     sheet.style = { A1: 'font-size:16px;border-right:3px solid red' };
     const original = structuredClone(sheet);
     for (const zoom of [50, 75, 100, 125, 150, 100]) {
-      syncWorksheetPresentation(engine, sheet, sheet, false, zoom);
+      syncWorksheetPresentation(
+        engine,
+        { previous: sheet, next: sheet },
+        { readOnly: false, zoom },
+      );
       expect(cols[0].colElement.style.width).toBe(`${(120.5 * zoom) / 100}px`);
       expect(cols[1].colElement.style.width).toBe(`${zoom}px`);
       expect(engine.rows?.[0].element.style.height).toBe(`${(35.5 * zoom) / 100}px`);

@@ -307,9 +307,10 @@ export function readJSpreadsheetColumnMeasure(
 export function applyJSpreadsheetColumnMeasure(
   worksheet: JSpreadsheetWorksheetMeasureSource,
   columnIndex: number,
-  normalizedWidth: string,
-  cssWidth = `${normalizedWidth}px`,
+  measure: { attributeWidth: string; cssWidth?: string },
 ): boolean {
+  const normalizedWidth = measure.attributeWidth,
+    cssWidth = measure.cssWidth ?? `${normalizedWidth}px`;
   const columnElement = worksheet.cols?.[columnIndex]?.colElement;
   if (!(columnElement instanceof HTMLElement)) return false;
   // Unchanged measures are not rewritten: each write is a mutation the spill observer handles.
@@ -345,9 +346,10 @@ export function readJSpreadsheetRowMeasureSnapshot(
 export function applyJSpreadsheetRowMeasure(
   worksheet: JSpreadsheetWorksheetMeasureSource,
   rowIndex: number,
-  cssHeight: string,
-  attributeHeight = cssHeight,
+  measure: { cssHeight: string; attributeHeight?: string },
 ): boolean {
+  const { cssHeight } = measure,
+    attributeHeight = measure.attributeHeight ?? cssHeight;
   const rowElement = worksheet.rows?.[rowIndex]?.element;
   if (!(rowElement instanceof HTMLElement)) return false;
   if (rowElement.style.height !== cssHeight) rowElement.style.height = cssHeight;
