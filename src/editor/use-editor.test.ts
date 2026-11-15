@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
+import { createWorkbook, type Workbook } from '../model/workbook.js';
+import { calculateWorkbook, type CalculationResult } from '../calculation/evaluator.js';
+import { calculationCellKey } from '../calculation/publication.js';
 import { writeCells } from '../model/editing.js';
 import type { SpreadsheetEditorProps, SpreadsheetSaveContext } from './contracts.js';
 import { useSpreadsheetEditor } from './use-editor.js';
+import { createMemoryHost } from '../host/memory-host.js';
+import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 
 const actor = { id: 'alex', name: 'Alex' };
+const identity = createMemoryHost({ reader: actor }).identity;
+const reviewer = { ...FULL_CAPABILITIES, edit: false };
 afterEach(() => vi.useRealTimers());
 describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   it('clamps reviewers, previews only their proposals, and blocks structural/save/decision commands', async () => {
@@ -16,9 +22,9 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
       {
         initialProps: {
           defaultValue: createWorkbook([['1E-25']]),
-          currentUser: actor,
+          identity,
           onSave,
-          permissions: { edit: false },
+          capabilities: reviewer,
         } as SpreadsheetEditorProps,
       },
     );
@@ -37,7 +43,7 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
     expect(result.current.workbook.worksheets[0].data).toEqual([['1E-25']]);
     expect(onSave).not.toHaveBeenCalled();
     const workbook = result.current.workbook;
-    rerender({ value: workbook, currentUser: actor, onSave, permissions: { edit: true } });
+    rerender({ value: workbook, identity, onSave, capabilities: FULL_CAPABILITIES });
     expect(result.current.previewSheet.data[0][0]).toBe('1E-25');
     act(() => result.current.decide(proposal.id, 'accepted'));
     expect(result.current.workbook.suggestions![0].status).toBe('pending'); // controlled host must publish the result
@@ -46,7 +52,7 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
         defaultValue: createWorkbook([['1', '2']]),
-        currentUser: actor,
+        identity,
         collaborators: [
           {
             id: 'morgan',
@@ -105,7 +111,7 @@ describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
       void cancelled.catch(() => {});
     });
     await waitFor(() => expect(requests).toHaveLength(2));
-    rerender({ onSave, readOnly: true });
+    rerender({ onSave, capabilities: READ_ONLY_CAPABILITIES });
     expect(requests[1].context.signal.aborted).toBe(true);
     unmount();
     requests[1].finish();
@@ -300,7 +306,7 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
   it('combines a formula draft and formatting into one change and undo entry', () => {
     const onChange = vi.fn();
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), currentUser: actor, onChange }),
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), identity, onChange }),
     );
     act(() => result.current.setDraftValue('=1-1E-25'));
     act(() => result.current.format({ 'font-weight': 'bold' }));
@@ -318,7 +324,7 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
         defaultValue: createWorkbook([['1'], ['=A1']]),
-        currentUser: actor,
+        identity,
         onChange,
       }),
     );
@@ -547,5 +553,77 @@ describe('SE-CHROME-5: workbook replacement', () => {
     expect(result.current.draftDirty).toBe(false);
     act(() => result.current.applyFormula());
     expect(result.current.sheet.data[0][0]).toBe('Replacement');
+  });
+});
+
+describe('SE-HOST-MODEL-2 and SE-PERF-1: change context', () => {
+  it('gives the host a detached, frozen baseline and patches for the edited cell only', () => {
+    const onChange = vi.fn<NonNullable<SpreadsheetEditorProps['onChange']>>();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([
+          ['1', '2'],
+          ['3', '4'],
+        ]),
+        identity,
+        onChange,
+      }),
+    );
+    const before = result.current.workbook;
+    act(() => result.current.setDraftValue('5'));
+    act(() => void result.current.applyFormula());
+    const [next, context] = onChange.mock.calls[0];
+    expect(next.worksheets[0].data[0][0]).toBe('5');
+    expect(context!.baseline).toEqual(before);
+    expect(context!.baseline).not.toBe(before);
+    expect(context!.baseline).toBe(context!.baseline);
+    expect(Object.isFrozen(context!.baseline.worksheets[0].data[0])).toBe(true);
+    expect(context!.operations).toEqual([
+      {
+        kind: 'cells',
+        sheetId: 'sheet-1',
+        changes: [
+          expect.objectContaining({
+            address: 'A1',
+            before: { value: '1' },
+            after: expect.objectContaining({ value: '5', provenance: expect.anything() }),
+          }),
+        ],
+      },
+    ]);
+  });
+});
+
+describe('SE-PERF-1: recalculating after an edit', () => {
+  it('keeps cells that do not read the edited cell ready while the result is pending', async () => {
+    const replies: { workbook: Workbook; finish(result: CalculationResult): void }[] = [];
+    const provider = {
+      calculate: (workbook: Workbook) =>
+        new Promise<CalculationResult>((finish) => replies.push({ workbook, finish })),
+    };
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1', '=A1*2', '5', '=C1+1']]),
+        calculation: { mode: 'server', provider },
+      }),
+    );
+    const key = (x: number) => calculationCellKey('sheet-1', x, 0);
+    await waitFor(() => expect(replies).toHaveLength(1));
+    await act(async () => replies[0].finish(calculateWorkbook(replies[0].workbook)));
+    expect(result.current.readyCells.has(key(3))).toBe(true);
+    act(() => result.current.setDraftValue('2'));
+    act(() => void result.current.applyFormula());
+    await waitFor(() => expect(replies).toHaveLength(2));
+    expect(result.current.calculation.status).toBe('pending');
+    expect(result.current.calculation.result).toBeNull();
+    expect([0, 1, 2, 3].map((x) => result.current.readyCells.has(key(x)))).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+    expect(result.current.output?.[0][3]).toMatchObject({ numerator: '6' });
+    await act(async () => replies[1].finish(calculateWorkbook(replies[1].workbook)));
+    expect(result.current.output?.[0][1]).toMatchObject({ numerator: '4' });
   });
 });

@@ -7,16 +7,29 @@ import type { CalculationOptions, CalculationResult } from '../calculation/evalu
 import type { CalculationProvider } from '../calculation/provider.js';
 import { workbookCalculationKey } from '../calculation/publication.js';
 
+const acceptedKeys = new WeakMap<Workbook, string>();
+/**
+ * The key of a workbook the editor accepted. The editor never changes an accepted workbook, so
+ * its key is computed once and shared by every reader (SE-3).
+ */
+export function acceptedCalculationKey(workbook: Workbook): string {
+  let key = acceptedKeys.get(workbook);
+  if (key === undefined) acceptedKeys.set(workbook, (key = workbookCalculationKey(workbook)));
+  return key;
+}
+
 export function useCalculation(
   workbook: Workbook,
   provider: CalculationProvider,
   options?: CalculationOptions,
   enabled = true,
+  /** The built-in client calculator's own results are not re-validated (SE-PERF-1). */
+  trusted = false,
 ) {
-  const inputKey = useMemo(() => workbookCalculationKey(workbook), [workbook]);
+  const inputKey = useMemo(() => acceptedCalculationKey(workbook), [workbook]);
   const request = useMemo(
-    () => ({ workbook, provider, options, enabled }),
-    [inputKey, provider, options, enabled],
+    () => ({ workbook, provider, options, enabled, trusted }),
+    [inputKey, provider, options, enabled, trusted],
   );
   const [settled, setSettled] = useState<{
     request: typeof request;
@@ -30,7 +43,7 @@ export function useCalculation(
       .then(() => request.provider.calculate(request.workbook, request.options, controller.signal))
       .then((result) => {
         if (controller.signal.aborted) return;
-        assertCalculationResult(result, request.workbook);
+        if (!request.trusted) assertCalculationResult(result, request.workbook);
         setSettled({ request, result, error: null });
       })
       .catch((error: unknown) => {

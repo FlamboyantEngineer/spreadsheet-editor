@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
+import { READ_ONLY_CAPABILITIES } from '../../src/host/index.js';
 import type {
   SpreadsheetEditorHandle,
   SpreadsheetEditorState,
@@ -163,7 +164,7 @@ export function HostLab() {
               </strong>
             ) : undefined
           }
-          readOnly={readOnly}
+          capabilities={readOnly ? READ_ONLY_CAPABILITIES : undefined}
           features={{ comments: false, suggestions: false, panels: false, modeControl: false }}
           onSave={async (next) => {
             setSaved(structuredClone(next));

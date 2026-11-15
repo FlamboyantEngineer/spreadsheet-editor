@@ -21,9 +21,11 @@ import type { ReviewActor, CellFormat } from '../model/review.js';
 import type { DocumentInsertion } from '../document/insertion.js';
 import type { SpreadsheetCollaborator, SpreadsheetPresence } from '../model/presence.js';
 import type { CellSelection } from '../model/editing.js';
+import type { IdentityAdapter } from '../host/adapters.js';
+import type { EditorCapabilities, SpreadsheetMode } from '../host/capabilities.js';
+export type { SpreadsheetMode } from '../host/capabilities.js';
 
 export type SpreadsheetChrome = 'minimal' | 'embedded' | 'full';
-export type SpreadsheetMode = 'author' | 'review' | 'read';
 export type CalculationMode =
   | { mode: 'client'; host?: FormulaHost; options?: CalculationOptions }
   | { mode: 'server'; provider: CalculationProvider; options?: CalculationOptions }
@@ -31,12 +33,6 @@ export type CalculationMode =
 export interface SpreadsheetClipboard {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
-}
-export interface SpreadsheetPermissions {
-  edit?: boolean;
-  comment?: boolean;
-  suggest?: boolean;
-  decideSuggestions?: boolean;
 }
 export interface SpreadsheetHostPanel {
   id: string;
@@ -116,12 +112,16 @@ export interface SpreadsheetEditorProps {
   /** Draft notifications let the host retain uncommitted input independently of accepted data. */
   onDraftChange?(draft: { sheetId: string; x: number; y: number; text: string } | null): void;
   display?: DisplayOptions;
-  readOnly?: boolean;
   mode?: SpreadsheetMode;
   defaultMode?: SpreadsheetMode;
   onModeChange?(mode: SpreadsheetMode): void;
-  currentUser?: ReviewActor;
-  permissions?: SpreadsheetPermissions;
+  /** Who the reader is: the actor of their comments, suggestions and decisions. */
+  identity?: IdentityAdapter;
+  /**
+   * What the reader may do, as the host grants it; every capability by default. The editor never
+   * offers more: a historical version is always read-only.
+   */
+  capabilities?: EditorCapabilities;
   title?: string;
   onSave?(workbook: Workbook, context: SpreadsheetSaveContext): void | Promise<void>;
   onRefresh?(target?: { sheetId: string; range: string }): void | Promise<void>;

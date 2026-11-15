@@ -111,3 +111,19 @@ Internal copy snapshots primitive expressions and supported style, format, canon
 Implementation: `src/model/clipboard.ts`, `src/model/editing.ts`.
 
 Verification: `src/model/host-model.test.ts` (SE-HOST-MODEL-3, SE-HOST-MODEL-4), `src/model/clipboard.test.ts`.
+
+## SE-PERF-1 — Work per edit and per keystroke
+
+A workbook of 10,000 cells stays smooth to edit and one of 50,000 cells stays usable, with client calculation on the main thread. The editor's own work for one committed edit, and for one formula-bar keystroke, does not grow with every cell of the workbook:
+
+- A command names the cells it writes; its cell patches compare only those cells. A command that names none is compared by value in place, without copying or serializing unchanged cells.
+- What the editor produced itself is not validated or copied again: a client calculation result is trusted, the host's frozen baseline is copied only when the host reads it, and a draft is attributed to its contributor once.
+- What depends only on a calculation result (the reverse dependencies, the ready values) is computed once per result. A keystroke walks only the cells its draft cell reaches, and output rows without a pending cell keep their identity.
+
+While the client or server recalculates after an edit, the editor keeps showing the last ready value of every cell that does not read an edited cell, directly or through other formulas; only those readers show as pending. The calculation itself stays pending with no current result, so exports and document insertion still wait for it. A structural or naming change shows every cell as pending.
+
+Calculation itself still recalculates the whole workbook; a calculation worker and incremental recalculation are not part of this requirement.
+
+Implementation: `src/editor/use-editor.ts`, `src/editor/command-operations.ts`, `src/editor/use-publication.ts`, `src/editor/use-calculation.ts`, `src/model/operations.ts`, `src/calculation/publication.ts`.
+
+Verification: `src/editor/editor-performance.test.ts` (SE-PERF-1) keeps a Node budget for a 10,000-cell and a 50,000-cell workbook.

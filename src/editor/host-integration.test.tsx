@@ -10,6 +10,12 @@ import type { SpreadsheetEditorHandle, SpreadsheetEditorProps } from './contract
 import { formulaFunctionCatalog } from './public-host.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 import { editorMenus } from './editor-menus.js';
+import { createMemoryHost } from '../host/memory-host.js';
+import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
+
+const reviewerIdentity = createMemoryHost({
+  reader: { id: 'reviewer', name: 'Reviewer' },
+}).identity;
 
 describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
   it('restores an uncommitted host draft and controls host panels through the stable handle', () => {
@@ -148,7 +154,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
         initialProps: {
           defaultValue: workbook,
           defaultMode: 'review',
-          currentUser: { id: 'reviewer', name: 'Reviewer' },
+          identity: reviewerIdentity,
           calculation: { mode: 'external', snapshot: accepted },
         } as SpreadsheetEditorProps,
       },
@@ -178,7 +184,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     rerender({
       defaultValue: workbook,
       defaultMode: 'review',
-      currentUser: { id: 'reviewer', name: 'Reviewer' },
+      identity: reviewerIdentity,
       calculation: { mode: 'external', snapshot: accepted },
       reviewCalculation: publication,
     });
@@ -191,7 +197,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
         defaultValue: createWorkbook([['accepted']]),
-        permissions: { edit: false, suggest: false, comment: true },
+        capabilities: { ...READ_ONLY_CAPABILITIES, comment: true },
       }),
     );
     expect(result.current.mode).toBe('review');
@@ -463,5 +469,41 @@ describe('SE-HOST-3/4: authoritative values, drafts and result search', () => {
       formulaFunctionCatalog([{ name: 'foo', signature: 'FOO()', description: 'host' }]).at(-1)!
         .name,
     ).toBe('FOO');
+  });
+});
+
+describe('SE-ADAPTERS-2.3: the editor takes identity and capabilities', () => {
+  it('attributes the reader from identity and offers at most what the capabilities allow', () => {
+    const { result, rerender } = renderHook(
+      (props: SpreadsheetEditorProps) => useSpreadsheetEditor(props),
+      {
+        initialProps: {
+          defaultValue: createWorkbook([['1']]),
+          identity: reviewerIdentity,
+          capabilities: { ...FULL_CAPABILITIES, decide: false },
+        } as SpreadsheetEditorProps,
+      },
+    );
+    expect(result.current.actor).toEqual({ id: 'reviewer', name: 'Reviewer' });
+    expect(result.current.mode).toBe('author');
+    expect(result.current.canEdit).toBe(true);
+    expect(result.current.canDecide).toBe(false);
+    act(() => result.current.postComment('Mine'));
+    expect(result.current.workbook.comments?.[0].posts[0].author).toEqual({
+      id: 'reviewer',
+      name: 'Reviewer',
+    });
+    rerender({
+      ...result.current.props,
+      capabilities: { ...READ_ONLY_CAPABILITIES, suggest: true },
+    });
+    expect(result.current.mode).toBe('review');
+    expect(result.current.canSuggest).toBe(true);
+    expect(result.current.canComment).toBe(false);
+    act(() => result.current.setMode('author'));
+    expect(result.current.mode).toBe('review');
+    rerender({ ...result.current.props, capabilities: READ_ONLY_CAPABILITIES });
+    expect(result.current.mode).toBe('read');
+    expect(result.current.locked).toBe(true);
   });
 });

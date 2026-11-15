@@ -50,19 +50,20 @@ import { SpreadsheetEditor, createWorkbook } from '@flamboyantengineer/spreadshe
 />;
 ```
 
-`value` / `onChange` gives the host control of the workbook. `onChange(next, context)` adds a unique transaction ID, detached immutable baseline and semantic cell/line/sheet/layout operations; existing one-argument callbacks remain valid. Synchronous rejection preserves accepted data and the draft. `defaultValue` provides instance-local state. Use `chrome="minimal"`, `chrome="embedded"` or `chrome="full"` (the default) to choose visible editor controls. Optional props include `readOnly`, `initialSheetId`, `display`, `calculation`, `className` and `aria-label`. A read-only host locks editing, comment mutations and suggestion decisions across the grid, menus and panels while preserving reading, searching, copying and export.
+`value` / `onChange` gives the host control of the workbook. `onChange(next, context)` adds a unique transaction ID, detached immutable baseline and semantic cell/line/sheet/layout operations; existing one-argument callbacks remain valid. Synchronous rejection preserves accepted data and the draft. `defaultValue` provides instance-local state. Use `chrome="minimal"`, `chrome="embedded"` or `chrome="full"` (the default) to choose visible editor controls. Optional props include `capabilities`, `identity`, `initialSheetId`, `display`, `calculation`, `className` and `aria-label`. `capabilities={READ_ONLY_CAPABILITIES}` locks editing, comment mutations and suggestion decisions across the grid, menus and panels while preserving reading, searching, copying and export.
 
 Use `editorRef` for the session's public `SpreadsheetEditorHandle`: `commitDraft`, `cancelDraft`, detached `getSnapshot`, `select`, `getState`, `subscribe`, `save` and `flush`. `onFlush(snapshot, { signal, requestId })` supplies the host durability barrier; Flush commits active native/formula-bar input and drains scheduled saves without creating an extra manual snapshot. Failed barriers reject and retain dirty state. `undo` delegates every undo/redo surface to a host-owned history manager. `idFactory(kind)` makes new row, column, worksheet and transaction identities deterministic when needed. See the [public host example](examples/host-integration.tsx) and [host contract](specs/HOST-INTEGRATION.md).
 
 Concurrent flushes share a receipt only when it covers all edits requested by that call; newer drafts queue a newer barrier. History navigation uses configured save/flush adapters and stays in the current session on failure. Pure presentation or title changes preserve current calculations. Bulk native edits publish one transaction, with rollback on synchronous host rejection. See [the core editor review](docs/CORE-EDITOR-REVIEW.md) for regression coverage and shared UI responsibilities.
 
-`mode` / `onModeChange` controls Authoring, Reviewing or Reading; `defaultMode` sets an uncontrolled instance's initial mode. `currentUser` supplies the comment/suggestion actor. Optional `permissions` independently controls `edit`, `comment`, `suggest` and `decideSuggestions` in the UI; the host enforces authorization at its persistence boundary.
+`mode` / `onModeChange` controls Authoring, Reviewing or Reading; `defaultMode` sets an uncontrolled instance's initial mode. `identity` (the host's identity adapter, from `/host`) supplies the reader, who is the actor of comments, suggestions and decisions. `capabilities` (`EditorCapabilities`, the document editor's: `edit`, `suggest`, `comment`, `decide`, `saveVersion`, `history`) independently control what the UI offers; every capability is on by default, and the host enforces authorization at its persistence boundary.
 
 ```tsx
 <SpreadsheetEditor
   value={workbook}
   onChange={setWorkbook}
-  currentUser={{ id: user.id, name: user.name }}
+  identity={host.identity}
+  capabilities={capabilities}
   defaultMode="review"
   onSave={async (snapshot) => persistWorkbook(snapshot)}
   onRefresh={async () => refreshExternalFormulaData()}
@@ -136,7 +137,7 @@ Host-defined names and synchronous functions can be supplied to `createClientCal
 
 Hosts may retain uncommitted formula-bar and native input through `onDraftChange`. Authoritative suggestion previews use `reviewCalculation` with the projected workbook’s input key.
 
-Hosts with authoritative or immutable stored results can use `calculation={{ mode: 'external', snapshot }}`. `ExternalCalculationSnapshot` carries `workbookCalculationKey(workbook)`, a monotonic session revision, global/per-cell readiness and optional validated results/context. A null or unavailable snapshot never falls back to client calculation. Ready values, presentation and export must match the current authored inputs. Host `formulaFunctions` descriptors extend both completion surfaces; set `includeBuiltinFormulaFunctions={false}` to publish a complete authoritative catalog instead; execution stays with the authorized provider. Matching `cellPresentation` and `renderCellContent` can supply safe React content through engine-owned portals. Hosts sanitize any rich source content.
+Hosts with authoritative or immutable stored results can use `calculation={{ mode: 'external', snapshot }}`. `ExternalCalculationSnapshot` carries `workbookCalculationKey(workbook)` (a short digest of the calculation inputs), a monotonic session revision, global/per-cell readiness and optional validated results/context. A null or unavailable snapshot never falls back to client calculation. Ready values, presentation and export must match the current authored inputs. Host `formulaFunctions` descriptors extend both completion surfaces; set `includeBuiltinFormulaFunctions={false}` to publish a complete authoritative catalog instead; execution stays with the authorized provider. Matching `cellPresentation` and `renderCellContent` can supply safe React content through engine-owned portals. Hosts sanitize any rich source content.
 
 `Worksheet.inputValues` optionally preserves exact canonical numeric/quantity inputs separately from primitive edit text. `rowIds` and `columnIds` retain stable identities through structural edits. These are additive version-one fields validated by JSON/provider ingress. Ordinary replacement clears a canonical override; formatting and internal copy preserve it.
 
@@ -202,6 +203,7 @@ The server-safe `createDocumentInsertion(workbook, result, options)` helper expo
 | ---------------------------------------- | -------------------------------------------------------------------- |
 | `@flamboyantengineer/spreadsheet-editor` | React editor and primary public types                                |
 | `…/calculation`                          | Exact arithmetic, formulas, formatting, providers and HTTP handler   |
+| `…/host`                                 | Host adapters, in-memory host and causal receipt bookkeeping         |
 | `…/model`                                | Versioned workbook, addressing and extracted formula parsers         |
 | `…/document`                             | Both document insertion payloads and table projection                |
 | `…/excel`                                | Optional Node-only bounded XLSX import/export and conversion reports |

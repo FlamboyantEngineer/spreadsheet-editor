@@ -57,6 +57,18 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
     expect(workbookCalculationKey(a)).toBe(workbookCalculationKey(b));
   });
 
+  it('SE-3: is a short digest, whatever the size of the workbook', () => {
+    const large = createWorkbook(
+      Array.from({ length: 5_000 }, (_, y) => Array.from({ length: 10 }, (_, x) => `${x + y}`)),
+    );
+    const key = workbookCalculationKey(large);
+    expect(key).toMatch(/^wck1-[0-9a-f]{28}$/);
+    expect(workbookCalculationKey(structuredClone(large))).toBe(key);
+    const changed = structuredClone(large);
+    changed.worksheets[0].data[4_999][9] = '0';
+    expect(workbookCalculationKey(changed)).not.toBe(key);
+  });
+
   it('excludes title, contributor provenance and annotation contents from freshness', () => {
     const workbook = workbookFixture(),
       key = workbookCalculationKey(workbook);
@@ -484,6 +496,17 @@ describe('SE-HOST-CALC-3: bounded draft invalidation', () => {
     expect(pendingCalculationCells(result, [key(3)])).toEqual(new Set([key(3)]));
     expect(pendingCalculationCells(null, [key(0)])).toEqual(new Set([key(0)]));
   });
+  it('SE-4: records formula cells only, and a value cell reads nothing', () => {
+    const workbook = createWorkbook([['1', '2', '=A1+B1', '=C1*2']]),
+      result = calculateWorkbook(workbook),
+      key = (x: number) => calculationCellKey('sheet-1', x, 0);
+    expect(result.dependencies).toEqual({
+      cells: { [key(2)]: [key(0), key(1)], [key(3)]: [key(2)] },
+      scope: 'formulas',
+    });
+    expect(pendingCalculationCells(result, [key(1)])).toEqual(new Set([key(1), key(2), key(3)]));
+    expect(pendingCalculationCells(result, [key(3)])).toEqual(new Set([key(3)]));
+  });
   it('invalidates conservatively without dependency metadata and terminates through cycles', () => {
     const result = calculateWorkbook(createWorkbook([['1', '=A1+1', '=42']]));
     delete result.dependencies;
@@ -496,7 +519,10 @@ describe('SE-HOST-CALC-3: bounded draft invalidation', () => {
     const workbook = createWorkbook([['1', '=ROWS(A:A)', '=42']]),
       result = calculateWorkbook(workbook);
     const key = (x: number, y = 0) => calculationCellKey('sheet-1', x, y);
+    // A result without formula scope (for example from an older host) may omit entries.
     delete result.dependencies!.cells[key(2)];
+    delete result.dependencies!.scope;
+    result.dependencies!.cells[key(0)] = [];
     expect(pendingCalculationCells(result, [key(0)])).toEqual(new Set([key(0), key(1), key(2)]));
     expect(pendingCalculationCells(result, [key(0, 10)], ['sheet-1'])).toEqual(
       new Set([key(0, 10), key(1), key(2)]),
