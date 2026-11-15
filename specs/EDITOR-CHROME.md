@@ -4,7 +4,7 @@
 
 The editor shall provide File, Edit, Insert, Format, View and Review menus; a scrolling formatting toolbar; an address/formula bar with function completions; worksheet tabs; a find/replace bar; docked Properties, History, Comments and Suggestions panes; accessible selection count/sum/average; and worksheet-strip zoom controls. Generic controls use `@flamboyantengineer/ui-components`. The host styles documented hooks; grid zoom is engine presentation geometry, independent of chrome layout.
 
-Formatting shall support bold, italic, strikethrough, font family/size, text/fill colors, numeric formats and decimal places, horizontal/vertical alignment, borders, wrapping and merge/unmerge. Numeric formats round only display text, preserving exact rational calculations. Undo/redo includes formatting and review state. A frozen-column setting and display toggles expose grid integration without adding application services.
+Formatting shall support bold, italic, strikethrough, font family/size, text/fill colors, numeric formats and decimal places, horizontal/vertical alignment, borders, wrapping and merge/unmerge. Numeric formats round only display text, preserving exact rational calculations. Formatting and borders write one style spelling (`key: value` pairs joined by `; `), so the same cell state stores the same text; a cell whose last style property is removed has no style entry, and an unstyled range keeps its extent. Undo/redo includes formatting and review state. A frozen-column setting and display toggles expose grid integration without adding application services.
 
 History controls follow host-delegated undo/redo capabilities when configured. Properties follow accepted workbook-title changes until a local title draft is entered; rejected updates retain that draft and report an error. Notices and historical messages compose the public Banner and InlineError controls, retaining the editor's `se-*` root hooks. Danger messages are assertive alerts; nonblocking warnings and historical notices are polite statuses.
 
@@ -12,15 +12,15 @@ Authoring writes canonical data; Reviewing stages cell/format proposals and priv
 
 Implementation: `src/editor/contracts.ts`, `src/editor/editor-toolbar.tsx`, `src/editor/editor-menus.ts`, `src/editor/spreadsheet-editor.tsx`, `src/editor/use-editor.ts`, `src/calculation/cell-format.ts`.
 
-Verification: `e2e/full-editor.spec.ts` (SE-CHROME-1, SE-REVIEW-5), `src/calculation/cell-format.test.ts`, existing browser editor tests.
+Verification: `e2e/full-editor.spec.ts` (SE-CHROME-1, SE-REVIEW-5), `src/calculation/cell-format.test.ts`, `src/model/editing.test.ts`, existing browser editor tests.
 
 ## SE-CHROME-2 — Worksheet and structural commands
 
-Worksheet actions shall add, duplicate, rename, reorder and delete sheets, retaining at least one. Row/column commands shall insert before/after and delete selections, move authored formatting and merge spans, rewrite qualified/unqualified and absolute formula references across worksheets, and retain quoted literals and scientific numeric text unchanged. References to deleted cells/sheets become `#REF!`; partially deleted ranges shrink. Comment anchors move with cells; wholly deleted anchors become orphaned. Affected suggestions become outdated instead of applying to another cell. Imports accept CSV or the versioned workbook JSON; exports expose the complete workbook JSON.
+Worksheet actions shall add, duplicate, rename, reorder and delete sheets, retaining at least one. Row/column commands shall insert before/after and delete selections, move authored formatting and merge spans, rewrite qualified/unqualified and absolute formula references across worksheets, and retain quoted literals and scientific numeric text unchanged. Unquoted sheet names in formulas may use letters and digits of any script (for example `=Données!A2`). Every command compares sheet names the same way: case-insensitive with spaces collapsed. Renaming a sheet rewrites its references in cells and in pending suggestions, and the result is validated. A command given an unknown worksheet id throws `RangeError('Unknown worksheet.')`. Rewriting references is linear in the formula length. References to deleted cells/sheets become `#REF!`; partially deleted ranges shrink. Comment anchors move with cells; wholly deleted anchors become orphaned. Affected suggestions become outdated instead of applying to another cell. Imports accept CSV or the versioned workbook JSON; exports expose the complete workbook JSON.
 
 Implementation: `src/model/structure.ts`, `src/model/editing.ts`, `src/editor/editor-menus.ts`.
 
-Verification: `src/model/structure.test.ts`, `e2e/full-editor.spec.ts` (SE-CONTEXT-1, SE-CHROME-2).
+Verification: `src/model/structure.test.ts`, `src/model/editing.test.ts`, `e2e/full-editor.spec.ts` (SE-CONTEXT-1, SE-CHROME-2).
 
 ## SE-CHROME-3 — Search and keyboard ownership
 
