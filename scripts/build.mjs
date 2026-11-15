@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises';
+import { rm, copyFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -12,4 +12,9 @@ execFileSync(
     'tsconfig.build.json',
   ],
   { cwd: root, stdio: 'inherit' },
+);
+
+await copyFile(
+  new URL('../labs/src/reference.css', import.meta.url),
+  new URL('../dist/reference.css', import.meta.url),
 );

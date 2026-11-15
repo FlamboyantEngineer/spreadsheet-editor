@@ -215,3 +215,15 @@ export const capabilities: ExcelFormulaCapabilities = {
 };
 export const modernElement = <SpreadsheetEditor {...modernProps} />;
 export const legacyElement = <SpreadsheetEditor {...legacyProps} />;
+
+// Version-one granular application, causal receipt and linked-capture contracts.
+export {
+  createWorkbookOperationBinding,
+  initializeWorkbookIdentities,
+  createTransactionReceiptTracker,
+} from '@flamboyantengineer/spreadsheet-editor/model';
+export {
+  createLinkedSpreadsheetInsertion,
+  updateLinkedSpreadsheetInsertion,
+  type LinkedSpreadsheetInsertion,
+} from '@flamboyantengineer/spreadsheet-editor/document';
