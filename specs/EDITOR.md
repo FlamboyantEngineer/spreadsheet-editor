@@ -122,8 +122,10 @@ A workbook of 10,000 cells stays smooth to edit and one of 50,000 cells stays us
 
 While the client or server recalculates after an edit, the editor keeps showing the last ready value of every cell that does not read an edited cell, directly or through other formulas; only those readers show as pending. The calculation itself stays pending with no current result, so exports and document insertion still wait for it. A structural or naming change shows every cell as pending.
 
+Replace all writes every match into one copy of the workbook, as one change and one undo step. Local undo keeps each step's operations, which carry the before and after state of every cell, geometry, merge, annotation and name they change, together with the row lengths and optional maps those cells need, and rebuilds the workbook from them on undo and redo. Only a step that adds or removes lines or worksheets, or replaces the workbook, keeps a snapshot of the workbook it returns to.
+
 Calculation itself still recalculates the whole workbook; a calculation worker and incremental recalculation are not part of this requirement.
 
-Implementation: `src/editor/use-editor.ts`, `src/editor/command-operations.ts`, `src/editor/use-publication.ts`, `src/editor/use-calculation.ts`, `src/model/operations.ts`, `src/calculation/publication.ts`.
+Implementation: `src/editor/use-editor.ts`, `src/editor/history.ts`, `src/editor/command-operations.ts`, `src/editor/use-publication.ts`, `src/editor/use-calculation.ts`, `src/model/operations.ts`, `src/calculation/publication.ts`.
 
-Verification: `src/editor/editor-performance.test.ts` (SE-PERF-1) keeps a Node budget for a 10,000-cell and a 50,000-cell workbook.
+Verification: `src/editor/editor-performance.test.ts` (SE-PERF-1, SE-8) keeps a Node budget for a 10,000-cell and a 50,000-cell workbook and for replace all; `src/editor/history.test.ts` (SE-9) undoes and redoes every kind of step back to the same workbook.
