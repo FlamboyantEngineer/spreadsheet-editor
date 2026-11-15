@@ -7,6 +7,17 @@ import type { CalculationOptions, CalculationResult } from '../calculation/evalu
 import type { CalculationProvider } from '../calculation/provider.js';
 import { workbookCalculationKey } from '../calculation/publication.js';
 
+const acceptedKeys = new WeakMap<Workbook, string>();
+/**
+ * The key of a workbook the editor accepted. The editor never changes an accepted workbook, so
+ * its key is computed once and shared by every reader (SE-3).
+ */
+export function acceptedCalculationKey(workbook: Workbook): string {
+  let key = acceptedKeys.get(workbook);
+  if (key === undefined) acceptedKeys.set(workbook, (key = workbookCalculationKey(workbook)));
+  return key;
+}
+
 export function useCalculation(
   workbook: Workbook,
   provider: CalculationProvider,
@@ -15,7 +26,7 @@ export function useCalculation(
   /** The built-in client calculator's own results are not re-validated (SE-PERF-1). */
   trusted = false,
 ) {
-  const inputKey = useMemo(() => workbookCalculationKey(workbook), [workbook]);
+  const inputKey = useMemo(() => acceptedCalculationKey(workbook), [workbook]);
   const request = useMemo(
     () => ({ workbook, provider, options, enabled, trusted }),
     [inputKey, provider, options, enabled, trusted],
