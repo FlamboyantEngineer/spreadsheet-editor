@@ -10,11 +10,10 @@ import {
   calculationCellKey,
   pendingCalculationCells,
   orderedJson,
-  workbookCalculationKey,
 } from '../calculation/publication.js';
 import type { CalculationMode } from './contracts.js';
 import type { CellPresentationSnapshot } from './public-host.js';
-import { useCalculation } from './use-calculation.js';
+import { acceptedCalculationKey, useCalculation } from './use-calculation.js';
 
 export function usePublication(
   workbook: Workbook,
@@ -30,7 +29,7 @@ export function usePublication(
     enabled && mode?.mode !== 'external',
     mode?.mode !== 'server',
   );
-  const inputKey = useMemo(() => workbookCalculationKey(workbook), [workbook]);
+  const inputKey = useMemo(() => acceptedCalculationKey(workbook), [workbook]);
   const accepted = useRef<{ revision: number; payload: string } | null>(null);
   const local = useRef({ result: native.result, revision: 0 });
   if (native.result && local.current.result !== native.result)

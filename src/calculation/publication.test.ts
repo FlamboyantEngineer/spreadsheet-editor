@@ -57,6 +57,18 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
     expect(workbookCalculationKey(a)).toBe(workbookCalculationKey(b));
   });
 
+  it('SE-3: is a short digest, whatever the size of the workbook', () => {
+    const large = createWorkbook(
+      Array.from({ length: 5_000 }, (_, y) => Array.from({ length: 10 }, (_, x) => `${x + y}`)),
+    );
+    const key = workbookCalculationKey(large);
+    expect(key).toMatch(/^wck1-[0-9a-f]{28}$/);
+    expect(workbookCalculationKey(structuredClone(large))).toBe(key);
+    const changed = structuredClone(large);
+    changed.worksheets[0].data[4_999][9] = '0';
+    expect(workbookCalculationKey(changed)).not.toBe(key);
+  });
+
   it('excludes title, contributor provenance and annotation contents from freshness', () => {
     const workbook = workbookFixture(),
       key = workbookCalculationKey(workbook);
