@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
 import { calculateWorkbook } from '../calculation/evaluator.js';
 import {
-  workbookCalculationKey,
   type ExternalCalculationSnapshot,
+  workbookCalculationKey,
 } from '../calculation/publication.js';
+import { createWorkbook } from '../model/workbook.js';
 import { createLinkedSpreadsheetInsertion, updateLinkedSpreadsheetInsertion } from './linked.js';
 
 describe('SE-DOC-3: linked authoritative captures', () => {

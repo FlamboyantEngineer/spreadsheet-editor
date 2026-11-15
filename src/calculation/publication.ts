@@ -1,10 +1,8 @@
-import type { Workbook } from '../model/workbook.js';
-import { assertWorkbook } from '../model/workbook.js';
-import type { CalculationResult } from './evaluator.js';
-import type { JsonValue } from './values.js';
-import { assertJsonValue } from './values.js';
-import { assertCalculationResult } from './http.js';
 import { calculationFormats, worksheetCalculationExtent } from '../model/extent.js';
+import { assertWorkbook, type Workbook } from '../model/workbook.js';
+import type { CalculationResult } from './evaluator.js';
+import { assertCalculationResult } from './http.js';
+import { assertJsonValue, type JsonValue } from './values.js';
 
 export type CalculationCellState = 'pending' | 'ready' | 'unavailable';
 export interface ExternalCalculationSnapshot {

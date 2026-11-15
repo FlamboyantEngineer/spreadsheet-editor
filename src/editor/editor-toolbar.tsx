@@ -1,25 +1,25 @@
 'use client';
 
+import { AvatarGroup } from '@flamboyantengineer/ui-components/avatar-group';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { DropdownMenu } from '@flamboyantengineer/ui-components/dropdown-menu';
 import type { IconSource } from '@flamboyantengineer/ui-components/icon';
+import type { MenuEntry } from '@flamboyantengineer/ui-components/menu';
+import { Menubar, MenubarMenu } from '@flamboyantengineer/ui-components/menubar';
+import { SaveStatus } from '@flamboyantengineer/ui-components/save-status';
+import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import {
   ToolbarRow,
   ToolbarRowGroup,
   ToolbarRowSeparator,
 } from '@flamboyantengineer/ui-components/toolbar-row';
-import type { MenuEntry } from '@flamboyantengineer/ui-components/menu';
-import { Menubar, MenubarMenu } from '@flamboyantengineer/ui-components/menubar';
-import { AvatarGroup } from '@flamboyantengineer/ui-components/avatar-group';
-import { SelectField } from '@flamboyantengineer/ui-components/select-field';
-import { SaveStatus } from '@flamboyantengineer/ui-components/save-status';
 import { Tooltip } from '@flamboyantengineer/ui-components/tooltip';
-import { collaboratorColorIndex } from '../model/presence.js';
-import type { SpreadsheetEditorController } from './use-editor.js';
 import { UNIT_PRESETS } from '../calculation/units.js';
+import { collaboratorColorIndex } from '../model/presence.js';
 import { editorCommandMetadata, editorGlyphs, numberFormatGlyphs } from './editor-commands.js';
 import { editorMenus } from './editor-menus.js';
 import { EditorColorControl, EditorFontSize } from './text-format-controls.js';
+import type { SpreadsheetEditorController } from './use-editor.js';
 
 function MenuButton({
   label,

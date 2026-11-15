@@ -1,7 +1,7 @@
-import type { Workbook } from './workbook.js';
-import { normalizeSelection, type CellSelection } from './editing.js';
-import { parseSpreadsheetAddress, parseSpreadsheetRange } from './spreadsheet-addressing.js';
 import type { PresencePlace, PresenceStatus, SpreadsheetPeer } from '../host/presence-adapters.js';
+import { type CellSelection, normalizeSelection } from './editing.js';
+import { parseSpreadsheetAddress, parseSpreadsheetRange } from './spreadsheet-addressing.js';
+import type { Workbook } from './workbook.js';
 
 /** A peer placed on the workbook: their selection and lock as cell rectangles on a worksheet. */
 export interface SpreadsheetCollaborator {

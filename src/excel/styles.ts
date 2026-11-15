@@ -1,7 +1,7 @@
-import { excelColor } from './colors.js';
 import type ExcelJS from 'exceljs';
-import type { CellFormat } from '../model/review.js';
 import { resolveUnit } from '../calculation/units.js';
+import type { CellFormat } from '../model/review.js';
+import { excelColor } from './colors.js';
 
 const LOCALE_IDS: Record<string, string> = {
   'en-US': '409',

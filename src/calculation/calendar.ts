@@ -1,5 +1,5 @@
-import { CalculationError, type NumericValue } from './values.js';
 import { createArithmetic } from './rational.js';
+import { CalculationError, type NumericValue } from './values.js';
 
 const epoch = Date.UTC(1899, 11, 31),
   dayMilliseconds = 86400000;

@@ -4,7 +4,7 @@ A standalone React spreadsheet editor built on [`@flamboyantengineer/ui-componen
 
 - Exact rational arithmetic, including scientific notation, large integers and cancellation. `1E-25` stays nonzero; `1-1E-25` stays distinct from `1`; `1-(1-1E-25)` returns exactly `1E-25`.
 - Client or server calculations through the same headless evaluator. Server mode accepts a host provider or the included HTTP adapter and Fetch-standard route handler.
-- Full editor chrome: File/Edit/Insert/Format/View/Review menus, formatting toolbar, formula bar, worksheet tabs, find/replace, side panels, save status, accessible selection statistics and worksheet-strip zoom. Embedded actions use the UI library’s default icon toolbar. Formula entry uses the UI library’s CodeEditor and CompletionList: Enter commits and moves down, Ctrl/Command+Enter commits in place, and Escape cancels. Worksheet names edit directly in tabs with double-click or F2. Grid zoom scales cells and text inside a fixed viewport with one-pixel strokes.
+- Full editor chrome: File/Edit/Insert/Format/View/Review menus, formatting toolbar, formula bar, worksheet tabs, find/replace, side panels, save status, accessible selection statistics and sheet-bar zoom. Embedded actions use the UI library’s default icon toolbar. Formula entry uses the UI library’s CodeEditor and CompletionList: Enter commits and moves down, Ctrl/Command+Enter commits in place, and Escape cancels. Worksheet names edit directly in tabs with double-click or F2. Grid zoom scales cells and text inside a fixed viewport with one-pixel strokes.
 - Threaded comments with replies, editing, reactions, resolve/reopen and cell markers. Reviewing mode records cell and formatting suggestions with explicit acceptance/rejection and conflict checks.
 - Cross-sheet formulas, ranges, undo/redo, row/column insertion and deletion, reference rewriting, resizing, frozen columns, merged cells and independent editor instances.
 - Document insertion as an ordinary table snapshot or an editable spreadsheet retaining live formulas.
@@ -16,7 +16,7 @@ This private `0.x` package provides the generic editor and host integration cont
 
 ## Run the labs
 
-Use Node 24 (recommended), or Node 22.13 or newer within Node 22, and Git. The checked-in `.nvmrc` selects Node 24; with a version manager, run `nvm use` before installing. Check `node --version` in the same terminal: installing another Node version does not change which executable comes first on `PATH`. The base component library comes from the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository:
+Use Node 22 (22.13 or newer, recommended, as the sibling libraries do) or Node 24, and Git. The checked-in `.nvmrc` selects Node 22; with a version manager, run `nvm use` before installing. Check `node --version` in the same terminal: installing another Node version does not change which executable comes first on `PATH`. The base component library comes from the public [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) repository:
 
 ```sh
 npm run labs

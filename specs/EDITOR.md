@@ -2,7 +2,7 @@
 
 ## SE-UI-1 — React editor and shared controls
 
-The editor renders the full reusable editor chrome using the base component library and a canonical React Jspreadsheet host. It supports controlled or local workbook state, the menu bar, formatting tools, raw-value formula bar, sheet actions, search/replace, right panels, save status, accessible selection statistics, worksheet-strip zoom and a bounded 50-step undo/redo history. Read-only mode locks content and review mutation in every input path. A host-controlled workbook replacement resets available history. [EDITOR-CHROME.md](EDITOR-CHROME.md) and [REVIEW.md](REVIEW.md) specify the controls, comments and tracked suggestions.
+The editor renders the full reusable editor chrome using the base component library and a canonical React Jspreadsheet host. It supports controlled or local workbook state, the menu bar, formatting tools, raw-value formula bar, sheet actions, search/replace, right panels, save status, accessible selection statistics, sheet-bar zoom and a bounded 50-step undo/redo history. Read-only mode locks content and review mutation in every input path. A host-controlled workbook replacement resets available history. [EDITOR-CHROME.md](EDITOR-CHROME.md) and [REVIEW.md](REVIEW.md) specify the controls, comments and tracked suggestions.
 
 Implementation: `src/editor/spreadsheet-editor.tsx`, `src/editor/editor-toolbar.tsx`, `src/editor/use-editor.ts`, `src/engine/workbook-grid.tsx`, `src/engine/jspreadsheet-host.tsx`.
 
@@ -54,7 +54,7 @@ This stage extracts reusable grid and parser modules and provides an independent
 
 ## SE-LABS-3 — Independent configurations
 
-The labs index shall link to minimal, embedded, full editor, host integration and large worksheet pages. Each page uses the public ui-components lab bar and settings controls; selections follow navigation. Minimal provides the editable grid and worksheet strip, embedded provides compact tools inside an application-owned workspace, full provides all menus and review commands, host integration demonstrates lifecycle and authoritative result contracts, and the large worksheet holds 10,000 cells (or `?rows=` rows of 25 columns) for the grid budgets in SE-PERF-1. Reference presentation must keep formula entry, address and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
+The labs index shall link to minimal, embedded, full editor, host integration and large worksheet pages. Each page uses the public ui-components lab bar and settings controls; selections follow navigation. Minimal provides the editable grid and sheet bar, embedded provides compact tools inside an application-owned workspace, full provides all menus and review commands, host integration demonstrates lifecycle and authoritative result contracts, and the large worksheet holds 10,000 cells (or `?rows=` rows of 25 columns) for the grid budgets in SE-PERF-1. Reference presentation must keep formula entry, address and formatting controls usable at desktop/tablet/mobile widths without horizontal page overflow. Generic field labels remain accessible while compact chrome omits visible labels and empty feedback rows.
 
 Verification: `e2e/labs.spec.ts` at 1440, 768 and 390 pixels, plus `e2e/editor.spec.ts`.
 

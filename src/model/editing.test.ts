@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook } from './workbook.js';
-import { worksheetExtent } from './extent.js';
 import { borderCells, clearSelection, formatCells, mergeSelection } from './editing.js';
+import { worksheetExtent } from './extent.js';
+import { requireDefined } from './require-defined.js';
+import { createWorkbook } from './workbook.js';
 
 const range = { x1: 0, y1: 0, x2: 5, y2: 5 };
 
@@ -34,7 +35,7 @@ describe('SE-CHROME-1: borders share the cell style spelling', () => {
       'border-top': '1px solid currentColor',
     });
     expect(bordered.worksheets[0].style).toEqual(formatted.worksheets[0].style);
-    expect(bordered.worksheets[0].style!.A1).toBe(
+    expect(requireDefined(bordered.worksheets[0].style).A1).toBe(
       'font-weight: bold; border-top: 1px solid currentColor',
     );
   });

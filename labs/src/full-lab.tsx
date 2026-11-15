@@ -1,23 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
-import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
-import { SpreadsheetEditor, useWorkbookSession } from '../../src/index.js';
+import { TextField } from '@flamboyantengineer/ui-components/text-field';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  calculateWorkbook,
+  createClientCalculator,
+  createHttpCalculator,
+  formatCellValue,
+} from '../../src/calculation/index.js';
+import { createDocumentInsertion, type DocumentInsertion } from '../../src/document/index.js';
 import {
   createMemoryHost,
   createMemoryPresenceRoom,
   FULL_CAPABILITIES,
   READ_ONLY_CAPABILITIES,
 } from '../../src/host/index.js';
-import {
-  createHttpCalculator,
-  createClientCalculator,
-  calculateWorkbook,
-  formatCellValue,
-} from '../../src/calculation/index.js';
-import { createDocumentInsertion, type DocumentInsertion } from '../../src/document/index.js';
+import { SpreadsheetEditor, useWorkbookSession } from '../../src/index.js';
 import type { Workbook } from '../../src/model/index.js';
-
 import { useExcelLab } from './excel-lab.js';
 import { sample } from './sample.js';
 
@@ -80,11 +79,12 @@ export function FullLab() {
   });
   /** Replaces the editor's workbook with `next` as an unsaved change, as an import would. */
   function replaceWorkbook(next: Workbook) {
-    if (!session?.workbook()) return;
+    const baseline = session?.workbook();
+    if (!session || !baseline) return;
     session.change(structuredClone(next), {
       transactionId: crypto.randomUUID(),
       source: 'host-command',
-      baseline: session.workbook()!,
+      baseline,
       operations: [],
     });
     setWorkbook(next);

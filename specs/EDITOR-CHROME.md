@@ -2,7 +2,7 @@
 
 ## SE-CHROME-1 — Full reusable shell
 
-The editor shall provide File, Edit, Insert, Format, View and Review menus; a scrolling formatting toolbar; an address/formula bar with function completions; worksheet tabs; a find/replace bar; docked Properties, History, Comments and Suggestions panes; accessible selection count/sum/average; and worksheet-strip zoom controls. Generic controls use `@flamboyantengineer/ui-components`. The host styles documented hooks; grid zoom is engine presentation geometry, independent of chrome layout.
+The editor shall provide File, Edit, Insert, Format, View and Review menus; a scrolling formatting toolbar; an address/formula bar with function completions; worksheet tabs; a find/replace bar; docked Properties, History, Comments and Suggestions panes; accessible selection count/sum/average; and sheet-bar zoom controls. Generic controls use `@flamboyantengineer/ui-components`. The host styles documented hooks; grid zoom is engine presentation geometry, independent of chrome layout.
 
 Formatting shall support bold, italic, strikethrough, font family/size, text/fill colors, numeric formats and decimal places, horizontal/vertical alignment, borders, wrapping and merge/unmerge. Numeric formats round only display text, preserving exact rational calculations. Formatting and borders write one style spelling (`key: value` pairs joined by `; `), so the same cell state stores the same text; a cell whose last style property is removed has no style entry, and an unstyled range keeps its extent. Undo/redo includes formatting and review state. A frozen-column setting and display toggles expose grid integration without adding application services.
 
@@ -64,7 +64,7 @@ Selection, formula-reference and presence overlay containers shall be clipped to
 
 The embedded toolbar uses icon-only action triggers and the public ToolbarRow default appearance. All triggers have accessible names and tooltips. Full mode retains labelled application menus. Worksheet controls use public Tabs with a scrollable tab list with Add immediately after the final tab and a separate fixed zoom control, without an ellipsis menu, close marks or a zoom-reset control. Double-click, F2 and Rename open editing directly inside the worksheet tab. Enter/blur commits a valid unique normalized name, Escape cancels, and invalid Enter submissions remain editable with feedback (leaving an invalid field cancels). Rename and structural commands preserve pending formula edits and remap references.
 
-Implementation: `src/engine/workbook-grid.tsx`, `src/engine/worksheet-presentation.ts`, `src/engine/header-resize.ts`, `src/editor/editor-formula-bar.tsx`, `src/editor/worksheet-strip.tsx`, `src/editor/editor-toolbar.tsx`, `labs/src/reference.css`.
+Implementation: `src/engine/workbook-grid.tsx`, `src/engine/worksheet-presentation.ts`, `src/engine/header-resize.ts`, `src/editor/editor-formula-bar.tsx`, `src/editor/sheet-bar.tsx`, `src/editor/editor-toolbar.tsx`, `labs/src/reference.css`.
 
 Verification: `src/engine/grid-geometry.test.ts`, `src/engine/selection-publication.test.ts`, `e2e/selection-rendering.spec.ts`, and existing editor suites cover geometry, single-frame drag updates, native fill-handle clipping, scrolling, frozen columns, inline rename and formula ownership across the three lab presets.
 

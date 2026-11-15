@@ -1,13 +1,13 @@
-import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
-import { resolve, extname, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { createServer } from 'node:http';
+import { extname, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { buildLabs, output } from './build-labs.mjs';
-import { reportLabsError } from './lib/labs-setup.mjs';
 import { listenLabsServer } from './lib/labs-server.mjs';
+import { reportLabsError } from './lib/labs-setup.mjs';
 
 async function main() {
   const { values } = parseArgs({

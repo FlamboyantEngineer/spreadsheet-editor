@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { calculateWorkbook } from './evaluator.js';
 import { createWorkbook } from '../model/workbook.js';
+import { calculateWorkbook } from './evaluator.js';
 import { formatCellValue } from './format.js';
 
 const value = (formula: string) =>

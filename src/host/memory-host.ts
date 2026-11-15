@@ -1,3 +1,4 @@
+import { requireDefined } from '../model/require-defined.js';
 import { assertWorkbook, type Workbook } from '../model/workbook.js';
 import type {
   DraftsAdapter,
@@ -16,7 +17,7 @@ import type {
   WorkbookStoreAdapter,
   WorkbookVersion,
 } from './adapters.js';
-import { FULL_CAPABILITIES, type EditorCapabilities } from './capabilities.js';
+import { type EditorCapabilities, FULL_CAPABILITIES } from './capabilities.js';
 import { createMemoryPresenceRoom, type MemoryPresenceRoom } from './memory-presence.js';
 
 export interface MemoryHostOptions {
@@ -100,7 +101,7 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
     entry.changed.forEach((onChange) => onChange());
     return version;
   };
-  const latest = (entry: Entry) => entry.versions[0]!;
+  const latest = (entry: Entry) => requireDefined(entry.versions[0]);
   const stateOf = ({ revision, sequence }: SavedState): SavedState => ({ revision, sequence });
   const versionOf = (version: WorkbookVersion): WorkbookVersion => ({
     revision: version.revision,

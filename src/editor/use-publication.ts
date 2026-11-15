@@ -1,16 +1,17 @@
 'use client';
+
 import { useMemo, useRef } from 'react';
-import type { CalculationResult } from '../calculation/evaluator.js';
-import { calculationFormats, worksheetCalculationExtent } from '../model/extent.js';
-import type { Workbook } from '../model/workbook.js';
-import type { CalculationOptions } from '../calculation/evaluator.js';
+import type { CalculationOptions, CalculationResult } from '../calculation/evaluator.js';
 import type { CalculationProvider } from '../calculation/provider.js';
 import {
   assertExternalCalculationSnapshot,
   calculationCellKey,
-  pendingCalculationCells,
   orderedJson,
+  pendingCalculationCells,
 } from '../calculation/publication.js';
+import { calculationFormats, worksheetCalculationExtent } from '../model/extent.js';
+import { requireDefined } from '../model/require-defined.js';
+import type { Workbook } from '../model/workbook.js';
 import type { CalculationMode } from './contracts.js';
 import type { CellPresentationSnapshot } from './public-host.js';
 import { acceptedCalculationKey, useCalculation } from './use-calculation.js';
@@ -114,7 +115,7 @@ export function acceptedPresentation(
     for (const field of ['text', 'tooltip', 'ariaDescription', 'defaultUnit'] as const)
       if (
         entry[field] !== undefined &&
-        (typeof entry[field] !== 'string' || entry[field]!.length > 32_768)
+        (typeof entry[field] !== 'string' || requireDefined(entry[field]).length > 32_768)
       )
         throw new TypeError('Invalid cell presentation text.');
     if (
@@ -173,6 +174,9 @@ export function useRecalculatingDisplay(
   publication: ReturnType<typeof usePublication>,
   enabled: boolean,
 ): { result: CalculationResult | null; readyCells: ReadonlySet<string> } {
+  // The last ready result, kept while the next one is pending. It is cached in a ref during the
+  // render that receives it: state would render the editor a second time for every result.
+  /* eslint-disable react-hooks/refs -- a render-local cache of the previous ready result */
   const settled = useRef<{
     workbook: Workbook;
     result: CalculationResult;
@@ -191,4 +195,5 @@ export function useRecalculatingDisplay(
     for (const key of last.readyCells) if (!pending.has(key)) readyCells.add(key);
     return { result: last.result, readyCells };
   }, [recalculating, last, workbook, publication]);
+  /* eslint-enable react-hooks/refs */
 }

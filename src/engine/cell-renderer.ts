@@ -1,16 +1,16 @@
-import type { CellValue } from '../calculation/values.js';
 import type { ReactNode } from 'react';
-import type { CellPresentationSnapshot, RenderCellContent } from '../editor/public-host.js';
-import type { DisplayOptions } from '../calculation/format.js';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
-import { collaboratorColorIndex } from '../model/presence.js';
+import type { DisplayOptions } from '../calculation/format.js';
+import type { CellValue } from '../calculation/values.js';
+import type { CellPresentationSnapshot, RenderCellContent } from '../editor/public-host.js';
 import type { CellSelection } from '../model/editing.js';
-import type { CellInput, Worksheet } from '../model/workbook.js';
+import { collaboratorColorIndex } from '../model/presence.js';
 import type { CellFormat, SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetRange,
 } from '../model/spreadsheet-addressing.js';
+import type { CellInput, Worksheet } from '../model/workbook.js';
 import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 function worksheetFrom(handle: JSpreadsheetHostHandle): JSpreadsheetWorksheetInstance | undefined {
@@ -32,7 +32,7 @@ export interface CellPortal {
   target: HTMLElement;
   content: ReactNode;
 }
-export interface GridCellPresentation {
+interface GridCellPresentation {
   sheetId: string;
   publication?: { inputKey: string; revision: number };
   readyCells?: ReadonlySet<string>;

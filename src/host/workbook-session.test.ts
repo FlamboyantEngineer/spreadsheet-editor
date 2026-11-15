@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createWorkbook, type Workbook } from '../model/workbook.js';
 import type { WorkbookChangeContext } from '../model/operations.js';
-import { createMemoryHost } from './memory-host.js';
+import { requireDefined } from '../model/require-defined.js';
+import { createWorkbook, type Workbook } from '../model/workbook.js';
 import type { HostResult, SavedState, WorkbookSave, WorkbookStoreAdapter } from './adapters.js';
+import { createMemoryHost } from './memory-host.js';
 import { createWorkbookSession, type WorkbookSession } from './workbook-session.js';
 
 let counter = 0;
@@ -11,7 +12,7 @@ function change(session: WorkbookSession, value: string, transactionId = `t${++c
   const context: WorkbookChangeContext = {
     transactionId,
     source: 'user',
-    baseline: session.workbook()!,
+    baseline: requireDefined(session.workbook()),
     operations: [],
   };
   session.change(next, context);
@@ -85,7 +86,7 @@ describe('SE-SESSION-2: causal save coverage', () => {
       autosaveDelay: Infinity,
     });
     await session.ready;
-    const next: Workbook = { ...session.workbook()!, comments: [] };
+    const next: Workbook = { ...requireDefined(session.workbook()), comments: [] };
     next.comments = [
       {
         id: 'c',
@@ -98,7 +99,7 @@ describe('SE-SESSION-2: causal save coverage', () => {
     session.change(next, {
       transactionId: 'comment',
       source: 'user',
-      baseline: session.workbook()!,
+      baseline: requireDefined(session.workbook()),
       operations: [],
     });
     expect(session.status().dirty).toBe(true);

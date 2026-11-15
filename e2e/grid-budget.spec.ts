@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
@@ -25,13 +25,15 @@ async function measure(page: Page, action: () => Promise<void>) {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) probe.longTasks.push(entry.duration);
     }).observe({ type: 'longtask' });
+    const body = document.querySelector('.se-editor .jss_worksheet tbody');
+    if (!body) throw new Error('No worksheet body');
     new MutationObserver((records) => {
       for (const record of records) {
         const kind =
           `${record.type} ${record.target.nodeName} ${record.attributeName ?? ''}`.trim();
         probe.mutations[kind] = (probe.mutations[kind] ?? 0) + 1;
       }
-    }).observe(document.querySelector('.se-editor .jss_worksheet tbody')!, {
+    }).observe(body, {
       subtree: true,
       childList: true,
       attributes: true,

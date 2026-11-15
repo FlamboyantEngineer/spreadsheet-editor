@@ -1,5 +1,7 @@
-import { useEffect, useState, type RefObject } from 'react';
-import { selectionAddress, type CellSelection } from '../model/editing.js';
+'use client';
+
+import { type RefObject, useEffect, useEffectEvent, useState } from 'react';
+import { type CellSelection, selectionAddress } from '../model/editing.js';
 import {
   addComment,
   addWorkbookComment,
@@ -89,17 +91,24 @@ export function useComments({
     setCommentComposer(false);
     if (commentScope === 'range') setActiveCommentId(meta.id);
   }
+  const openInitialComment = useEffectEvent((id: string) => openComment(id));
   useEffect(() => {
-    if (initialCommentId) openComment(initialCommentId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a host deep link opens its thread when it is given
+    if (initialCommentId) openInitialComment(initialCommentId);
   }, [initialCommentId]);
   function openSuggestion(id: string) {
     const item = workbook.suggestions?.find((suggestion) => suggestion.id === id);
     if (item?.commentThreadId) openComment(item.commentThreadId);
   }
-  useEffect(() => {
-    const thread = workbook.comments?.find((thread) => thread.id === activeCommentId);
+  const closeVanishedComment = useEffectEvent((current: Workbook) => {
+    const thread = current.comments?.find((thread) => thread.id === activeCommentId);
     if (activeCommentId !== 'draft' && (!thread || thread.state === 'resolved' || thread.orphaned))
       setActiveCommentId(null);
+  });
+  // A thread that leaves the workbook closes, and stays closed if an undo brings it back.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closes once per workbook change
+    closeVanishedComment(workbook);
   }, [workbook]);
   function decide(id: string, action: 'accepted' | 'rejected') {
     if (canDecide)

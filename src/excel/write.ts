@@ -1,31 +1,32 @@
 import ExcelJS from 'exceljs';
-import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
-import { assertWorkbook, type Workbook } from '../model/workbook.js';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import { formatWorksheetCell } from '../calculation/cell-format.js';
+import {
+  type CalculationResult,
+  formulaOperandKey,
+  SUPPORTED_FUNCTIONS,
+} from '../calculation/evaluator.js';
+import { formatCellValue } from '../calculation/format.js';
+import { assertCalculationResult } from '../calculation/http.js';
+import { createArithmetic } from '../calculation/rational.js';
+import { type CellValue, isError, isNumeric } from '../calculation/values.js';
 import { parseCellStyle } from '../model/editing.js';
+import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
+import { requireDefined } from '../model/require-defined.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetAddress,
 } from '../model/spreadsheet-addressing.js';
-import { parseFormula, type FormulaNode } from '../model/formula-parser.js';
-import { createArithmetic } from '../calculation/rational.js';
-import { formatCellValue } from '../calculation/format.js';
-import { formatWorksheetCell } from '../calculation/cell-format.js';
-import { isNumeric, isError, type CellValue } from '../calculation/values.js';
-import {
-  SUPPORTED_FUNCTIONS,
-  formulaOperandKey,
-  type CalculationResult,
-} from '../calculation/evaluator.js';
-import { exportCellStyle, exportNumberFormat, numberFormatLoss } from './styles.js';
-import { assertCalculationResult } from '../calculation/http.js';
+import { assertWorkbook, type Workbook } from '../model/workbook.js';
+import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
+import { capturedText } from './captured-text.js';
 import type {
   ExcelFormulaCapabilities,
   ExcelHostFunction,
   XlsxExport,
   XlsxWarning,
 } from './contracts.js';
-import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
-import { capturedText } from './captured-text.js';
+import { exportCellStyle, exportNumberFormat, numberFormatLoss } from './styles.js';
 
 const exact = createArithmetic({ maxIntegerDigits: 100000 });
 function excelValue(value: CellValue): ExcelJS.CellValue {
@@ -380,7 +381,7 @@ export async function exportXlsxWithReport(
     );
     for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
       report.mergedRanges++;
-      const anchor = parseSpreadsheetAddress(address)!;
+      const anchor = requireDefined(parseSpreadsheetAddress(address));
       output.mergeCells(anchor.y + 1, anchor.x + 1, anchor.y + rows, anchor.x + columns);
     }
     if (sheet.freezeColumns)

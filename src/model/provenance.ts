@@ -1,5 +1,5 @@
-import { copyWorkbook, type Workbook, type CellProvenance } from './workbook.js';
 import { formatSpreadsheetAddress } from './spreadsheet-addressing.js';
+import { type CellProvenance, copyWorkbook, type Workbook } from './workbook.js';
 
 export function attributeCellChanges(
   before: Workbook,

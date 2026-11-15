@@ -1,4 +1,5 @@
-import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
+import { type DefaultTreeAdapterMap, parseFragment } from 'parse5';
+import { requireDefined } from '../model/require-defined.js';
 
 const OMIT = new Set([
   'script',
@@ -34,7 +35,7 @@ export function capturedText(
     const parts: string[] = [];
     let visited = 0;
     while (stack.length) {
-      const { node, depth } = stack.pop()!;
+      const { node, depth } = requireDefined(stack.pop());
       if (++visited > 8192 || depth > 128)
         throw new RangeError('Captured HTML exceeds its tree limit.');
       if (node.nodeName === '#text') parts.push((node as DefaultTreeAdapterMap['textNode']).value);
@@ -48,7 +49,7 @@ export function capturedText(
   // XML/Excel cannot preserve these control characters; never silently alter an operand.
   if (
     [...output].some((character) => {
-      const code = character.codePointAt(0)!;
+      const code = requireDefined(character.codePointAt(0));
       return (
         (code < 32 && ![9, 10, 13].includes(code)) ||
         code === 0xfffe ||

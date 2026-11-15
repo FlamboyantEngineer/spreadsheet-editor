@@ -1,4 +1,6 @@
-import { useState, type RefObject } from 'react';
+'use client';
+
+import { type RefObject, useState } from 'react';
 import type { Workbook } from '../model/workbook.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { saveFailure } from './use-session-state.js';

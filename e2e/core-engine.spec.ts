@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { requireDefined } from '../src/model/require-defined.js';
 
 test('SE-UI-3: delayed initial grid adoption does not interrupt a held toolbar press', async ({
   page,
@@ -22,7 +23,7 @@ test('SE-UI-3: delayed initial grid adoption does not interrupt a held toolbar p
   const editor = page.getByRole('region', { name: 'Embedded spreadsheet', exact: true });
   const add = editor.getByRole('button', { name: 'Add worksheet', exact: true });
   await add.scrollIntoViewIfNeeded();
-  const box = (await add.boundingBox())!;
+  const box = requireDefined(await add.boundingBox());
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   releaseChunk();
@@ -34,7 +35,7 @@ test('SE-UI-3: delayed initial grid adoption does not interrupt a held toolbar p
       ),
   );
   await expect(add).toBeFocused();
-  const mountedBox = (await add.boundingBox())!;
+  const mountedBox = requireDefined(await add.boundingBox());
   expect(mountedBox).toEqual(box);
   await page.mouse.up();
   await expect(editor.getByRole('tab')).toHaveCount(2);
@@ -55,7 +56,8 @@ test('SE-UI-3: a refused native batch restores accepted cells and can be retried
   await cells[2].click();
   await page.keyboard.up('Shift');
   await page.keyboard.press('Delete');
-  for (let x = 0; x < cells.length; x++) await expect(cells[x]).toHaveText(original[x]!);
+  for (let x = 0; x < cells.length; x++)
+    await expect(cells[x]).toHaveText(requireDefined(original[x]));
   await expect(editor.getByRole('alert')).toContainText('Host workbook change was rejected.');
   await expect(page.getByLabel('Host transaction count')).toHaveText('0');
   await page.getByRole('button', { name: 'Allow workbook changes', exact: true }).click();
@@ -84,7 +86,8 @@ for (const key of ['Delete', 'Backspace'])
     for (const cell of cells) await expect(cell).toHaveText('');
     await expect(editor.locator('.se-editor__notice')).toHaveCount(0);
     await editor.getByRole('button', { name: 'Undo', exact: true }).click();
-    for (let x = 0; x < cells.length; x++) await expect(cells[x]).toHaveText(original[x]!);
+    for (let x = 0; x < cells.length; x++)
+      await expect(cells[x]).toHaveText(requireDefined(original[x]));
   });
 
 test('SE-UI-3: native bulk clear creates one review proposal without changing accepted cells', async ({
@@ -105,7 +108,8 @@ test('SE-UI-3: native bulk clear creates one review proposal without changing ac
   await page.getByRole('button', { name: 'Reviewer permissions', exact: true }).click();
   await editor.getByRole('button', { name: /Editing mode$/ }).click();
   await page.getByRole('option', { name: 'Authoring', exact: true }).click();
-  for (let x = 0; x < cells.length; x++) await expect(cells[x]).toHaveText(original[x]!);
+  for (let x = 0; x < cells.length; x++)
+    await expect(cells[x]).toHaveText(requireDefined(original[x]));
 });
 
 test('SE-UI-1: final blank rows and columns synchronize with the live vendor without replacing its root', async ({
@@ -150,12 +154,13 @@ test('SE-UI-1: selection changes write no frozen styles on an unchanged 26 by 10
     const counter = { styles: 0, classes: 0 };
     (window as unknown as { coreSelectionWrites: typeof counter }).coreSelectionWrites = counter;
     for (const property of ['left', 'position', 'zIndex']) {
-      const descriptor = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, property)!;
+      const descriptor =
+        Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, property) ?? {};
       Object.defineProperty(CSSStyleDeclaration.prototype, property, {
         ...descriptor,
         set(value: string) {
           if (styles.has(this)) counter.styles++;
-          descriptor.set!.call(this, value);
+          descriptor.set?.call(this, value);
         },
       });
     }

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createWorkbook } from '../model/workbook.js';
 import { calculateWorkbook, SUPPORTED_FUNCTIONS } from './evaluator.js';
 import { formatCellValue } from './format.js';

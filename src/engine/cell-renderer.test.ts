@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderCalculatedCells, clearCalculatedPresentation } from './cell-renderer.js';
+import { clearCalculatedPresentation, renderCalculatedCells } from './cell-renderer.js';
 import type { JSpreadsheetHostHandle } from './jspreadsheet-host.js';
 
 function grid() {

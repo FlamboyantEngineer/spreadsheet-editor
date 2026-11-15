@@ -1,19 +1,12 @@
-import { assertCellFormat } from './cell-format.js';
 import type { NumericValue } from '../calculation/values.js';
-import { assertNumericValue } from '../calculation/values.js';
-import {
-  assertWorkbook,
-  copyWorkbook,
-  type CellInput,
-  type Workbook,
-  type Worksheet,
-} from './workbook.js';
+import { requireDefined } from './require-defined.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetAddress,
   parseSpreadsheetRange,
 } from './spreadsheet-addressing.js';
 import { changeWorkbookStructure, type StructureChange } from './structure.js';
+import { type CellInput, copyWorkbook, type Workbook, type Worksheet } from './workbook.js';
 
 export interface ReviewActor {
   id: string;
@@ -132,7 +125,7 @@ export function addComment(
     {
       id: stamp.id,
       sheetId,
-      range: parseSpreadsheetRange(range)!.address,
+      range: requireDefined(parseSpreadsheetRange(range)).address,
       state: 'open',
       entries: [{ id: stamp.id, author: stamp.actor.id, text: text.trim(), createdAt: stamp.time }],
     },
@@ -337,9 +330,11 @@ export function proposeWorkbookChange(
     existing.updatedAt = stamp.time;
     existing.summary = summary;
     existing.changes = changes.map((change) => {
-      const before = existing.changes.find(
-        (old) => old.sheetId === change.sheetId && old.address === change.address,
-      )!;
+      const before = requireDefined(
+        existing.changes.find(
+          (old) => old.sheetId === change.sheetId && old.address === change.address,
+        ),
+      );
       return {
         ...before,
         after: change.after !== change.before ? change.after : before.after,
@@ -382,7 +377,7 @@ export function proposeWorkbookChange(
   if (anchor) {
     const positions = changes
       .filter((change) => change.sheetId === anchor.sheetId)
-      .map((change) => parseSpreadsheetAddress(change.address)!);
+      .map((change) => requireDefined(parseSpreadsheetAddress(change.address)));
     const x1 = Math.min(...positions.map((p) => p.x)),
       y1 = Math.min(...positions.map((p) => p.y)),
       x2 = Math.max(...positions.map((p) => p.x)),
@@ -428,7 +423,9 @@ export function decideSuggestion(
       if (suggestion.structure.operation) {
         const { sheetId, change } = suggestion.structure.operation;
         next = changeWorkbookStructure(next, sheetId, change);
-        suggestion = next.suggestions!.find((item) => item.id === id)!;
+        suggestion = requireDefined(
+          requireDefined(next.suggestions).find((item) => item.id === id),
+        );
       } else {
         next.worksheets = structuredClone(suggestion.structure.after);
         const ids = new Set(next.worksheets.map((sheet) => sheet.id));
@@ -457,8 +454,8 @@ export function decideSuggestion(
           );
       }
       for (const change of suggestion.changes) {
-        const sheet = next.worksheets.find((sheet) => sheet.id === change.sheetId)!,
-          cell = parseSpreadsheetAddress(change.address)!;
+        const sheet = requireDefined(next.worksheets.find((sheet) => sheet.id === change.sheetId)),
+          cell = requireDefined(parseSpreadsheetAddress(change.address));
         while (sheet.data.length <= cell.y) sheet.data.push([]);
         while (sheet.data[cell.y].length <= cell.x) sheet.data[cell.y].push(null);
         sheet.data[cell.y][cell.x] = change.after;
@@ -489,7 +486,9 @@ export function decideSuggestion(
           at: suggestion.updatedAt ?? suggestion.createdAt,
         };
     }
-  const linked = next.comments?.find((thread) => thread.id === suggestion!.commentThreadId);
+  const linked = next.comments?.find(
+    (thread) => thread.id === requireDefined(suggestion).commentThreadId,
+  );
   if (linked) {
     linked.state = 'resolved';
     linked.resolvedBy = stamp.actor.id;
@@ -505,138 +504,6 @@ export function decideSuggestion(
   suggestion.decidedBy = { ...stamp.actor };
   suggestion.decidedAt = stamp.time;
   return next;
-}
-
-export function assertReviewData(workbook: Workbook): void {
-  const validId = (value: unknown) => typeof value === 'string' && value.length > 0;
-  const validActor = (value: ReviewActor) =>
-    value && typeof value.id === 'string' && value.id.length > 0 && typeof value.name === 'string';
-  const validInput = (value: unknown) =>
-    value === null ||
-    typeof value === 'boolean' ||
-    (typeof value === 'string' && value.length <= 10_000) ||
-    (typeof value === 'number' && Number.isFinite(value));
-  const validTime = (value: string) =>
-    typeof value === 'string' && Number.isFinite(Date.parse(value));
-  const unique = (ids: string[]) =>
-    ids.every((id) => typeof id === 'string' && id.length > 0) && new Set(ids).size === ids.length;
-  if (workbook.comments !== undefined && !Array.isArray(workbook.comments))
-    throw new TypeError('Invalid comments.');
-  if (
-    (workbook.comments?.length ?? 0) > 10_000 ||
-    !unique((workbook.comments ?? []).map((thread) => thread?.id))
-  )
-    throw new TypeError('Invalid comment ids or count.');
-  for (const thread of workbook.comments ?? []) {
-    if (
-      !thread ||
-      typeof thread.id !== 'string' ||
-      (thread.scope !== undefined && !['range', 'workbook'].includes(thread.scope)) ||
-      (thread.scope === 'workbook'
-        ? thread.sheetId !== undefined || thread.range !== undefined
-        : typeof thread.sheetId !== 'string' || !parseSpreadsheetRange(thread.range ?? '')) ||
-      !['open', 'resolved'].includes(thread.state) ||
-      !Array.isArray(thread.entries) ||
-      !thread.entries.length ||
-      thread.entries.length > 10_000 ||
-      !unique(thread.entries.map((post) => post?.id)) ||
-      (thread.suggestion !== undefined && !validId(thread.suggestion)) ||
-      (thread.resolvedBy !== undefined && !validId(thread.resolvedBy)) ||
-      (thread.resolvedAt !== undefined && !validTime(thread.resolvedAt)) ||
-      (thread.decision !== undefined &&
-        (!thread.decision ||
-          !['accept', 'reject'].includes(thread.decision.decision) ||
-          !validId(thread.decision.suggestion) ||
-          !validId(thread.decision.by) ||
-          !validTime(thread.decision.at)))
-    )
-      throw new TypeError('Invalid comment thread.');
-    for (const post of thread.entries)
-      if (
-        !post ||
-        typeof post.id !== 'string' ||
-        !validId(post.author) ||
-        typeof post.text !== 'string' ||
-        post.text.length > 50_000 ||
-        !validTime(post.createdAt) ||
-        (post.editedAt !== undefined && !validTime(post.editedAt))
-      )
-        throw new TypeError('Invalid comment entry.');
-    for (const post of thread.entries)
-      if (
-        post.reactions !== undefined &&
-        (!post.reactions ||
-          typeof post.reactions !== 'object' ||
-          Array.isArray(post.reactions) ||
-          Object.entries(post.reactions).some(
-            ([emoji, users]) =>
-              !emoji || emoji.length > 128 || !Array.isArray(users) || !unique(users),
-          ))
-      )
-        throw new TypeError('Invalid comment reactions.');
-  }
-  if (workbook.suggestions !== undefined && !Array.isArray(workbook.suggestions))
-    throw new TypeError('Invalid suggestions.');
-  if (
-    (workbook.suggestions?.length ?? 0) > 10_000 ||
-    !unique((workbook.suggestions ?? []).map((item) => item?.id))
-  )
-    throw new TypeError('Invalid suggestion ids or count.');
-  for (const suggestion of workbook.suggestions ?? []) {
-    if (
-      !suggestion ||
-      typeof suggestion.id !== 'string' ||
-      !validActor(suggestion.author) ||
-      !validTime(suggestion.createdAt) ||
-      (suggestion.updatedAt !== undefined && !validTime(suggestion.updatedAt)) ||
-      (suggestion.commentThreadId !== undefined &&
-        (typeof suggestion.commentThreadId !== 'string' || !suggestion.commentThreadId)) ||
-      !['pending', 'accepted', 'rejected'].includes(suggestion.status) ||
-      typeof suggestion.summary !== 'string' ||
-      !Array.isArray(suggestion.changes) ||
-      suggestion.changes.length > 50_000
-    )
-      throw new TypeError('Invalid suggestion.');
-    for (const change of suggestion.changes)
-      if (
-        !change ||
-        typeof change.sheetId !== 'string' ||
-        !parseSpreadsheetAddress(change.address) ||
-        !validInput(change.before) ||
-        !validInput(change.after) ||
-        (change.beforeStyle !== undefined && typeof change.beforeStyle !== 'string') ||
-        (change.afterStyle !== undefined && typeof change.afterStyle !== 'string')
-      )
-        throw new TypeError('Invalid suggested cell.');
-    for (const change of suggestion.changes)
-      for (const field of ['beforeInputValue', 'afterInputValue'] as const)
-        if (change[field] !== undefined) {
-          assertNumericValue(change[field], 10_000);
-          const input = field === 'beforeInputValue' ? change.before : change.after;
-          if (typeof input === 'string' && input.trimStart().startsWith('='))
-            throw new TypeError('A suggested canonical input cannot override a formula.');
-        }
-    for (const change of suggestion.changes)
-      for (const field of ['beforeFormat', 'afterFormat'] as const)
-        if (change[field] !== undefined) assertCellFormat(change[field]);
-    if (suggestion.structure) {
-      assertWorkbook({ schemaVersion: 1, worksheets: suggestion.structure.before });
-      assertWorkbook({ schemaVersion: 1, worksheets: suggestion.structure.after });
-      const operation = suggestion.structure.operation;
-      if (
-        operation &&
-        (typeof operation.sheetId !== 'string' ||
-          !operation.change ||
-          !['row', 'column'].includes(operation.change.axis) ||
-          !['insert', 'delete'].includes(operation.change.kind) ||
-          !Number.isSafeInteger(operation.change.index) ||
-          operation.change.index < 0 ||
-          !Number.isSafeInteger(operation.change.count) ||
-          operation.change.count < 1)
-      )
-        throw new TypeError('Invalid suggested structure operation.');
-    }
-  }
 }
 
 export function findOpenComment(

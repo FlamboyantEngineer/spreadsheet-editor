@@ -1,13 +1,14 @@
+import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
+import { requireDefined } from './require-defined.js';
+import type { CellFormat } from './review.js';
+import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 import {
-  copyWorkbook,
   assertWorkbook,
-  DEFAULT_WORKBOOK_LIMITS,
   type CellInput,
+  copyWorkbook,
+  DEFAULT_WORKBOOK_LIMITS,
   type Workbook,
 } from './workbook.js';
-import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
-import type { CellFormat } from './review.js';
-import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
 
 export interface CellSelection {
   x1: number;
@@ -198,7 +199,7 @@ export function borderCells(
         (side === 'right' && cell.x === r.x2)));
   const sides = ['top', 'right', 'bottom', 'left'];
   const remove = cells.every((cell) => {
-    const style = parseCellStyle(sheet.style![cell.address]);
+    const style = parseCellStyle(requireDefined(sheet.style)[cell.address]);
     return sides.filter((side) => targeted(cell, side)).every((side) => !!style[`border-${side}`]);
   });
   for (const cell of cells) {
@@ -237,9 +238,12 @@ export function parseDelimited(text: string, delimiter = '\t'): string[][] {
       } else if (!field || quoted) quoted = !quoted;
       else field += character;
     } else if (!quoted && (character === delimiter || character === '\n' || character === '\r')) {
-      if (++cellCount > DEFAULT_WORKBOOK_LIMITS.maxCells || rows.at(-1)!.length >= 16_384)
+      if (
+        ++cellCount > DEFAULT_WORKBOOK_LIMITS.maxCells ||
+        requireDefined(rows.at(-1)).length >= 16_384
+      )
         throw new RangeError('Clipboard exceeds the cell limit.');
-      rows.at(-1)!.push(field);
+      requireDefined(rows.at(-1)).push(field);
       field = '';
       if (character !== delimiter) {
         if (character === '\r' && text[index + 1] === '\n') index++;
@@ -250,13 +254,16 @@ export function parseDelimited(text: string, delimiter = '\t'): string[][] {
       throw new RangeError('Clipboard cell exceeds the text limit.');
   }
   if (quoted) throw new TypeError('Unclosed quoted field.');
-  if (cellCount + 1 > DEFAULT_WORKBOOK_LIMITS.maxCells || rows.at(-1)!.length >= 16_384)
+  if (
+    cellCount + 1 > DEFAULT_WORKBOOK_LIMITS.maxCells ||
+    requireDefined(rows.at(-1)).length >= 16_384
+  )
     throw new RangeError('Clipboard exceeds the cell limit.');
-  rows.at(-1)!.push(field);
+  requireDefined(rows.at(-1)).push(field);
   if (
     rows.length > 1 &&
-    rows.at(-1)!.length === 1 &&
-    rows.at(-1)![0] === '' &&
+    requireDefined(rows.at(-1)).length === 1 &&
+    requireDefined(rows.at(-1))[0] === '' &&
     /[\r\n]$/.test(text)
   )
     rows.pop();
@@ -288,7 +295,7 @@ export function mergeSelection(
   const r = normalizeSelection(range);
   sheet.mergeCells = { ...sheet.mergeCells };
   for (const [address, [width, height]] of Object.entries(sheet.mergeCells)) {
-    const anchor = parseSpreadsheetAddress(address)!;
+    const anchor = requireDefined(parseSpreadsheetAddress(address));
     if (
       anchor.x <= r.x2 &&
       anchor.x + width - 1 >= r.x1 &&

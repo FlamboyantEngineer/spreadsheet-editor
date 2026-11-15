@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createWorkbook, type CellInput } from '../model/workbook.js';
+import { type CellInput, createWorkbook } from '../model/workbook.js';
 import { renderCalculatedCells } from './cell-renderer.js';
+import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 import { syncSharedGridBorders } from './shared-grid-borders.js';
 import { patchWorksheetData, sameCapture } from './worksheet-data.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
-import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 /**
  * A 26 × 100 engine grid, the smallest the editor shows, with CE's padded data. Tests that

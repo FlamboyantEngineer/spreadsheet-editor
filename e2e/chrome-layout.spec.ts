@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
+import { requireDefined } from '../src/model/require-defined.js';
 
 async function open(page: Page, lab = 'full', theme = 'light') {
   await page.goto(`/${lab}.html?theme=${theme}`);
@@ -71,8 +72,8 @@ for (const theme of ['light', 'dark']) {
       await expect(editor.locator(selector)).toHaveCSS('background-color', canvas);
     const menu = editor.getByRole('menubar', { name: 'Spreadsheet menu' });
     await expect(menu).toHaveCSS('border-top-width', '0px');
-    expect((await menu.boundingBox())!.width).toBeCloseTo(
-      (await editor.boundingBox())!.width - 2,
+    expect(requireDefined(await menu.boundingBox()).width).toBeCloseTo(
+      requireDefined(await editor.boundingBox()).width - 2,
       0,
     );
     await expect(editor.locator('.se-editor__formula-widget')).toHaveCSS('border-top-width', '0px');
@@ -98,8 +99,8 @@ for (const lab of ['full', 'embedded']) {
       const tabs = editor.getByRole('tablist', { name: 'Worksheets', exact: true });
       const add = editor.getByRole('button', { name: 'Add worksheet', exact: true });
       await add.scrollIntoViewIfNeeded();
-      const lastBox = (await editor.getByRole('tab').last().boundingBox())!;
-      const addBox = (await add.boundingBox())!;
+      const lastBox = requireDefined(await editor.getByRole('tab').last().boundingBox());
+      const addBox = requireDefined(await add.boundingBox());
       expect(addBox.x).toBeGreaterThanOrEqual(lastBox.x + lastBox.width);
       expect(addBox.x - lastBox.x - lastBox.width).toBeLessThan(12);
       await expect(tabs).toHaveAttribute('aria-label', 'Worksheets');
@@ -110,8 +111,9 @@ for (const lab of ['full', 'embedded']) {
       await expect(editor.locator('.jss_content').first()).toBeVisible();
       const measure = () =>
         editor.evaluate((root) => {
-          const grid = root.querySelector<HTMLElement>('.jss_content')!;
-          const sidebar = root.querySelector<HTMLElement>('.se-editor__sidebar')!;
+          const grid = root.querySelector<HTMLElement>('.jss_content');
+          const sidebar = root.querySelector<HTMLElement>('.se-editor__sidebar');
+          if (!grid || !sidebar) throw new Error('No grid or sidebar');
           const box = grid.getBoundingClientRect(),
             rail = sidebar.getBoundingClientRect();
           const target = document.elementFromPoint(
@@ -150,18 +152,18 @@ for (const lab of ['full', 'embedded']) {
         expect(expanded.covered).toBe(false);
         expect(expanded.edge).toBeLessThanOrEqual(expanded.rail);
         const panel = editor.locator('.se-editor__sidebar');
-        const before = (await panel.boundingBox())!.width;
+        const before = requireDefined(await panel.boundingBox()).width;
         const handle = editor.getByRole('separator', {
           name: 'Resize Spreadsheet panels',
           exact: true,
         });
-        const rect = (await handle.boundingBox())!;
+        const rect = requireDefined(await handle.boundingBox());
         await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
         await page.mouse.down();
         await page.mouse.move(rect.x + rect.width / 2 - 30, rect.y + rect.height / 2);
         await page.mouse.up();
         await expect
-          .poll(async () => (await panel.boundingBox())!.width)
+          .poll(async () => requireDefined(await panel.boundingBox()).width)
           .toBeGreaterThan(before + 20);
         expect((await measure()).covered).toBe(false);
       }

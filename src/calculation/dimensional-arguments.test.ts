@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createWorkbook } from '../model/workbook.js';
+import { formatWorksheetCell } from './cell-format.js';
 import { calculateWorkbook } from './evaluator.js';
 import { createArithmetic } from './rational.js';
-import { formatWorksheetCell } from './cell-format.js';
 import { makeQuantity, quantityInUnit } from './units.js';
 
 const numeric = createArithmetic();

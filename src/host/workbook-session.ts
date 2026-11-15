@@ -1,10 +1,10 @@
+import type { WorkbookChangeContext } from '../model/operations.js';
+import { requireDefined } from '../model/require-defined.js';
 // A workbook session: one stored workbook, loaded through the host's workbook store, edited, and
 // saved against the revision it was edited from. It needs no framework or DOM; the editor takes it
 // as its `session` prop. Coverage is causal: a save covers the local transactions accepted before
 // it started, and only its answer clears them (SE-SESSION-2).
-
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
-import type { WorkbookChangeContext } from '../model/operations.js';
 import type {
   DraftsAdapter,
   HostError,
@@ -182,7 +182,7 @@ export function createWorkbookSession(options: WorkbookSessionOptions): Workbook
 
   async function saveOnce(automatic: boolean, baseRevision: string): Promise<void> {
     const covered = localRevision,
-      content = copyWorkbook(workbook!);
+      content = copyWorkbook(requireDefined(workbook));
     const started = Date.now();
     let retry = 500;
     setStatus({ phase: 'saving', automatic, error: null });

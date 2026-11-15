@@ -7,7 +7,7 @@ export interface XlsxLimits {
   maxWorksheets?: number;
   maxCells?: number;
 }
-export const XLSX_LIMITS = Object.freeze({
+const XLSX_LIMITS = Object.freeze({
   maxBytes: 20 * 1024 * 1024,
   maxExpandedBytes: 128 * 1024 * 1024,
   maxEntries: 8192,

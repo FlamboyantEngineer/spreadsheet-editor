@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook } from './workbook.js';
-import { translateFormulaReferences } from './structure.js';
 import { createSpreadsheetCopy, pasteSpreadsheetCopy } from './clipboard.js';
+import { translateFormulaReferences } from './structure.js';
+import { createWorkbook } from './workbook.js';
 
 describe('SE-CR-2.3: authored clipboard references', () => {
   it('shifts relative axes and leaves quoted text, absolute axes and scientific numbers intact', () => {

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
 import { formatCells } from '../model/editing.js';
-import { calculateWorkbook } from './evaluator.js';
+import { requireDefined } from '../model/require-defined.js';
+import { createWorkbook } from '../model/workbook.js';
 import { formatWorksheetCell } from './cell-format.js';
+import { calculateWorkbook } from './evaluator.js';
 import { formatCellValue } from './format.js';
 
 describe('SE-NUM-1: exact engineering quantities', () => {
@@ -28,7 +29,7 @@ describe('SE-NUM-1: exact engineering quantities', () => {
       {},
       { kind: 'unit', unit: 'm' },
     );
-    expect(changed.worksheets[0].formats!.A1.inputUnit).toBe('mm');
+    expect(requireDefined(changed.worksheets[0].formats).A1.inputUnit).toBe('mm');
     expect(calculateWorkbook(changed).worksheets[0].values[0][0]).toEqual(
       result.worksheets[0].values[0][0],
     );

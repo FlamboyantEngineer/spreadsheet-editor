@@ -1,21 +1,22 @@
 // @vitest-environment jsdom
-import { createRef, useState } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { createRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
 import { workbookCalculationKey } from '../calculation/publication.js';
-import { createWorkbook, copyWorkbook } from '../model/workbook.js';
-import { previewSuggestions } from '../model/review.js';
-import type { SpreadsheetEditorHandle, SpreadsheetEditorProps } from './contracts.js';
-import { formulaFunctionCatalog } from './public-host.js';
-import { useSpreadsheetEditor } from './use-editor.js';
-import { editorMenus } from './editor-menus.js';
+import type { WorkbookStoreAdapter } from '../host/adapters.js';
+import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 import { createMemoryHost } from '../host/memory-host.js';
 import { createMemoryPresenceRoom } from '../host/memory-presence.js';
-import { createWorkbookSession } from '../host/workbook-session.js';
-import type { WorkbookStoreAdapter } from '../host/adapters.js';
 import type { SpreadsheetPeer } from '../host/presence-adapters.js';
-import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
+import { createWorkbookSession } from '../host/workbook-session.js';
+import { requireDefined } from '../model/require-defined.js';
+import { previewSuggestions } from '../model/review.js';
+import { copyWorkbook, createWorkbook } from '../model/workbook.js';
+import type { SpreadsheetEditorHandle, SpreadsheetEditorProps } from './contracts.js';
+import { editorMenus } from './editor-menus.js';
+import { formulaFunctionCatalog } from './public-host.js';
+import { useSpreadsheetEditor } from './use-editor.js';
 
 const reviewerIdentity = createMemoryHost({
   reader: { id: 'reviewer', name: 'Reviewer' },
@@ -51,18 +52,31 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
         onPanelChange,
       }),
     );
-    act(() =>
-      editorRef.current!.restoreDraft({ sheetId: 'sheet-1', x: 0, y: 0, text: 'retained draft' }),
-    );
+    act(() => {
+      requireDefined(editorRef.current).restoreDraft({
+        sheetId: 'sheet-1',
+        x: 0,
+        y: 0,
+        text: 'retained draft',
+      });
+    });
     expect(result.current.draftValue).toBe('retained draft');
-    expect(editorRef.current!.getSnapshot().worksheets[0].data[0][0]).toBe('accepted');
+    expect(requireDefined(editorRef.current).getSnapshot().worksheets[0].data[0][0]).toBe(
+      'accepted',
+    );
     expect(onChange).not.toHaveBeenCalled();
-    act(() => editorRef.current!.setPanel('workflow'));
+    act(() => {
+      requireDefined(editorRef.current).setPanel('workflow');
+    });
     expect(onPanelChange).toHaveBeenLastCalledWith({ id: 'workflow', expanded: true });
-    act(() => editorRef.current!.setPanel(null));
+    act(() => {
+      requireDefined(editorRef.current).setPanel(null);
+    });
     expect(onPanelChange).toHaveBeenLastCalledWith({ id: 'workflow', expanded: false });
-    act(() => editorRef.current!.cancelDraft());
-    expect(editorRef.current!.getState().dirty).toBe(false);
+    act(() => {
+      requireDefined(editorRef.current).cancelDraft();
+    });
+    expect(requireDefined(editorRef.current).getState().dirty).toBe(false);
   });
 
   it('notifies an inline panel callback only when the panel changes', () => {
@@ -84,7 +98,9 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     });
     expect(renders).toBeLessThan(10);
     expect(states).toEqual([{ id: null, expanded: false }]);
-    act(() => editorRef.current!.setPanel('workflow'));
+    act(() => {
+      requireDefined(editorRef.current).setPanel('workflow');
+    });
     expect(states).toEqual([
       { id: null, expanded: false },
       { id: 'workflow', expanded: true },
@@ -103,9 +119,9 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     expect(fileIds).not.toContain('new');
     expect(fileIds).not.toContain('import');
     expect(fileIds).toContain('export');
-    act(() =>
-      expect(result.current.replaceWorkbook(createWorkbook(), 'New', 'new-workbook')).toBe(false),
-    );
+    act(() => {
+      expect(result.current.replaceWorkbook(createWorkbook(), 'New', 'new-workbook')).toBe(false);
+    });
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('accepted');
   });
   it('rejects unsupported host formats before publishing a partial change', () => {
@@ -117,18 +133,20 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
         formatting: { kinds: ['general', 'number'], decimalPlaces: false },
       }),
     );
-    act(() =>
+    act(() => {
       expect(() => result.current.format({}, { kind: 'fraction' })).toThrow(
         'The host does not support this number format.',
-      ),
-    );
-    act(() =>
+      );
+    });
+    act(() => {
       expect(() => result.current.format({}, { kind: 'number', decimals: 4 })).toThrow(
         'The host does not support decimal-place overrides.',
-      ),
-    );
+      );
+    });
     expect(onChange).not.toHaveBeenCalled();
-    act(() => result.current.format({}, { kind: 'number' }));
+    act(() => {
+      result.current.format({}, { kind: 'number' });
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
   });
   it('reports formula and native drafts without publishing them as accepted data', () => {
@@ -141,16 +159,22 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
         onChange,
       }),
     );
-    act(() => result.current.setDraftValue('formula draft'));
+    act(() => {
+      result.current.setDraftValue('formula draft');
+    });
     expect(onDraftChange).toHaveBeenLastCalledWith({
       sheetId: 'sheet-1',
       x: 0,
       y: 0,
       text: 'formula draft',
     });
-    act(() => result.current.cancelFormula());
+    act(() => {
+      result.current.cancelFormula();
+    });
     expect(onDraftChange).toHaveBeenLastCalledWith(null);
-    act(() => result.current.setNativeDraft({ x: 1, y: 2, text: 'native draft' }));
+    act(() => {
+      result.current.setNativeDraft({ x: 1, y: 2, text: 'native draft' });
+    });
     expect(onDraftChange).toHaveBeenLastCalledWith({
       sheetId: 'sheet-1',
       x: 1,
@@ -180,7 +204,9 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
         } as SpreadsheetEditorProps,
       },
     );
-    act(() => result.current.proposeCells([['7']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['7']], 0, 0);
+    });
     expect(result.current.visibleCalculation.result).toBeNull();
     const projected = previewSuggestions(result.current.workbook, 'reviewer');
     const publication = {
@@ -224,7 +250,9 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     expect(result.current.mode).toBe('review');
     expect(result.current.canEdit).toBe(false);
     expect(result.current.canSuggest).toBe(false);
-    act(() => result.current.postComment('Comment only'));
+    act(() => {
+      result.current.postComment('Comment only');
+    });
     expect(result.current.workbook.comments?.[0].entries[0].text).toBe('Comment only');
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('accepted');
   });
@@ -249,7 +277,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     act(() => {
       result.current.sheetCommand('add');
     });
-    const sheet = result.current.workbook.worksheets.at(-1)!;
+    const sheet = requireDefined(result.current.workbook.worksheets.at(-1));
     expect(sheet.id).toBe('host-sheet-1');
     expect(onChange.mock.calls[0][1].operations).toContainEqual(
       expect.objectContaining({
@@ -265,16 +293,20 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
       throw new Error('Stale row identity');
     });
     const { result } = renderHook(() => useSpreadsheetEditor({ session, editorRef, onChange }));
-    act(() => result.current.setDraftValue('after'));
-    act(() => expect(() => editorRef.current!.commitDraft()).toThrow('Stale row identity'));
+    act(() => {
+      result.current.setDraftValue('after');
+    });
+    act(() => {
+      expect(() => requireDefined(editorRef.current).commitDraft()).toThrow('Stale row identity');
+    });
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('before');
     expect(result.current.history.past).toHaveLength(0);
-    expect(editorRef.current!.getState().draftDirty).toBe(true);
+    expect(requireDefined(editorRef.current).getState().draftDirty).toBe(true);
     await act(async () => {
-      await expect(editorRef.current!.save()).rejects.toThrow('Stale row identity');
+      await expect(requireDefined(editorRef.current).save()).rejects.toThrow('Stale row identity');
     });
     await act(async () => {
-      await expect(editorRef.current!.flush()).rejects.toThrow('Stale row identity');
+      await expect(requireDefined(editorRef.current).flush()).rejects.toThrow('Stale row identity');
     });
     expect(store.save).not.toHaveBeenCalled();
     expect(session.status().dirty).toBe(false);
@@ -294,8 +326,10 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
       expect(context.operations[0].kind).toBe('cells');
     });
     const { result } = renderHook(() => useSpreadsheetEditor({ session, editorRef, onChange }));
-    const handle = editorRef.current!;
-    act(() => result.current.setDraftValue('1E-25'));
+    const handle = requireDefined(editorRef.current);
+    act(() => {
+      result.current.setDraftValue('1E-25');
+    });
     await act(() => handle.flush());
     expect(order).toEqual(['transaction', 'stored']);
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -317,18 +351,22 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
         }),
     );
     const { result } = renderHook(() => useSpreadsheetEditor({ session, editorRef }));
-    act(() => result.current.proposeCells([['b']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['b']], 0, 0);
+    });
     let flush!: Promise<void>;
     act(() => {
       flush = session.save();
     });
     await waitFor(() => expect(finish).toBeTypeOf('function'));
-    act(() => result.current.proposeCells([['c']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['c']], 0, 0);
+    });
     await act(async () => {
       finish();
       await flush;
     });
-    expect(editorRef.current!.getState().dirty).toBe(true);
+    expect(requireDefined(editorRef.current).getState().dirty).toBe(true);
     expect(store.save.mock.calls[0][1].content.worksheets[0].data[0][0]).toBe('b');
   });
   it('rejects a failed save and invalidates a disposed handle', async () => {
@@ -339,8 +377,10 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
       error: { kind: 'unavailable', message: 'Receipt refused' },
     });
     const { result, unmount } = renderHook(() => useSpreadsheetEditor({ session, editorRef }));
-    const handle = editorRef.current!;
-    act(() => result.current.setDraftValue('b'));
+    const handle = requireDefined(editorRef.current);
+    act(() => {
+      result.current.setDraftValue('b');
+    });
     await act(async () => {
       await expect(handle.flush()).rejects.toThrow('Receipt refused');
     });
@@ -368,10 +408,12 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     const remote = copyWorkbook(result.current.workbook);
     remote.worksheets[0].data[0][0] = 'peer';
     rerender({ ...result.current.props, value: remote });
-    act(() => result.current.undo());
+    act(() => {
+      result.current.undo();
+    });
     expect(undo).toHaveBeenCalledOnce();
     expect(onChange).not.toHaveBeenCalled();
-    expect(editorRef.current!.getState().dirty).toBe(false);
+    expect(requireDefined(editorRef.current).getState().dirty).toBe(false);
   });
   it('records a blank insertion and its undo as semantic line commands using the same generated IDs', () => {
     const onChange = vi.fn(),
@@ -379,7 +421,9 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook(), onChange, idFactory: ids }),
     );
-    act(() => result.current.structure('row', 'insert'));
+    act(() => {
+      result.current.structure('row', 'insert');
+    });
     expect(onChange.mock.calls[0][1].operations[0]).toMatchObject({
       kind: 'lines',
       axis: 'row',
@@ -387,8 +431,10 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
       count: 1,
     });
     const id = onChange.mock.calls[0][1].operations[0].ids[0];
-    expect(result.current.sheet.rowIds![0]).toBe(id);
-    act(() => result.current.undo());
+    expect(requireDefined(result.current.sheet.rowIds)[0]).toBe(id);
+    act(() => {
+      result.current.undo();
+    });
     expect(onChange.mock.calls[1][1].source).toBe('undo');
     expect(onChange.mock.calls[1][1].operations).toContainEqual(
       expect.objectContaining({ kind: 'lines', action: 'delete', ids: [id] }),
@@ -417,12 +463,12 @@ describe('SE-HOST-3/4: authoritative values, drafts and result search', () => {
         } as SpreadsheetEditorProps,
       },
     );
-    expect(result.current.output![0][0]).toMatchObject({ numerator: '1' });
+    expect(requireDefined(result.current.output)[0][0]).toMatchObject({ numerator: '1' });
     const next = structuredClone(snapshot);
     next.revision = 4;
     next.result.worksheets[0].values[0][0] = 'fresh host text';
     rerender({ value: workbook, calculation: { mode: 'external', snapshot: next }, onChange });
-    expect(result.current.output![0][0]).toBe('fresh host text');
+    expect(requireDefined(result.current.output)[0][0]).toBe('fresh host text');
     next.result.worksheets[0].values[0][0] = 'conflict';
     rerender({
       value: workbook,
@@ -438,20 +484,26 @@ describe('SE-HOST-3/4: authoritative values, drafts and result search', () => {
       useSpreadsheetEditor({ defaultValue: createWorkbook([['2', '=A1*2', '=7+1']]) }),
     );
     await waitFor(() => expect(result.current.output?.[0][2]).toMatchObject({ numerator: '8' }));
-    act(() => result.current.setDraftValue('3'));
+    act(() => {
+      result.current.setDraftValue('3');
+    });
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('2');
     expect(result.current.draftCell).toMatchObject({ x: 0, y: 0, text: '3' });
-    expect(result.current.output![0].slice(0, 2)).toEqual([null, null]);
-    expect(result.current.output![0][2]).toMatchObject({ numerator: '8' });
-    act(() => result.current.cancelFormula());
-    expect(result.current.output![0][1]).toMatchObject({ numerator: '4' });
+    expect(requireDefined(result.current.output)[0].slice(0, 2)).toEqual([null, null]);
+    expect(requireDefined(result.current.output)[0][2]).toMatchObject({ numerator: '8' });
+    act(() => {
+      result.current.cancelFormula();
+    });
+    expect(requireDefined(result.current.output)[0][1]).toMatchObject({ numerator: '4' });
   });
   it('navigates result matches while replacing authored matches only', async () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['=2+2', '4']]) }),
     );
     await waitFor(() => expect(result.current.output?.[0][0]).toMatchObject({ numerator: '4' }));
-    act(() => result.current.setQuery('4'));
+    act(() => {
+      result.current.setQuery('4');
+    });
     expect(result.current.matches).toHaveLength(2);
     let count = 0;
     act(() => {
@@ -471,8 +523,9 @@ describe('SE-HOST-3/4: authoritative values, drafts and result search', () => {
       ]),
     ).toThrow('duplicate');
     expect(
-      formulaFunctionCatalog([{ name: 'foo', signature: 'FOO()', description: 'host' }]).at(-1)!
-        .name,
+      requireDefined(
+        formulaFunctionCatalog([{ name: 'foo', signature: 'FOO()', description: 'host' }]).at(-1),
+      ).name,
     ).toBe('FOO');
   });
 });
@@ -541,7 +594,9 @@ describe('SE-ADAPTERS-4.3: the editor shares presence through the adapter', () =
     expect(seen.at(-1)).toMatchObject([
       { id: 'reviewer', at: { sheetId: 'sheet-1', range: 'A1' }, editLock: null },
     ]);
-    act(() => result.current.publishPresence(true));
+    act(() => {
+      result.current.publishPresence(true);
+    });
     expect(seen.at(-1)?.[0].editLock).toEqual({ sheetId: 'sheet-1', range: 'A1' });
     act(() => {
       result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 });
@@ -570,7 +625,9 @@ describe('SE-ADAPTERS-2.3: the editor takes identity and capabilities', () => {
     expect(result.current.mode).toBe('author');
     expect(result.current.canEdit).toBe(true);
     expect(result.current.canDecide).toBe(false);
-    act(() => result.current.postComment('Mine'));
+    act(() => {
+      result.current.postComment('Mine');
+    });
     expect(result.current.workbook.comments?.[0].entries[0].author).toBe('reviewer');
     rerender({
       ...result.current.props,
@@ -579,7 +636,9 @@ describe('SE-ADAPTERS-2.3: the editor takes identity and capabilities', () => {
     expect(result.current.mode).toBe('review');
     expect(result.current.canSuggest).toBe(true);
     expect(result.current.canComment).toBe(false);
-    act(() => result.current.setMode('author'));
+    act(() => {
+      result.current.setMode('author');
+    });
     expect(result.current.mode).toBe('review');
     rerender({ ...result.current.props, capabilities: READ_ONLY_CAPABILITIES });
     expect(result.current.mode).toBe('read');

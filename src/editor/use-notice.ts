@@ -1,3 +1,5 @@
+'use client';
+
 import { useEffect, useRef, useState } from 'react';
 
 /** The editor's notice: an error stays until replaced, a warning clears itself after three seconds. */

@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+'use client';
+
+import { useEffect, useEffectEvent, useState } from 'react';
 import type {
   LocalPresence,
   PresenceAdapter,
@@ -26,8 +28,9 @@ export function useWorkbookPresence(
 ): readonly SpreadsheetPeer[] {
   const [peers, setPeers] = useState(NO_PEERS);
   const [status, setStatus] = useState(pageStatus);
-  const latest = useRef({ ...local, status });
-  latest.current = { ...local, status };
+  const publishPlace = useEffectEvent((adapter: PresenceAdapter, id: string) =>
+    adapter.publish(id, { ...local, status }),
+  );
 
   useEffect(() => {
     if (!presence || workbookId === undefined) return;
@@ -49,7 +52,7 @@ export function useWorkbookPresence(
   const at = local.at && `${local.at.sheetId}!${local.at.range}`;
   const lock = local.editLock && `${local.editLock.sheetId}!${local.editLock.range}`;
   useEffect(() => {
-    if (presence && workbookId !== undefined) presence.publish(workbookId, latest.current);
+    if (presence && workbookId !== undefined) publishPlace(presence, workbookId);
   }, [presence, workbookId, at, lock, status]);
 
   return peers;

@@ -1,24 +1,25 @@
-import { useSyncExternalStore } from 'react';
-import { createRoot } from 'react-dom/client';
+import { Button } from '@flamboyantengineer/ui-components/button';
 import { UiProvider } from '@flamboyantengineer/ui-components/core';
 import { mountLabBar } from '@flamboyantengineer/ui-components/labs';
-import { labStorage } from './settings.js';
-import { Button } from '@flamboyantengineer/ui-components/button';
-import { SpreadsheetEditor, createWorkbook, useWorkbookSession } from '../../src/index.js';
+import { useSyncExternalStore } from 'react';
+import { createRoot } from 'react-dom/client';
 import { createMemoryHost } from '../../src/host/index.js';
+import { createWorkbook, SpreadsheetEditor, useWorkbookSession } from '../../src/index.js';
+import { requireDefined } from '../../src/model/require-defined.js';
+import { labStorage } from './settings.js';
 
 const embeddedHost = createMemoryHost({
   reader: { id: 'alex', name: 'Alex' },
   workbooks: { embedded: engineeringSample },
 });
 const alex = embeddedHost.identity;
+import 'jsuites/dist/jsuites.css';
+import 'jspreadsheet-ce/dist/jspreadsheet.css';
+import './lab.css';
 import { FullLab } from './full-lab.js';
 import { HostLab } from './host-lab.js';
 import { LargeLab } from './large-lab.js';
 import { engineeringSample } from './sample.js';
-import 'jsuites/dist/jsuites.css';
-import 'jspreadsheet-ce/dist/jspreadsheet.css';
-import './lab.css';
 
 const labs = [
   {
@@ -66,7 +67,7 @@ function subscribeNavigation(listener: () => void) {
   return () => navigationListeners.delete(listener);
 }
 mountLabBar({
-  host: document.getElementById('lab-chrome')!,
+  host: requireDefined(document.getElementById('lab-chrome')),
   title: current?.title ?? 'Spreadsheet editor labs',
   indexHref: current ? '/' : null,
   storage: labStorage(),
@@ -232,4 +233,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(requireDefined(document.getElementById('root'))).render(<App />);

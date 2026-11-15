@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal } from '@flamboyantengineer/ui-components/modal';
 import { FileField } from '@flamboyantengineer/ui-components/file-field';
-import { SpreadsheetEditor } from '../../src/index.js';
-import { READ_ONLY_CAPABILITIES } from '../../src/host/index.js';
-import type { Workbook } from '../../src/model/index.js';
+import { Modal } from '@flamboyantengineer/ui-components/modal';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CalculationResult } from '../../src/calculation/index.js';
 import type { XlsxImport } from '../../src/excel/contracts.js';
+import { READ_ONLY_CAPABILITIES } from '../../src/host/index.js';
+import { SpreadsheetEditor } from '../../src/index.js';
+import type { Workbook } from '../../src/model/index.js';
+import { requireDefined } from '../../src/model/require-defined.js';
 
 type Prepared = XlsxImport & { result: CalculationResult };
 export function useExcelLab() {
@@ -29,7 +30,10 @@ export function useExcelLab() {
     },
     [download],
   );
-  const calculator = useMemo(() => ({ calculate: async () => prepared!.result }), [prepared]);
+  const calculator = useMemo(
+    () => ({ calculate: async () => requireDefined(prepared).result }),
+    [prepared],
+  );
   function close(workbook: Workbook | null = null) {
     controller.current?.abort();
     request.current?.(workbook);

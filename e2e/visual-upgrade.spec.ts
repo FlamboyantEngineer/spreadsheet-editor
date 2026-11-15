@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 async function open(page: Page, theme = 'light', lab = 'full') {
   await page.goto(`/${lab}.html?theme=${theme}`);
@@ -19,10 +19,13 @@ for (const theme of ['light', 'dark']) {
     const measure = () =>
       editor.evaluate((root) => {
         const box = (selector: string) => {
-          const rect = root.querySelector(selector)!.getBoundingClientRect();
+          const element = root.querySelector(selector);
+          if (!element) throw new Error(`No ${selector}`);
+          const rect = element.getBoundingClientRect();
           return { width: rect.width, height: rect.height };
         };
-        const cell = root.querySelector('td[data-x="1"][data-y="1"]')!;
+        const cell = root.querySelector('td[data-x="1"][data-y="1"]');
+        if (!cell) throw new Error('No cell B2');
         const style = getComputedStyle(cell);
         const outlines = Array.from(root.querySelectorAll('.se-editor__selection-outline')).map(
           (node) => {

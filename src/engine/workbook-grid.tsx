@@ -2,74 +2,79 @@
 
 import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
+import type { DisplayOptions } from '../calculation/format.js';
+import type { CellValue } from '../calculation/values.js';
+import type { GridController } from '../editor/contracts.js';
 import type {
   CellPresentationSnapshot,
   FormulaFunctionDescriptor,
   RenderCellContent,
 } from '../editor/public-host.js';
-import { presentAttachedRows, syncWorksheetPresentation } from './worksheet-presentation.js';
-import { refreshGridRowWindow, revealGridRows, windowGridRows } from './row-window.js';
 import {
-  captureWorksheetCellChanges,
-  sameCapture,
-  gridWorksheetExtent,
-  patchWorksheetData,
-  syncWorksheetData,
-} from './worksheet-data.js';
-import { createSelectionPublication } from './selection-publication.js';
-import { observeGridBorderCopies, syncSharedGridBorders } from './shared-grid-borders.js';
-import {
-  gridViewport,
-  gridBodyBounds,
-  clipGridSelectionHandle,
-  gridZoomScale,
-  measureGridSelection,
-  placeGridCorner,
-  restoreGridScroll,
-  scrollGridCellIntoView,
-  syncFrozenColumns,
-  syncFrozenColumnOffsets,
-} from './grid-geometry.js';
-import { useNativeFormula } from './native-formula.js';
-import { useHeaderResize, deliveredHeader } from './header-resize.js';
-import type { CellValue } from '../calculation/values.js';
-import type { DisplayOptions } from '../calculation/format.js';
-import type { CellInput, Worksheet } from '../model/workbook.js';
+  type CellSelection,
+  parseDelimited,
+  selectionAddress,
+  writeCells,
+} from '../model/editing.js';
 import type { WorkbookIdFactory, WorksheetExtent } from '../model/extent.js';
-import { createWorkbook } from '../model/workbook.js';
-import type { SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
 import {
   FORMULA_REFERENCE_HIGHLIGHT_COLORS,
   type FormulaReferenceHighlight,
 } from '../model/formula-reference-parser.js';
-import { selectionAddress } from '../model/editing.js';
-import type { GridController } from '../editor/contracts.js';
-import { writeCells, parseDelimited, type CellSelection } from '../model/editing.js';
-import {
-  JSpreadsheetHost,
-  focusJSpreadsheetWorksheet,
-  releaseJSpreadsheetKeyboardOwner,
-  type JSpreadsheetHostHandle,
-  type JSpreadsheetSelectionRange,
-  type JSpreadsheetWorksheetInstance,
-  type JSpreadsheetAnchorRect,
-  type JSpreadsheetCellCoords,
-} from './jspreadsheet-host.js';
 import {
   collaboratorColorIndex,
   selectionLock,
   type SpreadsheetCollaborator,
 } from '../model/presence.js';
+import { requireDefined } from '../model/require-defined.js';
+import type { SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
+import { type CellInput, createWorkbook, type Worksheet } from '../model/workbook.js';
 import {
-  renderCalculatedCells,
-  renderReviewMarkers,
-  renderContributors,
-  clearCalculatedPresentation,
   type CellPortal,
+  clearCalculatedPresentation,
   type GridDraft,
+  renderCalculatedCells,
+  renderContributors,
+  renderReviewMarkers,
 } from './cell-renderer.js';
+import {
+  clipGridSelectionHandle,
+  gridBodyBounds,
+  gridViewport,
+  gridZoomScale,
+  measureGridSelection,
+  placeGridCorner,
+  restoreGridScroll,
+  scrollGridCellIntoView,
+  syncFrozenColumnOffsets,
+  syncFrozenColumns,
+} from './grid-geometry.js';
+import { deliveredHeader, useHeaderResize } from './header-resize.js';
+import {
+  focusJSpreadsheetWorksheet,
+  type JSpreadsheetAnchorRect,
+  type JSpreadsheetCellCoords,
+  JSpreadsheetHost,
+  type JSpreadsheetHostHandle,
+  type JSpreadsheetSelectionRange,
+  type JSpreadsheetWorksheetInstance,
+  releaseJSpreadsheetKeyboardOwner,
+} from './jspreadsheet-host.js';
+import { useNativeFormula } from './native-formula.js';
+import { refreshGridRowWindow, revealGridRows, windowGridRows } from './row-window.js';
+import { createSelectionPublication } from './selection-publication.js';
+import { observeGridBorderCopies, syncSharedGridBorders } from './shared-grid-borders.js';
+import { useLatest } from './use-latest.js';
+import {
+  captureWorksheetCellChanges,
+  gridWorksheetExtent,
+  patchWorksheetData,
+  sameCapture,
+  syncWorksheetData,
+} from './worksheet-data.js';
+import { presentAttachedRows, syncWorksheetPresentation } from './worksheet-presentation.js';
 
-export interface WorkbookGridProps {
+interface WorkbookGridProps {
   worksheet: Worksheet;
   logicalExtent?: WorksheetExtent;
   idFactory?: WorkbookIdFactory;
@@ -116,7 +121,8 @@ export interface WorkbookGridProps {
   onSelectionChange(range: JSpreadsheetSelectionRange): void;
 }
 
-export default function WorkbookGrid(props: WorkbookGridProps) {
+export function WorkbookGrid(props: WorkbookGridProps) {
+  const latest = useLatest(props);
   const handle = useRef<JSpreadsheetHostHandle | null>(null);
   const focusOnMount = useRef(props.focusOnMount);
   const stopBorderCopies = useRef<(() => void) | null>(null);
@@ -167,20 +173,15 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
   const [clip, setClip] = useState<CSSProperties>({});
   const frameRequest = useRef(0);
   const focusRequest = useRef(0);
-  const latest = useRef(props),
-    suppress = useRef(false),
+  const suppress = useRef(false),
     selecting = useRef(false);
   const visualSelection = useRef(props.selection);
   const draggingSelection = useRef(false);
   const scrolled = useRef(false);
-  const selectionPublication = useMemo(
-    () => createSelectionPublication((range) => latest.current.onSelectionChange(range)),
-    [],
+  const [selectionPublication] = useState(() =>
+    createSelectionPublication((range) => latest.current.onSelectionChange(range)),
   );
   const [revision, setRevision] = useState(0);
-  useLayoutEffect(() => {
-    latest.current = props;
-  });
   function worksheet(): JSpreadsheetWorksheetInstance | null {
     const instance = handle.current?.getInstance();
     if (!instance) return null;
@@ -308,6 +309,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
   }
   useLayoutEffect(() => {
     scheduleReferences();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the frame is scheduled through refs when these inputs change
   }, [props.formulaReferences, props.collaborators, props.zoom, revision]);
   useEffect(() => {
     scheduleReferences();
@@ -318,6 +320,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       cancelAnimationFrame(frameRequest.current);
       cancelAnimationFrame(focusRequest.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- observes once for the grid's life; scheduleReferences reads refs only
   }, []);
   useEffect(() => {
     const finish = () => {
@@ -336,6 +339,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       window.removeEventListener('pointercancel', finish);
       selectionPublication.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- window listeners follow the publication; scheduleReferences and latest read refs
   }, [selectionPublication]);
   const resize = useHeaderResize({
     root: surface,
@@ -406,11 +410,13 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
         if (sheet) restoreGridScroll(gridViewport(sheet), position, 1, 1);
       },
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one controller for the grid's life; its methods read refs only
     [],
   );
   useEffect(() => {
     props.onController(controller);
     return () => props.onController(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- announced once per controller; the host's callback may change every render
   }, [controller]);
   const config = useMemo(() => {
     function capture(
@@ -439,7 +445,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
             ? captureWorksheetCellChanges(current, changes, latest.current.idFactory)
             : {
                 ...current,
-                data: data!.map((row) =>
+                data: requireDefined(data).map((row) =>
                   row.map((cell) => (cell === undefined ? null : (cell as CellInput))),
                 ),
               }),
@@ -573,6 +579,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       onundo: () => false,
       onredo: () => false,
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the engine is configured once; later props reach it through latest and the sync effects
   }, []);
   useLayoutEffect(() => {
     const sheet = worksheet();
@@ -617,6 +624,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     } finally {
       suppress.current = false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- syncs only on these inputs; the rest are read through refs or are stable for the grid's life
   }, [
     props.worksheet,
     props.readOnly,
@@ -678,6 +686,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
   }
   useEffect(() => {
     if (handle.current) paint(handle.current, props);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- repaints only when what it paints changes
   }, [
     props.values,
     props.display,

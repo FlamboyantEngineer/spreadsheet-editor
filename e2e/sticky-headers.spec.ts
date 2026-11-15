@@ -1,9 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
+import { requireDefined } from '../src/model/require-defined.js';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
 async function headerPixels(page: Page, header: Locator) {
-  const box = (await header.boundingBox())!;
+  const box = requireDefined(await header.boundingBox());
   // Align inside the header: fractional table origins otherwise include pixels
   // outside its top edge in a locator screenshot when it first becomes sticky.
   return page.screenshot({

@@ -10,8 +10,8 @@ import {
   isPureTemperature,
   mergeNumericProvenance,
   normalizeNumericValue,
-  TEXT_COLLATOR,
   type NumericValue,
+  TEXT_COLLATOR,
 } from './values.js';
 export { BINARY_PREFIXES, SI_DECIMAL_PREFIXES, UNIT_DEFINITIONS } from './unit-catalog.js';
 

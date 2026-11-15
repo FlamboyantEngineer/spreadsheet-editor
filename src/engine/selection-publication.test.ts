@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import { createSelectionPublication } from './selection-publication.js';
 
 describe('SE-UI-1: bounded selection publication', () => {
@@ -19,7 +20,7 @@ describe('SE-UI-1: bounded selection publication', () => {
     for (let x = 0; x < 26; x++) selections.update(range(x));
     expect(publish).not.toHaveBeenCalled();
     expect(frames.size).toBe(1);
-    frames.values().next().value!(0);
+    requireDefined(frames.values().next().value)(0);
     expect(publish).toHaveBeenCalledExactlyOnceWith(range(25));
     selections.update(range(24));
     selections.finish();

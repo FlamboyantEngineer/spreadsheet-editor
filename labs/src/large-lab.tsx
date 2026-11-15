@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { SpreadsheetEditor, createWorkbook, type CellInput } from '../../src/index.js';
 import { createMemoryHost } from '../../src/host/index.js';
+import { type CellInput, createWorkbook, SpreadsheetEditor } from '../../src/index.js';
 
 const alex = createMemoryHost({ reader: { id: 'alex', name: 'Alex' } }).identity;
 

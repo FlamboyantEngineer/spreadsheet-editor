@@ -1,9 +1,10 @@
-import { formatCalendar } from './calendar.js';
-import { quantityInUnit } from './units.js';
 import { Decimal } from 'decimal.js';
-import { formatCellValue, type DisplayOptions } from './format.js';
-import { isNumeric, type CellValue } from './values.js';
+import { requireDefined } from '../model/require-defined.js';
 import type { CellFormat } from '../model/review.js';
+import { formatCalendar } from './calendar.js';
+import { type DisplayOptions, formatCellValue } from './format.js';
+import { quantityInUnit } from './units.js';
+import { type CellValue, isNumeric } from './values.js';
 
 const currencies = new Set(Intl.supportedValuesOf('currency'));
 export function validateNumberFormat(locale?: string, currency?: string): void {
@@ -112,7 +113,7 @@ export function formatWorksheetCell(
         ['C', 'F'].includes(format.unit ?? '') &&
         format.expectedDimension?.toLowerCase() === 'temperature'
           ? '°' + format.unit
-          : format.unit!;
+          : requireDefined(format.unit);
       const displayed = quantityInUnit(value, unit);
       return `${format.decimals === undefined ? formatCellValue(displayed, options) : formatWorksheetCell(displayed, { kind: 'number', decimals: format.decimals, ...(metadata.locale ? { locale: metadata.locale } : {}) }, options)} ${format.unit}`;
     } catch {

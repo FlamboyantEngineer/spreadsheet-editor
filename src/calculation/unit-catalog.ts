@@ -1,6 +1,6 @@
 // Unit catalog derived from platform-sdk at 43f4f64773c9eca230aabc390ea7b03be3c290da.
 // See NOTICE.md for source attribution. Numeric conversion strings are intentionally retained.
-export interface UnitPrefixDefinition {
+interface UnitPrefixDefinition {
   name: string;
   input: readonly string[];
   display: string;
@@ -18,7 +18,7 @@ export interface UnitConversionDefinition {
   readonly requiresWordSize?: boolean;
 }
 
-export interface UnitDefinition {
+interface UnitDefinition {
   name: string;
   input: readonly string[];
   display: string;
@@ -27,7 +27,7 @@ export interface UnitDefinition {
   description: string;
 }
 
-export interface UnitCategoryDefinition {
+interface UnitCategoryDefinition {
   name: string;
   canonicalUnit: string;
   units: readonly Readonly<UnitDefinition>[];

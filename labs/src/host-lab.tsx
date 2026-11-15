@@ -1,25 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
-import { SpreadsheetEditor, createWorkbook, useWorkbookSession } from '../../src/index.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { calculateWorkbook } from '../../src/calculation/evaluator.js';
 import {
-  READ_ONLY_CAPABILITIES,
-  createMemoryHost,
-  type WorkbookStoreAdapter,
-} from '../../src/host/index.js';
+  calculationCellKey,
+  type ExternalCalculationSnapshot,
+  workbookCalculationKey,
+} from '../../src/calculation/publication.js';
 import type {
   SpreadsheetEditorHandle,
   SpreadsheetEditorState,
 } from '../../src/editor/contracts.js';
-import { calculateWorkbook } from '../../src/calculation/evaluator.js';
-import {
-  calculationCellKey,
-  workbookCalculationKey,
-  type ExternalCalculationSnapshot,
-} from '../../src/calculation/publication.js';
 import type {
   CellPresentationSnapshot,
   FormulaFunctionDescriptor,
 } from '../../src/editor/public-host.js';
+import {
+  createMemoryHost,
+  READ_ONLY_CAPABILITIES,
+  type WorkbookStoreAdapter,
+} from '../../src/host/index.js';
+import { createWorkbook, SpreadsheetEditor, useWorkbookSession } from '../../src/index.js';
 import type { Workbook } from '../../src/model/workbook.js';
 
 const descriptors: readonly FormulaFunctionDescriptor[] = [
@@ -92,8 +92,8 @@ export function HostLab() {
   const [saved, setSaved] = useState<Workbook | null>(null);
   const [error, setError] = useState<string | null>(null);
   const revision = useRef(0);
+  // The store reads the switch when it saves, outside a render.
   const rejecting = useRef(rejectDurability);
-  rejecting.current = rejectDurability;
   // The application's own store: it counts saves and can refuse them, as an unreachable server would.
   const store = useMemo<WorkbookStoreAdapter>(() => {
     const memory = createMemoryHost({ workbooks: { host: exampleWorkbook() } }).workbooks;
@@ -247,7 +247,12 @@ export function HostLab() {
         </Button>
         <Button onPress={() => void attempt(() => handle?.save())}>Save host editor</Button>
         <Button onPress={() => void attempt(() => handle?.flush())}>Flush host editor</Button>
-        <Button onPress={() => setRejectDurability((value) => !value)}>
+        <Button
+          onPress={() => {
+            rejecting.current = !rejectDurability;
+            setRejectDurability(!rejectDurability);
+          }}
+        >
           {rejectDurability ? 'Allow saves' : 'Reject saves'}
         </Button>
         <Button onPress={() => setRejectChanges((value) => !value)}>

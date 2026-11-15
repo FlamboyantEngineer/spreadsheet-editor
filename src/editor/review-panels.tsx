@@ -1,36 +1,37 @@
 'use client';
 
-import { useState } from 'react';
+import { Attribution } from '@flamboyantengineer/ui-components/attribution';
+import { Button } from '@flamboyantengineer/ui-components/button';
+import { CommentComposer } from '@flamboyantengineer/ui-components/comment-composer';
+import {
+  CommentThread,
+  CommentThreadReply,
+} from '@flamboyantengineer/ui-components/comment-thread';
+import { ContextMenuTrigger } from '@flamboyantengineer/ui-components/context-menu';
 import {
   ChatBubbleCheckGlyph,
   ChatBubblePlusGlyph,
   ChatBubbleXMarkGlyph,
 } from '@flamboyantengineer/ui-components/core';
-import { Button } from '@flamboyantengineer/ui-components/button';
-import { Spinner } from '@flamboyantengineer/ui-components/progress-bar';
 import { InlineError } from '@flamboyantengineer/ui-components/inline-error';
-import { TextField } from '@flamboyantengineer/ui-components/text-field';
-import { SelectField } from '@flamboyantengineer/ui-components/select-field';
-import {
-  CommentThread,
-  CommentThreadReply,
-} from '@flamboyantengineer/ui-components/comment-thread';
-import { CommentComposer } from '@flamboyantengineer/ui-components/comment-composer';
-import { ReactionBar } from '@flamboyantengineer/ui-components/reaction-bar';
-import { ContextMenuTrigger } from '@flamboyantengineer/ui-components/context-menu';
 import { Menu } from '@flamboyantengineer/ui-components/menu';
-import { Attribution } from '@flamboyantengineer/ui-components/attribution';
-import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
+import { Spinner } from '@flamboyantengineer/ui-components/progress-bar';
+import { ReactionBar } from '@flamboyantengineer/ui-components/reaction-bar';
+import { SelectField } from '@flamboyantengineer/ui-components/select-field';
+import { TextField } from '@flamboyantengineer/ui-components/text-field';
+import { useState } from 'react';
 import { selectionAddress } from '../model/editing.js';
+import { requireDefined } from '../model/require-defined.js';
 import {
-  editCommentEntry,
   deleteCommentEntry,
+  editCommentEntry,
   replyToComment,
-  toggleCommentReaction,
   setCommentState,
+  toggleCommentReaction,
 } from '../model/review.js';
-import type { SpreadsheetEditorController } from './use-editor.js';
+import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
 import { editorCommandMetadata } from './editor-commands.js';
+import type { SpreadsheetEditorController } from './use-editor.js';
 
 export function CommentsPanel({
   editor: e,
@@ -47,7 +48,11 @@ export function CommentsPanel({
           ? thread.entries.some((entry) => entry.author === e.actor.id)
           : filter === 'all' || thread.state === filter,
       )
-      .sort((a, b) => b.entries.at(-1)!.createdAt.localeCompare(a.entries.at(-1)!.createdAt));
+      .sort((a, b) =>
+        requireDefined(b.entries.at(-1)).createdAt.localeCompare(
+          requireDefined(a.entries.at(-1)).createdAt,
+        ),
+      );
     return (
       <div className="se-comments" aria-label="Workbook comments">
         <div className="se-comments__actions">
@@ -105,7 +110,7 @@ export function CommentsPanel({
                         ? 'You'
                         : e.personName(thread.entries[0].author),
                   }}
-                  time={thread.entries.at(-1)!.createdAt}
+                  time={requireDefined(thread.entries.at(-1)).createdAt}
                 />
                 <span>
                   {thread.entries.length - 1} replies
@@ -151,7 +156,7 @@ export function CommentsPanel({
                 size="sm"
                 onPress={() =>
                   e.attempt(async () => {
-                    const text = e.props.getCommentLink!(thread.id);
+                    const text = requireDefined(e.props.getCommentLink)(thread.id);
                     await (e.props.clipboard?.writeText(text) ??
                       navigator.clipboard.writeText(text));
                   })
@@ -357,7 +362,7 @@ export function SuggestionsPanel({ editor: e }: { editor: SpreadsheetEditorContr
             <div key={`${change.sheetId}:${change.address}`} className="se-suggestion__change">
               <Button
                 onPress={() => {
-                  const cell = parseSpreadsheetRange(change.address)!;
+                  const cell = requireDefined(parseSpreadsheetRange(change.address));
                   e.select(
                     { x1: cell.start.x, x2: cell.end.x, y1: cell.start.y, y2: cell.end.y },
                     change.sheetId,

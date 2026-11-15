@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createWorkbook } from '../model/workbook.js';
 import { calculateWorkbook, type FormulaHost } from './evaluator.js';
 import { createArithmetic } from './rational.js';
-import { isNumeric, type CellValue } from './values.js';
+import { type CellValue, isNumeric } from './values.js';
 const corpus = JSON.parse(
   readFileSync(new URL('../../specs/NUMERIC-CORPUS.json', import.meta.url), 'utf8'),
 ) as { cases: Record<string, [string, string][]> };

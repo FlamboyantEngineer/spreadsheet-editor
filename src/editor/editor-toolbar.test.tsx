@@ -1,20 +1,21 @@
 // @vitest-environment jsdom
-import { useState } from 'react';
-import { cleanup, render, screen, within } from '@testing-library/react';
 import { UiProvider } from '@flamboyantengineer/ui-components/core';
-import { userEvent } from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
-import { createWorkbook, type Workbook } from '../model/workbook.js';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
+import { useState } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FULL_CAPABILITIES } from '../host/capabilities.js';
+import { createMemoryHost } from '../host/memory-host.js';
+import { createWorkbookSession } from '../host/workbook-session.js';
 import type { WorkbookCommandResult } from '../model/operations.js';
-import type { SpreadsheetEditorController } from './use-editor.js';
+import { requireDefined } from '../model/require-defined.js';
+import { createWorkbook, type Workbook } from '../model/workbook.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { editorCommandMetadata } from './editor-commands.js';
 import { editorMenus } from './editor-menus.js';
 import { EditorToolbar } from './editor-toolbar.js';
-import { FULL_CAPABILITIES } from '../host/capabilities.js';
-import { createMemoryHost } from '../host/memory-host.js';
-import { createWorkbookSession } from '../host/workbook-session.js';
+import type { SpreadsheetEditorController } from './use-editor.js';
 
 function fixture(
   props: Partial<SpreadsheetEditorProps> = {},
@@ -96,7 +97,7 @@ function entries(items: readonly MenuEntry[]): MenuItemEntry[] {
 }
 
 function action(items: MenuEntry[], id: string) {
-  return entries(items).find((item) => item.id === id)!;
+  return requireDefined(entries(items).find((item) => item.id === id));
 }
 
 function buttonText(button: Element) {
@@ -110,7 +111,10 @@ beforeEach(() => {
   vi.stubGlobal('CSS', {
     ...globalThis.CSS,
     escape: (value: string) =>
-      Array.from(value, (character) => `\\${character.codePointAt(0)!.toString(16)} `).join(''),
+      Array.from(
+        value,
+        (character) => `\\${requireDefined(character.codePointAt(0)).toString(16)} `,
+      ).join(''),
   });
 });
 afterEach(() => {
@@ -199,7 +203,7 @@ describe('SE-CHROME-1 / SE-CONTEXT-1: shared command presentation', () => {
     menus.appendColumn();
     expect(mutateWithDraft.mock.results[1].value.worksheets[0].data).toEqual([['1E-25', '=1-A1']]);
     expect(mutateWithDraft.mock.results[1].value.worksheets[0].minDimensions).toEqual([27, 100]);
-    action(menus.view, 'freeze').onAction!();
+    requireDefined(action(menus.view, 'freeze').onAction)();
     const frozen = mutateWithDraft.mock.results[2].value;
     expect(frozen.worksheets[0].data[0][0]).toBe('1E-25');
     expect(frozen.worksheets[0].freezeColumns).toBe(1);

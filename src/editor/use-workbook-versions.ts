@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VersionStoreAdapter, WorkbookVersion } from '../host/adapters.js';
 
@@ -50,6 +52,7 @@ export function useWorkbookVersions(
 
   useEffect(() => {
     if (!active || !store || workbookId === undefined) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the list loads from the host's store while the pane is open
     refresh();
     const stop = store.subscribe?.(workbookId, refresh);
     return () => {

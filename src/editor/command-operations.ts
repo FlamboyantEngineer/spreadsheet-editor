@@ -1,4 +1,4 @@
-import type { Workbook } from '../model/workbook.js';
+import { orderedJson } from '../calculation/publication.js';
 import {
   annotationOperation,
   collectCellOperations,
@@ -8,7 +8,7 @@ import {
   sheetOperation,
   type WorkbookOperation,
 } from '../model/operations.js';
-import { orderedJson } from '../calculation/publication.js';
+import type { Workbook } from '../model/workbook.js';
 
 /**
  * Sparse cell/layout patches complement commands which carry their own line operations.

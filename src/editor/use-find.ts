@@ -1,8 +1,11 @@
+'use client';
+
 import { useMemo, useState } from 'react';
-import { calculationCellKey } from '../calculation/publication.js';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
 import type { CalculationResult } from '../calculation/evaluator.js';
 import type { DisplayOptions } from '../calculation/format.js';
+import { calculationCellKey } from '../calculation/publication.js';
+import { requireDefined } from '../model/require-defined.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { assertWorkbook, copyWorkbook, type Workbook } from '../model/workbook.js';
 import type { CellTargets } from './edit-targets.js';
@@ -93,7 +96,7 @@ export function replaceMatches(
   const next = copyWorkbook(base),
     pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
   for (const match of targets) {
-    const target = next.worksheets.find((sheet) => sheet.id === match.sheetId)!;
+    const target = requireDefined(next.worksheets.find((sheet) => sheet.id === match.sheetId));
     target.data[match.y][match.x] = String(target.data[match.y][match.x] ?? '').replace(
       pattern,
       () => text,

@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { IdentityAdapter } from '../host/adapters.js';
 import type { ReviewActor, SpreadsheetComment } from '../model/review.js';

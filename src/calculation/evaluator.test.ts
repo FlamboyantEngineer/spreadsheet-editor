@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createWorkbook, type Workbook } from '../model/workbook.js';
 import { calculateWorkbook } from './evaluator.js';
-import { createArithmetic } from './rational.js';
 import { formatCellValue } from './format.js';
+import { createArithmetic } from './rational.js';
 import { isNumeric, type NumericValue } from './values.js';
 
 const calculate = (formula: string) =>
@@ -15,6 +15,13 @@ const exact = (numerator: string, denominator = '1') => ({
 });
 
 describe('SE-CALC-1: exact arithmetic', () => {
+  it('reads a formula whose value is empty as empty, not as an error', () => {
+    const [values] = calculateWorkbook(
+      createWorkbook([['=B1', '=C1', null, '=B1&"x"']]),
+    ).worksheets;
+    expect(values.values[0][0]).not.toBe('#ERROR!');
+    expect(values.values[0][3]).toBe('x');
+  });
   it('preserves 1E-25, near-one values, and their cancellation', () => {
     const workbook = createWorkbook([['1E-25', '=1-A1', '=1-B1', '=C1=A1', '=B1=1']]);
     const [small, nearOne, recovered, same, rounded] =

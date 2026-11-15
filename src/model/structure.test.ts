@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook } from './workbook.js';
 import { calculateWorkbook } from '../calculation/evaluator.js';
+import { parseDelimited, serializeDelimited, writeCells } from './editing.js';
 import { addComment, proposeWorkbookChange } from './review.js';
-import { writeCells, parseDelimited, serializeDelimited } from './editing.js';
 import {
   changeWorkbookStructure,
-  renameWorksheet,
-  validateWorksheetName,
   deleteWorksheet,
+  renameWorksheet,
   rewriteStructureReferences,
+  validateWorksheetName,
 } from './structure.js';
+import { createWorkbook } from './workbook.js';
 
 describe('SE-EDIT-1: structure and exact formula text', () => {
   it('rewrites relative and absolute references and preserves strings and scientific literals', () => {

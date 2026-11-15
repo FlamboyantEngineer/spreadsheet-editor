@@ -1,4 +1,6 @@
-import { useRef, type RefObject } from 'react';
+'use client';
+
+import { type RefObject, useRef } from 'react';
 import type { HostResult, WorkbookVersion } from '../host/adapters.js';
 import type { Workbook } from '../model/workbook.js';
 import type { SpreadsheetEditorProps } from './contracts.js';

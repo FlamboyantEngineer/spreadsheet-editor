@@ -1,5 +1,5 @@
-import { defineConfig } from '@playwright/test';
 import { existsSync } from 'node:fs';
+import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: 'e2e',
   workers: 1,

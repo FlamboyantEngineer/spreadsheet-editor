@@ -1,3 +1,5 @@
+'use client';
+
 import { useEffect, useState } from 'react';
 import {
   createWorkbookSession,
@@ -24,12 +26,14 @@ export function useWorkbookSession(options: WorkbookSessionOptions): WorkbookSes
       draftDelay,
       now,
     });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the session is an external resource opened by this effect
     setSession(opened);
     return () => {
       opened.close();
       setSession((current) => (current === opened ? null : current));
     };
     // `now` is read once per session, like the delays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new clock does not reopen the session
   }, [workbooks, workbookId, drafts, lifecycle, autosaveDelay, draftDelay]);
   return session;
 }

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeCellValues } from './summary.js';
-import { createArithmetic } from './rational.js';
-import { createQuantityArithmetic, makeQuantity } from './units.js';
+import { requireDefined } from '../model/require-defined.js';
 import { formatCellValue } from './format.js';
+import { createArithmetic } from './rational.js';
+import { summarizeCellValues } from './summary.js';
+import { createQuantityArithmetic, makeQuantity } from './units.js';
 
 const arithmetic = createArithmetic(),
   quantities = createQuantityArithmetic();
@@ -25,8 +26,8 @@ describe('SE-CALC-4: exact and dimensionally valid selection statistics', () => 
     const meter = makeQuantity(arithmetic.parse('1'), 'm');
     const centimeter = makeQuantity(arithmetic.parse('100'), 'cm');
     const summary = summarizeCellValues([meter, centimeter]);
-    expect(formatCellValue(summary.sum!)).toBe('2 m');
-    expect(formatCellValue(summary.average!)).toBe('1 m');
+    expect(formatCellValue(requireDefined(summary.sum))).toBe('2 m');
+    expect(formatCellValue(requireDefined(summary.average))).toBe('1 m');
     expect(summarizeCellValues([meter, makeQuantity(arithmetic.parse('1'), 's')])).toEqual({
       count: 2,
       sum: null,

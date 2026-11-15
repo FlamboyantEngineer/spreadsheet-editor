@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook } from './workbook.js';
 import { collaboratorSheet, placePeers, selectionLock } from './presence.js';
+import { createWorkbook } from './workbook.js';
 
 describe('SE-ADAPTERS-4.3: peers placed on the workbook', () => {
   it('leaves out the reader and drops places the workbook does not have', () => {

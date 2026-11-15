@@ -1,5 +1,6 @@
 import type { CellSelection } from '../model/editing.js';
 import { createWorkbookEntityId } from '../model/extent.js';
+import { requireDefined } from '../model/require-defined.js';
 import { deleteWorksheet } from '../model/structure.js';
 import { appendWorksheet, copyWorkbook, type Workbook } from '../model/workbook.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
@@ -19,10 +20,10 @@ export function applySheetCommand(
 ): { workbook: Workbook; activatedId?: string } {
   let activatedId: string | undefined;
   let next = copyWorkbook(base);
-  const targetSheet = next.worksheets.find((value) => value.id === targetSheetId)!;
+  const targetSheet = requireDefined(next.worksheets.find((value) => value.id === targetSheetId));
   if (command === 'add' || command === 'insert' || command === 'duplicate') {
     next = appendWorksheet(base);
-    const added = next.worksheets.at(-1)!;
+    const added = requireDefined(next.worksheets.at(-1));
     added.id = (idFactory ?? createWorkbookEntityId)('sheet');
     if (command === 'insert') {
       next.worksheets.pop();
@@ -67,7 +68,7 @@ export function resizeSelection(
   measure: number,
 ): Workbook {
   const next = copyWorkbook(base),
-    target = next.worksheets.find((value) => value.id === sheetId)!;
+    target = requireDefined(next.worksheets.find((value) => value.id === sheetId));
   if (dialog === 'row-height') {
     target.rows = { ...target.rows };
     for (let y = selection.y1; y <= selection.y2; y++) target.rows[y] = { height: measure };

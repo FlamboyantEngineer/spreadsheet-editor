@@ -1,14 +1,26 @@
 import { worksheetCalculationExtent } from '../model/extent.js';
+import {
+  type ComparisonOperator,
+  type FormulaNode,
+  parseFormula,
+} from '../model/formula-parser.js';
+import { requireDefined } from '../model/require-defined.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
-import { parseFormula, type FormulaNode } from '../model/formula-parser.js';
 import {
   assertWorkbook,
-  worksheetNameKey,
   type CellInput,
   type Workbook,
   type WorkbookLimits,
+  worksheetNameKey,
 } from '../model/workbook.js';
-import { type NumericOptions } from './rational.js';
+import { calendarParts, calendarSerial } from './calendar.js';
+import {
+  evaluateExtendedFunction,
+  EXTENDED_FUNCTIONS,
+  FUNCTION_ALIASES,
+} from './extended-functions.js';
+import { formatCellValue } from './format.js';
+import type { NumericOptions } from './rational.js';
 import {
   createQuantityArithmetic,
   makeQuantity,
@@ -16,24 +28,17 @@ import {
   validateUnitDimension,
 } from './units.js';
 import {
-  EXTENDED_FUNCTIONS,
-  FUNCTION_ALIASES,
-  evaluateExtendedFunction,
-} from './extended-functions.js';
-import { calendarParts, calendarSerial } from './calendar.js';
-import { formatCellValue } from './format.js';
-import {
+  assertJsonValue,
+  assertNumericValue,
   CalculationError,
+  type CellValue,
+  type ErrorValue,
   errorValue,
   isError,
   isNumeric,
-  type CellValue,
-  type ErrorValue,
-  type NumericValue,
   type JsonValue,
-  assertJsonValue,
-  assertNumericValue,
   normalizeNumericValue,
+  type NumericValue,
   TEXT_COLLATOR,
 } from './values.js';
 
@@ -293,11 +298,13 @@ export function calculateWorkbook(
     )
       return errorValue('#REF!');
     const key = keyFor(sheetIndex, x, y);
-    if (cache.has(key)) return cache.get(key)!;
+    // An empty cell's value is null, so presence is read with has().
+    if (cache.has(key)) return cache.get(key) as CellValue;
     if (visiting.has(key)) return errorValue('#CYCLE!');
     // A value cell reads nothing, so it is calculated in place instead of suspending the reader.
     if (!isFormula(workbook.worksheets[sheetIndex]?.data[y]?.[x] ?? null))
       return evaluateCell(sheetIndex, x, y, 0);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- a suspension signal, not a failure: an Error would capture a stack on every suspended read
     throw new NeedCell(sheetIndex, x, y);
   }
   function ensureCell(sheetIndex: number, x: number, y: number): CellValue {
@@ -305,7 +312,7 @@ export function calculateWorkbook(
     const stack = [{ sheet: sheetIndex, x, y }];
     visiting.add(initial);
     while (stack.length) {
-      const cell = stack.at(-1)!,
+      const cell = requireDefined(stack.at(-1)),
         key = keyFor(cell.sheet, cell.x, cell.y);
       if (cache.has(key)) {
         visiting.delete(key);
@@ -323,7 +330,7 @@ export function calculateWorkbook(
         stack.push({ sheet: error.sheet, x: error.x, y: error.y });
       }
     }
-    return cache.get(initial)!;
+    return cache.get(initial) as CellValue;
   }
   const zero = arithmetic.parse('0'),
     one = arithmetic.parse('1');
@@ -475,7 +482,7 @@ export function calculateWorkbook(
       memo = new WeakMap();
       cellMemos.set(key, memo);
     }
-    if (memo.has(node)) return memo.get(node)!;
+    if (memo.has(node)) return memo.get(node) as Value;
     const value = evaluateFresh(node, sheetIndex, x, y, depth);
     memo.set(node, value);
     return value;
@@ -544,7 +551,8 @@ export function calculateWorkbook(
           node.sheetName === null
             ? sheetIndex
             : workbook.worksheets.findIndex(
-                (sheet) => worksheetNameKey(sheet.name) === worksheetNameKey(node.sheetName!),
+                (sheet) =>
+                  worksheetNameKey(sheet.name) === worksheetNameKey(requireDefined(node.sheetName)),
               );
         if (target < 0) throw new CalculationError('#REF!');
         const sheet = workbook.worksheets[target];
@@ -634,44 +642,37 @@ export function calculateWorkbook(
       case 'binary': {
         const left = run(node.left),
           right = run(node.right);
-        if (node.operator === '&') return text(left) + text(right);
-        if (['=', '<>', '<', '<=', '>', '>='].includes(node.operator)) {
-          const a = checked(scalar(left)),
-            b = checked(scalar(right));
-          const comparison = compareValues(a, b);
-          switch (node.operator) {
-            case '=':
-              return comparison === 0;
-            case '<>':
-              return comparison !== 0;
-            case '<':
-              return comparison < 0;
-            case '<=':
-              return comparison <= 0;
-            case '>':
-              return comparison > 0;
-            case '>=':
-              return comparison >= 0;
-          }
-        }
-        const a = numeric(left),
-          b = numeric(right);
         switch (node.operator) {
+          case '&':
+            return text(left) + text(right);
+          case '=':
+          case '<>':
+          case '<':
+          case '<=':
+          case '>':
+          case '>=':
+            return comparisonHolds(
+              node.operator,
+              compareValues(checked(scalar(left)), checked(scalar(right))),
+            );
           case '+':
-            return arithmetic.add(a, b);
+            return arithmetic.add(numeric(left), numeric(right));
           case '-':
-            return arithmetic.subtract(a, b);
+            return arithmetic.subtract(numeric(left), numeric(right));
           case '*':
-            return arithmetic.multiply(a, b);
+            return arithmetic.multiply(numeric(left), numeric(right));
           case '/':
-            return arithmetic.divide(a, b);
+            return arithmetic.divide(numeric(left), numeric(right));
           case '^':
-            return arithmetic.power(a, b);
-          case '%':
+            return arithmetic.power(numeric(left), numeric(right));
+          case '%': {
+            const a = numeric(left),
+              b = numeric(right);
             return arithmetic.subtract(
               a,
               arithmetic.multiply(b, arithmetic.round(arithmetic.divide(a, b), 0, 'down')),
             );
+          }
         }
         throw new CalculationError('#ERROR!');
       }
@@ -1129,4 +1130,21 @@ export function calculateWorkbook(
       ...(host.hostContext === undefined ? {} : { hostContext: structuredClone(host.hostContext) }),
     };
   return result;
+}
+
+function comparisonHolds(operator: ComparisonOperator, comparison: number): boolean {
+  switch (operator) {
+    case '=':
+      return comparison === 0;
+    case '<>':
+      return comparison !== 0;
+    case '<':
+      return comparison < 0;
+    case '<=':
+      return comparison <= 0;
+    case '>':
+      return comparison > 0;
+    case '>=':
+      return comparison >= 0;
+  }
 }

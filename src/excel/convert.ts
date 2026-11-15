@@ -1,24 +1,25 @@
 import ExcelJS from 'exceljs';
-import { readThemeColors } from './colors.js';
-import { inspectXlsx, type XlsxLimits } from './guard.js';
-import type { ExcelFormulaCapabilities, XlsxImport, XlsxWarning } from './contracts.js';
-import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
-import { importCellStyle, importNumberFormat } from './styles.js';
-import { serializeCellStyle } from '../model/editing.js';
-import { createArithmetic } from '../calculation/rational.js';
-import { formatCellValue } from '../calculation/format.js';
 import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
-import { parseFormula, type FormulaNode } from '../model/formula-parser.js';
+import { formatCellValue } from '../calculation/format.js';
+import { createArithmetic } from '../calculation/rational.js';
+import { serializeCellStyle } from '../model/editing.js';
+import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
+import { requireDefined } from '../model/require-defined.js';
+import {
+  formatSpreadsheetAddress,
+  parseSpreadsheetRange,
+} from '../model/spreadsheet-addressing.js';
 import {
   assertWorkbook,
   type CellInput,
   type Workbook,
   type Worksheet,
 } from '../model/workbook.js';
-import {
-  formatSpreadsheetAddress,
-  parseSpreadsheetRange,
-} from '../model/spreadsheet-addressing.js';
+import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
+import { readThemeColors } from './colors.js';
+import type { ExcelFormulaCapabilities, XlsxImport, XlsxWarning } from './contracts.js';
+import { inspectXlsx, type XlsxLimits } from './guard.js';
+import { importCellStyle, importNumberFormat } from './styles.js';
 
 const decode = new TextDecoder();
 function unsupported(node: FormulaNode, external: ReadonlyMap<string, unknown>): string[] {
@@ -117,7 +118,7 @@ export async function convertXlsx(
     if (source.state !== 'visible')
       warn('hidden-worksheet', 'Hidden worksheets are imported visible.', source.name, 'skipped');
     (source.columns ?? []).forEach((column, x) => {
-      sheet.columns![x] = { width: column.width ? column.width * 7 + 5 : 100 };
+      requireDefined(sheet.columns)[x] = { width: column.width ? column.width * 7 + 5 : 100 };
       if (column.hidden)
         warn(
           'hidden-column',
@@ -130,7 +131,7 @@ export async function convertXlsx(
       if (y > (limits.maxCells ?? 250000))
         throw new RangeError('Worksheet extent exceeds the standalone editor row limit.');
       while (sheet.data.length < y) sheet.data.push([]);
-      if (row.height) sheet.rows![String(y - 1)] = { height: (row.height * 4) / 3 };
+      if (row.height) requireDefined(sheet.rows)[String(y - 1)] = { height: (row.height * 4) / 3 };
       if (row.hidden)
         warn('hidden-row', 'Hidden rows are imported visible.', `${source.name}!${y}`, 'skipped');
       row.eachCell({ includeEmpty: false }, (cell, x) => {
@@ -145,7 +146,7 @@ export async function convertXlsx(
             'Unsupported number format falls back to General.',
             location,
           );
-        if (format && format.kind !== 'general') sheet.formats![address] = format;
+        if (format && format.kind !== 'general') requireDefined(sheet.formats)[address] = format;
         if (cell.formula) {
           value = '=' + cell.formula;
           report.formulas++;
@@ -164,7 +165,7 @@ export async function convertXlsx(
             );
           }
         } else if (authoredNumbers.has(address)) {
-          value = authoredNumbers.get(address)!;
+          value = requireDefined(authoredNumbers.get(address));
           if (
             document.properties.date1904 &&
             format &&
@@ -198,8 +199,8 @@ export async function convertXlsx(
               : authoredNumbers.has(address)
                 ? 'right'
                 : 'left';
-        sheet.style![address] = serializeCellStyle(style);
-        sheet.cellProvenance![address] = {
+        requireDefined(sheet.style)[address] = serializeCellStyle(style);
+        requireDefined(sheet.cellProvenance)[address] = {
           actor: { id: 'system', name: 'System' },
           source: 'system',
         };
@@ -216,7 +217,7 @@ export async function convertXlsx(
         if (typeof value === 'string' && /\b(?:ITAR|EAR99|ECCN|EXPORT CONTROLLED)\b/i.test(value))
           warn(
             'export-control-legend',
-            'Export-control text is retained; set the artifact marking in the host application.',
+            'Export-control text is retained; set the document marking in the host application.',
             location,
           );
       });
@@ -225,10 +226,8 @@ export async function convertXlsx(
     for (const range of source.model.merges ?? []) {
       const parsed = parseSpreadsheetRange(range);
       if (parsed) {
-        sheet.mergeCells![formatSpreadsheetAddress(parsed.start.x, parsed.start.y)] = [
-          parsed.end.x - parsed.start.x + 1,
-          parsed.end.y - parsed.start.y + 1,
-        ];
+        requireDefined(sheet.mergeCells)[formatSpreadsheetAddress(parsed.start.x, parsed.start.y)] =
+          [parsed.end.x - parsed.start.x + 1, parsed.end.y - parsed.start.y + 1];
         report.mergedRanges++;
       }
     }

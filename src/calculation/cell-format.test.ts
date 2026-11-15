@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createWorkbook } from '../model/workbook.js';
-import { calculateWorkbook } from './evaluator.js';
 import { formatWorksheetCell } from './cell-format.js';
+import { calculateWorkbook } from './evaluator.js';
 
 describe('SE-EDIT-2: number formats preserve exact calculations', () => {
   it('formats a near-one value as percent without altering its comparison result', () => {

@@ -1,23 +1,25 @@
 'use client';
 
 import {
+  type PointerEvent,
+  type RefObject,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
-  type PointerEvent,
-  type RefObject,
 } from 'react';
+import { requireDefined } from '../model/require-defined.js';
 import type { Worksheet } from '../model/workbook.js';
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT, gridZoomScale } from './grid-geometry.js';
 import {
   applyJSpreadsheetColumnMeasure,
   applyJSpreadsheetRowMeasure,
-  readJSpreadsheetColumnMeasure,
-  readJSpreadsheetRowMeasureSnapshot,
-  type JSpreadsheetWorksheetInstance,
   type JSpreadsheetColumnMeasureSnapshot,
   type JSpreadsheetRowMeasureSnapshot,
+  type JSpreadsheetWorksheetInstance,
+  readJSpreadsheetColumnMeasure,
+  readJSpreadsheetRowMeasureSnapshot,
 } from './jspreadsheet-host.js';
 
 interface Options {
@@ -98,20 +100,23 @@ export function useHeaderResize(options: Options) {
     if (notify) setActive(false);
     latest.current.onGeometryChange();
   }
+  const cancelDrag = useEffectEvent(cancel);
+  const { subscribeBlur, canResize, zoom } = options;
   useEffect(() => {
     if (!active) return;
-    const callback = () => cancel();
-    if (options.subscribeBlur) return options.subscribeBlur(callback);
+    const callback = () => cancelDrag();
+    if (subscribeBlur) return subscribeBlur(callback);
     window.addEventListener('blur', callback);
     return () => window.removeEventListener('blur', callback);
-  }, [active, options.subscribeBlur]);
+  }, [active, subscribeBlur]);
   useLayoutEffect(() => {
-    if (!options.canResize) cancel();
-  }, [options.canResize]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a drag ends as soon as resizing is turned off
+    if (!canResize) cancelDrag();
+  }, [canResize]);
   useLayoutEffect(() => {
-    if (drag.current && drag.current.scale !== gridZoomScale(options.zoom)) cancel();
-  }, [options.zoom]);
-  useEffect(() => () => cancel(false), []);
+    if (drag.current && drag.current.scale !== gridZoomScale(zoom)) cancelDrag();
+  }, [zoom]);
+  useEffect(() => () => cancelDrag(false), []);
   function start(event: PointerEvent<HTMLDivElement>): boolean {
     const current = latest.current,
       header = deliveredHeader(event, current.root.current),
@@ -122,7 +127,7 @@ export function useHeaderResize(options: Options) {
     if (edge < 0 || edge > 6) return false;
     event.preventDefault();
     event.stopPropagation();
-    const root = current.root.current!,
+    const root = requireDefined(current.root.current),
       scale = gridZoomScale(current.zoom);
     const selected =
       header.axis === 'column'
