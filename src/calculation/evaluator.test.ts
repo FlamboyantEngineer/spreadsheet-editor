@@ -141,3 +141,25 @@ describe('SE-CALC-2: workbook formulas', () => {
     ).toEqual(exact('6'));
   });
 });
+
+describe('SE-4: evaluation cost does not depend on reading order', () => {
+  it('sums a range placed above its data about as fast as below it', () => {
+    const values = Array.from({ length: 9_999 }, (_, y) => [String(y + 1)]);
+    const above = createWorkbook([['=SUM(A2:A10000)'], ...values]),
+      below = createWorkbook([...values, ['=SUM(A1:A9999)']]);
+    const time = (workbook: Workbook) => {
+      const started = performance.now(),
+        result = calculateWorkbook(workbook);
+      return { elapsed: performance.now() - started, result };
+    };
+    time(below);
+    const first = time(below),
+      second = time(above);
+    expect(second.result.worksheets[0].values[0][0]).toEqual(
+      first.result.worksheets[0].values[9_999][0],
+    );
+    // A forward read once threw an Error per cell: about seven times slower than reading back.
+    expect(second.elapsed).toBeLessThan(Math.max(3 * first.elapsed, 50));
+    expect(second.elapsed).toBeLessThan(1_000);
+  });
+});
