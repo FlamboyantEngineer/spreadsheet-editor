@@ -24,6 +24,7 @@ export function useNativeFormula(
   onDraft: (value: string | null) => void,
   root: RefObject<HTMLDivElement | null>,
   functions?: readonly FormulaFunctionDescriptor[],
+  includeBuiltins = true,
 ) {
   const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const releaseEditor = useRef<(() => void) | null>(null);
@@ -73,7 +74,7 @@ export function useNativeFormula(
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
   const id = useId();
-  const options = formulaFunctionCatalog(functions)
+  const options = formulaFunctionCatalog(functions, includeBuiltins)
     .filter((item) => [item.name, ...(item.aliases ?? [])].some((name) => name.startsWith(query)))
     .sort((a, b) => Number(b.name === query) - Number(a.name === query))
     .slice(0, 12);

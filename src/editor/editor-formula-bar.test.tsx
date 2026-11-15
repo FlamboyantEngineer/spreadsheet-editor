@@ -56,7 +56,7 @@ describe('SE-CHROME-4: public formula bar editing surface', () => {
     expect(formula().tagName).toBe('TEXTAREA');
     expect(formula().rows).toBe(1);
     expect(formula().value).toBe('=A2+B3');
-    expect(container.querySelector('.ui-formula-bar[data-composed="true"]')).not.toBeNull();
+    expect(screen.getByRole('group', { name: 'Formula bar' }).contains(formula())).toBe(true);
     expect(container.querySelector('[data-token="reference-0"]')?.textContent).toBe('A2');
     expect(container.querySelector('[data-token="reference-1"]')?.textContent).toBe('B3');
     expect(screen.queryByRole('button', { name: /apply|cancel|restore|reset/i })).toBeNull();

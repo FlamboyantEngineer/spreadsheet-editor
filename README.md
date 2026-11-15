@@ -89,6 +89,8 @@ import 'jsuites/dist/jsuites.css';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
 ```
 
+Hosts can constrain stored format capabilities with `formatting={{ kinds, decimalPlaces }}` and keep creation/import in their application by setting `features={{ newWorkbook: false, import: false }}`.
+
 The editor loads no CSS or application URLs itself. Style its documented [`se-*` hooks](specs/HOOK-CONTRACT.md), and the base components' public hooks, in your own stylesheet. The lab's `labs/src/reference.css` is an example, not a package import. The grid loads lazily; headless entry points and the root import are safe in Node without a DOM.
 
 ## Choose the calculation location
@@ -126,7 +128,9 @@ Host-defined names and synchronous functions can be supplied to `createClientCal
 
 ## Exact values and display
 
-Hosts with authoritative or immutable stored results can use `calculation={{ mode: 'external', snapshot }}`. `ExternalCalculationSnapshot` carries `workbookCalculationKey(workbook)`, a monotonic session revision, global/per-cell readiness and optional validated results/context. A null or unavailable snapshot never falls back to client calculation. Ready values, presentation and export must match the current authored inputs. Host `formulaFunctions` descriptors extend both completion surfaces; execution stays with the authorized provider. Matching `cellPresentation` and `renderCellContent` can supply safe React content through engine-owned portals. Hosts sanitize any rich source content.
+Hosts may retain uncommitted formula-bar and native input through `onDraftChange`. Authoritative suggestion previews use `reviewCalculation` with the projected workbook’s input key.
+
+Hosts with authoritative or immutable stored results can use `calculation={{ mode: 'external', snapshot }}`. `ExternalCalculationSnapshot` carries `workbookCalculationKey(workbook)`, a monotonic session revision, global/per-cell readiness and optional validated results/context. A null or unavailable snapshot never falls back to client calculation. Ready values, presentation and export must match the current authored inputs. Host `formulaFunctions` descriptors extend both completion surfaces; set `includeBuiltinFormulaFunctions={false}` to publish a complete authoritative catalog instead; execution stays with the authorized provider. Matching `cellPresentation` and `renderCellContent` can supply safe React content through engine-owned portals. Hosts sanitize any rich source content.
 
 `Worksheet.inputValues` optionally preserves exact canonical numeric/quantity inputs separately from primitive edit text. `rowIds` and `columnIds` retain stable identities through structural edits. These are additive version-one fields validated by JSON/provider ingress. Ordinary replacement clears a canonical override; formatting and internal copy preserve it.
 

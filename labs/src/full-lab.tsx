@@ -135,6 +135,7 @@ export function FullLab() {
                   id: crypto.randomUUID(),
                   timestamp: new Date().toISOString(),
                   author: { id: actorId, name: actorId === 'alex' ? 'Alex' : 'Morgan' },
+                  message: 'Saved workbook version',
                   state: 'Draft',
                   revision: String(entries.length + 1),
                   workbook: snapshot,

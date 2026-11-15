@@ -11,7 +11,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { FormulaBar } from '@flamboyantengineer/ui-components/formula-bar';
+import { FormulaGlyph } from '@flamboyantengineer/ui-components/core';
+import { Icon } from '@flamboyantengineer/ui-components/icon';
+import { Cluster, Stack } from '@flamboyantengineer/ui-components/layout';
 import { CodeEditor, type CodeTokenizer } from '@flamboyantengineer/ui-components/code-editor';
 import type { CompletionSource } from '@flamboyantengineer/ui-components/completion-list';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
@@ -41,6 +43,7 @@ export interface EditorFormulaBarHandle {
 
 export interface EditorFormulaBarProps {
   formulaFunctions?: readonly FormulaFunctionDescriptor[];
+  includeBuiltinFormulaFunctions?: boolean;
   ref?: Ref<EditorFormulaBarHandle>;
   selection: CellSelection;
   /** The host owns the protected draft, including updates while the same cell is edited. */
@@ -72,7 +75,10 @@ function addressSelection(value: string): CellSelection | null {
 /** Caller-owned drafts and transactions with the base library's formula layout and code surface. */
 export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
   const completeFormula = useMemo<CompletionSource>(() => {
-    const catalog = formulaFunctionCatalog(props.formulaFunctions);
+    const catalog = formulaFunctionCatalog(
+      props.formulaFunctions,
+      props.includeBuiltinFormulaFunctions,
+    );
     return ({ value, query, isExplicit }) => {
       if (!value.trimStart().startsWith('=')) return [];
       if (!query && value.trim() !== '=' && !isExplicit) return [];
@@ -92,7 +98,7 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
             a.label.localeCompare(b.label),
         );
     };
-  }, [props.formulaFunctions]);
+  }, [props.formulaFunctions, props.includeBuiltinFormulaFunctions]);
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const editing = useRef(false);
@@ -181,8 +187,10 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
   };
 
   return (
-    <div
+    <Cluster
       ref={root}
+      wrap="nowrap"
+      space="md"
       className="se-editor__formula-bar"
       onBlurCapture={onBlurCapture}
       onCompositionStartCapture={() => {
@@ -192,82 +200,80 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
         composing.current = false;
       }}
     >
-      <FormulaBar
+      <Cluster
         className="se-editor__formula-widget"
-        size="sm"
-        cell={{ row: props.selection.y1, column: props.selection.x1 }}
-        value={props.draftValue}
-        showActions={false}
-        controls={{
-          reference: (
-            <TextField
-              className="se-editor__address"
-              label="Selected cell or range"
-              density="compact"
-              labelLayout="control-only"
-              tracksChanges={false}
-              size="sm"
-              value={addressDraft ?? address}
-              errorMessage={
-                addressInvalid ? 'Enter a cell or range from A1 to XFD1048576.' : undefined
+        grow
+        fill
+        role="group"
+        aria-label="Formula bar"
+        wrap="nowrap"
+        space="sm"
+      >
+        <TextField
+          className="se-editor__address"
+          label="Selected cell or range"
+          density="compact"
+          labelLayout="control-only"
+          tracksChanges={false}
+          size="sm"
+          value={addressDraft ?? address}
+          errorMessage={addressInvalid ? 'Enter a cell or range from A1 to XFD1048576.' : undefined}
+          messageDisplay="tooltip"
+          onFocus={() => setEditing(false)}
+          onChange={(value) => {
+            setAddressDraft(value);
+            const selection = addressSelection(value);
+            setAddressInvalid(!selection);
+            if (selection) props.onNavigate(selection);
+          }}
+          onBlur={normalizeAddress}
+          onKeyDown={(event) => {
+            if (isComposing(event)) return;
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              normalizeAddress();
+            } else if (event.key === 'Enter') {
+              event.preventDefault();
+              event.stopPropagation();
+              const selection = addressSelection(addressDraft ?? address);
+              if (!selection) {
+                setAddressInvalid(true);
+                return;
               }
-              messageDisplay="tooltip"
-              onFocus={() => setEditing(false)}
-              onChange={(value) => {
-                setAddressDraft(value);
-                const selection = addressSelection(value);
-                setAddressInvalid(!selection);
-                if (selection) props.onNavigate(selection);
-              }}
-              onBlur={normalizeAddress}
-              onKeyDown={(event) => {
-                if (isComposing(event)) return;
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  normalizeAddress();
-                } else if (event.key === 'Enter') {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const selection = addressSelection(addressDraft ?? address);
-                  if (!selection) {
-                    setAddressInvalid(true);
-                    return;
+              props.onNavigate(selection);
+              setAddressDraft(selectionAddress(selection));
+              setAddressInvalid(false);
+            }
+          }}
+        />
+        <Icon icon={FormulaGlyph} />
+        <Stack grow space="none">
+          <CodeEditor
+            ref={input}
+            className="se-editor__formula-input"
+            aria-label="Cell value or formula"
+            aria-describedby={`${hintId} ${resultId}`}
+            variant="surface"
+            multiline={false}
+            size="sm"
+            value={props.draftValue}
+            onChange={
+              props.isReadOnly
+                ? undefined
+                : (value) => {
+                    setEditing(true);
+                    props.onDraftChange(value);
                   }
-                  props.onNavigate(selection);
-                  setAddressDraft(selectionAddress(selection));
-                  setAddressInvalid(false);
-                }
-              }}
-            />
-          ),
-          editor: (
-            <CodeEditor
-              ref={input}
-              className="ui-formula-bar__editor se-editor__formula-input"
-              aria-label="Cell value or formula"
-              aria-describedby={`${hintId} ${resultId}`}
-              variant="surface"
-              multiline={false}
-              size="sm"
-              value={props.draftValue}
-              onChange={
-                props.isReadOnly
-                  ? undefined
-                  : (value) => {
-                      setEditing(true);
-                      props.onDraftChange(value);
-                    }
-              }
-              tokenize={tokenize}
-              completions={completeFormula}
-              isReadOnly={props.isReadOnly}
-              onFocus={() => setEditing(!props.isReadOnly)}
-              onKeyDown={onFormulaKeyDown}
-            />
-          ),
-        }}
-      />
+            }
+            tokenize={tokenize}
+            completions={completeFormula}
+            isReadOnly={props.isReadOnly}
+            onFocus={() => setEditing(!props.isReadOnly)}
+            onKeyDown={onFormulaKeyDown}
+          />
+        </Stack>
+      </Cluster>
       <output id={resultId} aria-label="Calculated cell value" title="Calculated value">
         {result}
       </output>
@@ -276,6 +282,6 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
           ? 'Cell content is read-only.'
           : 'Enter commits and moves down. Control/Command+Enter commits without moving. Escape cancels the edit.'}
       </VisuallyHidden>
-    </div>
+    </Cluster>
   );
 }

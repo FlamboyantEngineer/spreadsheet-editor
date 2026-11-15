@@ -268,6 +268,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
         <EditorFormulaBar
           ref={formulaBar}
           formulaFunctions={props.formulaFunctions}
+          includeBuiltinFormulaFunctions={props.includeBuiltinFormulaFunctions}
           selection={e.selection}
           draftValue={e.draftValue}
           result={formatWorksheetCell(
@@ -355,6 +356,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                   renderCellContent={props.renderCellContent}
                   formulaFunctions={props.formulaFunctions}
                   idFactory={props.idFactory}
+                  includeBuiltinFormulaFunctions={props.includeBuiltinFormulaFunctions}
                   initialViewport={e.initialViewport}
                   focusOnMount={hasMountedGrid.current}
                   onNativeDraft={e.setNativeDraft}
@@ -443,6 +445,9 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
         {props.features?.panels !== false && (chrome !== 'minimal' || e.panelOpen) && (
           <div
             className="se-editor__sidebar"
+            {...props.panelData}
+            id={props.panelId}
+            ref={props.panelRef}
             onFocusCapture={() => e.grid.current?.releaseKeyboard()}
           >
             <DockPanel

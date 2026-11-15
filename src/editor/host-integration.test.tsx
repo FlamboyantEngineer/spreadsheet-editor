@@ -5,11 +5,186 @@ import { describe, expect, it, vi } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
 import { workbookCalculationKey } from '../calculation/publication.js';
 import { createWorkbook, copyWorkbook } from '../model/workbook.js';
+import { previewSuggestions } from '../model/review.js';
 import type { SpreadsheetEditorHandle, SpreadsheetEditorProps } from './contracts.js';
 import { formulaFunctionCatalog } from './public-host.js';
 import { useSpreadsheetEditor } from './use-editor.js';
+import { editorMenus } from './editor-menus.js';
 
 describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
+  it('restores an uncommitted host draft and controls host panels through the stable handle', () => {
+    const editorRef = createRef<SpreadsheetEditorHandle>(),
+      onChange = vi.fn(),
+      onPanelChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['accepted']]),
+        editorRef,
+        onChange,
+        onPanelChange,
+      }),
+    );
+    act(() =>
+      editorRef.current!.restoreDraft({ sheetId: 'sheet-1', x: 0, y: 0, text: 'retained draft' }),
+    );
+    expect(result.current.draftValue).toBe('retained draft');
+    expect(editorRef.current!.getSnapshot().worksheets[0].data[0][0]).toBe('accepted');
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => editorRef.current!.setPanel('workflow'));
+    expect(onPanelChange).toHaveBeenLastCalledWith({ id: 'workflow', expanded: true });
+    act(() => editorRef.current!.setPanel(null));
+    expect(onPanelChange).toHaveBeenLastCalledWith({ id: 'workflow', expanded: false });
+    act(() => editorRef.current!.cancelDraft());
+    expect(editorRef.current!.getState().dirty).toBe(false);
+  });
+
+  it('lets the host own creation and imports without exposing replacement actions', () => {
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['accepted']]),
+        features: { newWorkbook: false, import: false },
+      }),
+    );
+    const fileIds = editorMenus(result.current).file.map((item) => item.id);
+    expect(fileIds).not.toContain('new');
+    expect(fileIds).not.toContain('import');
+    expect(fileIds).toContain('export');
+    act(() =>
+      expect(result.current.replaceWorkbook(createWorkbook(), 'New', 'new-workbook')).toBe(false),
+    );
+    expect(result.current.workbook.worksheets[0].data[0][0]).toBe('accepted');
+  });
+  it('rejects unsupported host formats before publishing a partial change', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1']]),
+        onChange,
+        formatting: { kinds: ['general', 'number'], decimalPlaces: false },
+      }),
+    );
+    act(() =>
+      expect(() => result.current.format({}, { kind: 'fraction' })).toThrow(
+        'The host does not support this number format.',
+      ),
+    );
+    act(() =>
+      expect(() => result.current.format({}, { kind: 'number', decimals: 4 })).toThrow(
+        'The host does not support decimal-place overrides.',
+      ),
+    );
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => result.current.format({}, { kind: 'number' }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+  it('reports formula and native drafts without publishing them as accepted data', () => {
+    const onDraftChange = vi.fn(),
+      onChange = vi.fn();
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['accepted']]),
+        onDraftChange,
+        onChange,
+      }),
+    );
+    act(() => result.current.setDraftValue('formula draft'));
+    expect(onDraftChange).toHaveBeenLastCalledWith({
+      sheetId: 'sheet-1',
+      x: 0,
+      y: 0,
+      text: 'formula draft',
+    });
+    act(() => result.current.cancelFormula());
+    expect(onDraftChange).toHaveBeenLastCalledWith(null);
+    act(() => result.current.setNativeDraft({ x: 1, y: 2, text: 'native draft' }));
+    expect(onDraftChange).toHaveBeenLastCalledWith({
+      sheetId: 'sheet-1',
+      x: 1,
+      y: 2,
+      text: 'native draft',
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(result.current.workbook.worksheets[0].data[0][0]).toBe('accepted');
+  });
+
+  it('publishes separately keyed authoritative review results without calculating locally', () => {
+    const workbook = createWorkbook([['2', '=A1*3']]);
+    const accepted = {
+      inputKey: workbookCalculationKey(workbook),
+      revision: 1,
+      status: 'ready' as const,
+      result: calculateWorkbook(workbook),
+    };
+    const { result, rerender } = renderHook(
+      (props: SpreadsheetEditorProps) => useSpreadsheetEditor(props),
+      {
+        initialProps: {
+          defaultValue: workbook,
+          defaultMode: 'review',
+          currentUser: { id: 'reviewer', name: 'Reviewer' },
+          calculation: { mode: 'external', snapshot: accepted },
+        } as SpreadsheetEditorProps,
+      },
+    );
+    act(() => result.current.proposeCells([['7']], 0, 0));
+    expect(result.current.visibleCalculation.result).toBeNull();
+    const projected = previewSuggestions(result.current.workbook, 'reviewer');
+    const publication = {
+      inputKey: workbookCalculationKey(projected),
+      revision: 2,
+      status: 'ready' as const,
+      result: {
+        schemaVersion: 1 as const,
+        worksheets: [
+          {
+            id: 'sheet-1',
+            values: [
+              [
+                { kind: 'number' as const, numerator: '7', denominator: '1', approximate: false },
+                { kind: 'number' as const, numerator: '97', denominator: '1', approximate: false },
+              ],
+            ],
+          },
+        ],
+      },
+    };
+    rerender({
+      defaultValue: workbook,
+      defaultMode: 'review',
+      currentUser: { id: 'reviewer', name: 'Reviewer' },
+      calculation: { mode: 'external', snapshot: accepted },
+      reviewCalculation: publication,
+    });
+    expect(result.current.visibleCalculation.result?.worksheets[0].values[0][1]).toMatchObject({
+      numerator: '97',
+    });
+    expect(result.current.workbook.worksheets[0].data[0][0]).toBe('2');
+  });
+  it('lets a commenter post without authoring content or suggesting edits', () => {
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['accepted']]),
+        permissions: { edit: false, suggest: false, comment: true },
+      }),
+    );
+    expect(result.current.mode).toBe('review');
+    expect(result.current.canEdit).toBe(false);
+    expect(result.current.canSuggest).toBe(false);
+    act(() => result.current.postComment('Comment only'));
+    expect(result.current.workbook.comments?.[0].posts[0].text).toBe('Comment only');
+    expect(result.current.workbook.worksheets[0].data[0][0]).toBe('accepted');
+  });
+
+  it('uses only the authoritative host catalog when builtins are disabled', () => {
+    expect(
+      formulaFunctionCatalog(
+        [{ name: 'SUM', signature: 'SUM(…)', description: 'Host sum' }],
+        false,
+      ),
+    ).toEqual([{ name: 'SUM', signature: 'SUM(…)', description: 'Host sum', aliases: [] }]);
+    expect(formulaFunctionCatalog([], false)).toEqual([]);
+    expect(formulaFunctionCatalog().some((entry) => entry.name === 'SUM')).toBe(true);
+  });
   it('uses the host factory for worksheet identities and publishes that same identity', () => {
     const onChange = vi.fn();
     let sequence = 0;

@@ -75,8 +75,11 @@ for (const theme of ['light', 'dark']) {
       (await editor.boundingBox())!.width - 2,
       0,
     );
-    await expect(editor.locator('.ui-formula-bar')).toHaveCSS('border-top-width', '0px');
-    await expect(editor.locator('.ui-formula-bar')).toHaveCSS('border-left-width', '0px');
+    await expect(editor.locator('.se-editor__formula-widget')).toHaveCSS('border-top-width', '0px');
+    await expect(editor.locator('.se-editor__formula-widget')).toHaveCSS(
+      'border-left-width',
+      '0px',
+    );
     await editor.getByRole('menuitem', { name: 'File', exact: true }).click();
     const popup = page.locator('.ui-menu-popover').filter({
       has: page.getByRole('menu', { name: 'File', exact: true }),

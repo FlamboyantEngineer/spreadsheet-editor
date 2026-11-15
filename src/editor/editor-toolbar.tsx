@@ -7,7 +7,7 @@ import {
   ToolbarRow,
   ToolbarRowGroup,
   ToolbarRowSeparator,
-} from '@flamboyantengineer/ui-components/layout';
+} from '@flamboyantengineer/ui-components/toolbar-row';
 import type { MenuEntry } from '@flamboyantengineer/ui-components/menu';
 import { Menubar, MenubarMenu } from '@flamboyantengineer/ui-components/menubar';
 import { AvatarGroup } from '@flamboyantengineer/ui-components/avatar-group';
@@ -351,11 +351,17 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
             value={e.cellFormat.kind}
             disabled={disabled}
             icon={numberFormatGlyphs[e.cellFormat.kind]}
-            options={Object.entries(numberFormatGlyphs).map(([id, icon]) => ({
-              id,
-              icon,
-              label: id[0].toUpperCase() + id.slice(1),
-            }))}
+            options={Object.entries(numberFormatGlyphs)
+              .filter(
+                ([id]) =>
+                  !e.props.formatting?.kinds ||
+                  e.props.formatting.kinds.includes(id as typeof e.cellFormat.kind),
+              )
+              .map(([id, icon]) => ({
+                id,
+                icon,
+                label: id[0].toUpperCase() + id.slice(1),
+              }))}
             onChange={(value) =>
               e.attempt(() =>
                 e.format(
@@ -380,42 +386,46 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
               onChange={(unit) => e.attempt(() => e.format({}, { ...e.cellFormat, unit }))}
             />
           )}
-          <Button
-            size="sm"
-            icon={editorGlyphs.increaseDecimals}
-            label="Increase decimal places"
-            tooltip="Increase decimal places"
-            isDisabled={disabled}
-            onPress={() =>
-              e.attempt(() =>
-                e.format(
-                  {},
-                  {
-                    kind: e.cellFormat.kind === 'general' ? 'number' : e.cellFormat.kind,
-                    decimals: Math.min(100, (e.cellFormat.decimals ?? 2) + 1),
-                  },
-                ),
-              )
-            }
-          />
-          <Button
-            size="sm"
-            icon={editorGlyphs.decreaseDecimals}
-            label="Decrease decimal places"
-            tooltip="Decrease decimal places"
-            isDisabled={disabled}
-            onPress={() =>
-              e.attempt(() =>
-                e.format(
-                  {},
-                  {
-                    kind: e.cellFormat.kind === 'general' ? 'number' : e.cellFormat.kind,
-                    decimals: Math.max(0, (e.cellFormat.decimals ?? 2) - 1),
-                  },
-                ),
-              )
-            }
-          />
+          {e.props.formatting?.decimalPlaces !== false && (
+            <>
+              <Button
+                size="sm"
+                icon={editorGlyphs.increaseDecimals}
+                label="Increase decimal places"
+                tooltip="Increase decimal places"
+                isDisabled={disabled}
+                onPress={() =>
+                  e.attempt(() =>
+                    e.format(
+                      {},
+                      {
+                        kind: e.cellFormat.kind === 'general' ? 'number' : e.cellFormat.kind,
+                        decimals: Math.min(100, (e.cellFormat.decimals ?? 2) + 1),
+                      },
+                    ),
+                  )
+                }
+              />
+              <Button
+                size="sm"
+                icon={editorGlyphs.decreaseDecimals}
+                label="Decrease decimal places"
+                tooltip="Decrease decimal places"
+                isDisabled={disabled}
+                onPress={() =>
+                  e.attempt(() =>
+                    e.format(
+                      {},
+                      {
+                        kind: e.cellFormat.kind === 'general' ? 'number' : e.cellFormat.kind,
+                        decimals: Math.max(0, (e.cellFormat.decimals ?? 2) - 1),
+                      },
+                    ),
+                  )
+                }
+              />
+            </>
+          )}
         </ToolbarRowGroup>
         <ToolbarRowSeparator />
         <ToolbarRowGroup className="se-editor__tool-group" aria-label="Cell layout">
