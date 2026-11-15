@@ -179,6 +179,36 @@ describe('SE-SESSION-2: causal save coverage', () => {
     expect(session.status()).toMatchObject({ phase: 'saved', dirty: false, revision: 'r4' });
   });
 
+  it('SE-SESSION-2: retains a failed-save state through edits until an explicit retry', async () => {
+    vi.useFakeTimers();
+    const memory = host();
+    const save = vi.spyOn(memory.workbooks, 'save');
+    const session = createWorkbookSession({
+      workbooks: memory.workbooks,
+      workbookId: 'book',
+      autosaveDelay: 10,
+      lifecycle: memory.lifecycle,
+    });
+    await session.ready;
+    change(session, 'first');
+    memory.memory.failNext('save', { kind: 'unavailable', message: 'Offline' });
+    await expect(session.save()).rejects.toThrow('Offline');
+    change(session, 'later');
+    expect(session.status()).toMatchObject({
+      phase: 'error',
+      dirty: true,
+      error: { message: 'Offline' },
+    });
+    memory.memory.emitLifecycle('hidden');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(session.status().phase).toBe('error');
+    await session.save();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(session.status()).toMatchObject({ phase: 'saved', dirty: false, error: null });
+    session.close();
+  });
+
   it('flushes pending edits and shows other saves only while clean', async () => {
     const memory = host();
     const session = createWorkbookSession({
