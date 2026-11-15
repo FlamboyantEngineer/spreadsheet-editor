@@ -12,3 +12,7 @@ export * from './presence.js';
 export * from './extent.js';
 export * from './operations.js';
 export * from './cell-format.js';
+
+export * from './apply-operations.js';
+
+export * from './transaction-receipts.js';

@@ -18,3 +18,7 @@ export type { SpreadsheetCollaborator, SpreadsheetPresence } from './model/prese
 export * from './calculation/publication.js';
 export * from './model/operations.js';
 export * from './model/extent.js';
+
+export * from './document/linked.js';
+
+export * from './model/apply-operations.js';
