@@ -55,11 +55,8 @@ import {
   type JSpreadsheetAnchorRect,
   type JSpreadsheetCellCoords,
 } from './jspreadsheet-host.js';
-import {
-  collaboratorColorIndex,
-  selectionLock,
-  type SpreadsheetCollaborator,
-} from '../model/presence.js';
+import { selectionLock, type SpreadsheetCollaborator } from '../model/presence.js';
+import { collaboratorColorIndex } from './collaborator-color.js';
 import {
   renderCalculatedCells,
   renderReviewMarkers,

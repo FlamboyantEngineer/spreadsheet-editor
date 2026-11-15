@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { CellPresentationSnapshot, RenderCellContent } from '../editor/public-host.js';
 import type { DisplayOptions } from '../calculation/format.js';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
-import { collaboratorColorIndex } from '../model/presence.js';
+import { collaboratorColorIndex } from './collaborator-color.js';
 import type { CellSelection } from '../model/editing.js';
 import type { CellInput, Worksheet } from '../model/workbook.js';
 import type { CellFormat, SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';

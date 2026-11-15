@@ -130,10 +130,10 @@ Verification: `src/host/memory-host.test.ts`
 
 Given a `presence` adapter and a `workbookId`, the editor shall subscribe to the other people in that workbook and publish the reader's place: `at` is the active worksheet and the selected range, and `editLock` is the same place while the reader is writing in a cell, otherwise null. It shall publish again when the place, the lock or the status changes, and withdraw (`publish(workbookId, null)`) when it unmounts or the adapter or workbook id changes. The reader is `away` while the page is hidden and `active` otherwise. Without either prop the editor has no peers and publishes nothing.
 
-Peers are placed on the workbook before they are shown: the reader and peers without an id or a name are left out, and a place on a worksheet the workbook lacks or in a malformed range is dropped rather than trusted. The toolbar lists the peers with their status, following one moves to their selection, their selections and locks are drawn on the grid in a colour slot from their id, and a lock refuses the reader's writes to those cells (advisory; the host enforces its own policy). A new `workbookId` also starts a new editor session, as a new `sessionKey` does.
+Peers are placed on the workbook before they are shown: the reader and peers without an id or a name are left out, and a place on a worksheet the workbook lacks or in a malformed range is dropped rather than trusted. The toolbar lists the peers with their status, following one moves to their selection, their selections and locks are drawn on the grid in a colour slot from their id (the base library's `getColorIndex` over eight slots, so a person has the slot its avatars and the other editors give the same id), and a lock refuses the reader's writes to those cells (advisory; the host enforces its own policy). A new `workbookId` also starts a new editor session, as a new `sessionKey` does.
 
-Implementation: `src/editor/use-workbook-presence.ts`, `src/editor/use-editor.ts`, `src/model/presence.ts`, `src/editor/editor-toolbar.tsx`, `src/engine/workbook-grid.tsx`
-Verification: `src/editor/host-integration.test.tsx`, `src/model/presence.test.ts`, `src/editor/use-editor.test.ts`, `e2e/interaction-parity.spec.ts` (collaboration)
+Implementation: `src/editor/use-workbook-presence.ts`, `src/editor/use-editor.ts`, `src/model/presence.ts`, `src/editor/editor-toolbar.tsx`, `src/engine/workbook-grid.tsx`, `src/engine/collaborator-color.ts`
+Verification: `src/editor/host-integration.test.tsx`, `src/model/presence.test.ts`, `src/engine/collaborator-color.test.ts`, `src/editor/use-editor.test.ts`, `e2e/interaction-parity.spec.ts` (collaboration)
 
 ## SE-SESSION - Workbook session
 
