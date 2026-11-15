@@ -1,5 +1,5 @@
 /**
- * SE-CR-2.2a: how far each cell's text may spill to its right, as in Excel. Text paints over the
+ * How far each cell's text may spill to its right, as in Excel. Text paints over the
  * empty cells after it and stops at the next non-empty cell or at the worksheet's last column.
  */
 export interface SpreadsheetSpillCell {

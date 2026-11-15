@@ -38,7 +38,16 @@ const visualProperties = new Set([
   'border-left',
   'text-indent',
 ]);
-/** Update the adopted engine without replacing its root, selection owner or event handlers. */
+/** The zoom scale each cell's inline text metrics were last written for. */
+const presentedScale = new WeakMap<HTMLElement, number>();
+const engineScale = new WeakMap<JSpreadsheetWorksheetInstance, number>();
+/** Cells being edited during a zoom change; the next pass presents them. */
+const deferredCells = new WeakMap<JSpreadsheetWorksheetInstance, Set<HTMLElement>>();
+
+/** Update the adopted engine without replacing its root, selection owner or event handlers.
+ * Per-cell work is limited to cells that need it: every cell when zoom changes, otherwise
+ * cells whose authored style changed and cells the engine has created since the last pass.
+ */
 export function syncWorksheetPresentation(
   engine: JSpreadsheetWorksheetInstance,
   previous: Worksheet | null,
@@ -52,6 +61,8 @@ export function syncWorksheetPresentation(
   restoreSharedGridBorders(engine);
   options.editable = !readOnly;
   const scale = gridZoomScale(zoom);
+  const zoomChanged = engineScale.get(engine) !== scale;
+  engineScale.set(engine, scale);
   const [columns, rows] = gridWorksheetExtent(next, logicalExtent);
   for (let x = 0; x < columns; x++) {
     const width = (next.columns?.[x]?.width ?? DEFAULT_COLUMN_WIDTH) * scale;
@@ -66,6 +77,8 @@ export function syncWorksheetPresentation(
   }
   options.defaultColWidth = DEFAULT_COLUMN_WIDTH * scale;
   options.defaultRowHeight = DEFAULT_ROW_HEIGHT * scale;
+  const stale = (cell: HTMLElement) => presentedScale.get(cell) !== scale;
+  const pending = new Set<HTMLElement>();
   const addresses = new Set([
     ...Object.keys(previous?.style ?? {}),
     ...Object.keys(next.style ?? {}),
@@ -74,17 +87,26 @@ export function syncWorksheetPresentation(
     const coords = parseSpreadsheetAddress(address);
     const cell = coords && engine.getCellFromCoords?.(coords.x, coords.y);
     if (!cell || cell.classList.contains('editor')) continue;
+    if (!zoomChanged && !stale(cell) && previous?.style?.[address] === next.style?.[address])
+      continue;
     const old = parseCellStyle(previous?.style?.[address]);
     const style = parseCellStyle(next.style?.[address]);
     for (const property of new Set([...Object.keys(old), ...Object.keys(style)])) {
       if (visualProperties.has(property)) cell.style.setProperty(property, style[property] ?? '');
     }
+    pending.add(cell);
   }
+  // Unscaled cells carry no presentation metrics, so only cells with authored styles
+  // need the pass below; scaled cells need it once each, and all of them on a zoom change.
+  if (zoomChanged || scale !== 1)
+    for (const cell of engine.table?.querySelectorAll<HTMLElement>('thead td, tbody td') ?? [])
+      if (zoomChanged || stale(cell)) pending.add(cell);
+  for (const cell of deferredCells.get(engine) ?? []) if (cell.isConnected) pending.add(cell);
+  const editing = new Set([...pending].filter((cell) => cell.classList.contains('editor')));
+  deferredCells.set(engine, editing);
+  const cells = [...pending].filter((cell) => !editing.has(cell));
   // Resolve font units through CSS after restoring authored styles. Presentation-only
   // inline values are reset first so successive zooms never compound their scale.
-  const cells = Array.from(
-    engine.table?.querySelectorAll<HTMLElement>('thead td, tbody td') ?? [],
-  ).filter((cell) => !cell.classList.contains('editor'));
   for (const cell of cells) {
     const x = Number(cell.dataset.x),
       y = Number(cell.dataset.y);
@@ -111,16 +133,18 @@ export function syncWorksheetPresentation(
         current.paddingLeft,
       ].map((size) => Number.parseFloat(size) || 0),
       indent: Number.parseFloat(current.textIndent) || 0,
-      borders: (['Top', 'Right', 'Bottom', 'Left'] as const).filter(
+      wideBorders: (['Top', 'Right', 'Bottom', 'Left'] as const).filter(
         (side) =>
           current[`border${side}Style`] !== 'none' &&
-          Number.parseFloat(current[`border${side}Width`]) > 0,
+          ![0, 1].includes(Number.parseFloat(current[`border${side}Width`])),
       ),
     };
   });
-  for (const { cell, fontSize, lineHeight, padding, indent, borders } of computed) {
+  for (const { cell, fontSize, lineHeight, padding, indent, wideBorders } of computed) {
     // Authored border colors/styles remain intact while stroke widths stay one CSS pixel.
-    for (const side of borders) cell.style[`border${side}Width`] = '1px';
+    for (const side of wideBorders) cell.style[`border${side}Width`] = '1px';
+    presentedScale.set(cell, scale);
+    if (scale === 1) continue;
     if (fontSize) cell.style.fontSize = `${fontSize * scale}px`;
     if (lineHeight) cell.style.lineHeight = `${lineHeight * scale}px`;
     cell.style.padding = padding.map((size) => `${size * scale}px`).join(' ');
@@ -129,11 +153,14 @@ export function syncWorksheetPresentation(
   const table = engine.table;
   const cornerColumn = table?.querySelector<HTMLElement>('colgroup > col:first-child');
   if (cornerColumn) {
-    cornerColumn.style.width = `${DEFAULT_ROW_HEADER_WIDTH * scale}px`;
-    cornerColumn.setAttribute('width', String(DEFAULT_ROW_HEADER_WIDTH * scale));
+    const width = DEFAULT_ROW_HEADER_WIDTH * scale;
+    if (cornerColumn.style.width !== `${width}px`) cornerColumn.style.width = `${width}px`;
+    if (cornerColumn.getAttribute('width') !== String(width))
+      cornerColumn.setAttribute('width', String(width));
   }
   const header = table?.tHead?.rows[0];
-  if (header) header.style.height = `${DEFAULT_ROW_HEIGHT * scale}px`;
+  const headerHeight = `${DEFAULT_ROW_HEIGHT * scale}px`;
+  if (header && header.style.height !== headerHeight) header.style.height = headerHeight;
   const storedStyle = options.style;
   if (storedStyle) {
     for (const address of Object.keys(storedStyle)) delete storedStyle[address];

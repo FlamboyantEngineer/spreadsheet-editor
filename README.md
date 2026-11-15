@@ -171,6 +171,8 @@ const result = calculateWorkbook(prepared.workbook); // run through your authori
 const download = await exportXlsx(prepared.workbook, result, { signal });
 ```
 
+`exceljs`, `fflate` and `parse5` are optional peer dependencies used only by `/excel`: a host that imports that entry installs them; a browser-only host does not.
+
 Import discards Excel formula caches and preserves authored decimal XML, formulas, common formatting, merges and geometry. Review the loss report before replacing a workbook. Both helpers run in bounded child processes (640 MiB heap, 768 MiB RSS, two minutes, 100 MiB output); XLSX input is limited to 20 MiB, 200 worksheets and 250,000 non-empty cells. Two exports may run concurrently per process. Export uses the supplied existing results and captured external operands, performs no calculation, and disables automatic Excel recalculation. Exact values Excel cannot represent natively remain text.
 
 `onImportXlsx` connects your file picker, prepared preview and confirmation; return the confirmed workbook or `null`. `onExportXlsx` receives a captured workbook and matching current result. Production hosts should export authorized stored versions rather than trusting browser-submitted results. The labs demonstrate these adapters with a read-only server-prepared preview. See [EXCEL.md](specs/EXCEL.md).
@@ -199,7 +201,6 @@ The server-safe `createDocumentInsertion(workbook, result, options)` helper expo
 | `…/model`                                | Versioned workbook, addressing and extracted formula parsers         |
 | `…/document`                             | Both document insertion payloads and table projection                |
 | `…/excel`                                | Optional Node-only bounded XLSX import/export and conversion reports |
-| `…/engine`                               | Advanced browser-only Jspreadsheet host and engine helpers           |
 
 ```sh
 npm run check
