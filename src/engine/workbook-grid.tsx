@@ -139,17 +139,17 @@ export function WorkbookGrid(props: WorkbookGridProps) {
   const applied = useRef<Worksheet | null>(null);
   const appliedExtent = useRef<[number, number] | null>(null);
   const appliedZoom = useRef(100);
-  const native = useNativeFormula(
-    (value) => {
+  const native = useNativeFormula({
+    onDraft: (value) => {
       latest.current.onEditDraft?.(value);
       latest.current.onNativeDraft?.(
         value === null || !nativeCoords.current ? null : { ...nativeCoords.current, text: value },
       );
     },
-    surface,
-    props.formulaFunctions,
-    props.includeBuiltinFormulaFunctions,
-  );
+    root: surface,
+    functions: props.formulaFunctions,
+    includeBuiltins: props.includeBuiltinFormulaFunctions,
+  });
   const [portals, setPortals] = useState<CellPortal[]>([]);
   const [frames, setFrames] = useState<
     {

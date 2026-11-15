@@ -71,6 +71,27 @@ export function gridWorksheetExtent(
 /** At most this many cells are updated in place; a larger change rebuilds the rows. */
 const PATCH_LIMIT = 2_000;
 
+type CellPatch = { x: number; y: number; value: CellInput };
+
+/** Adds one row's changed values, or returns false when the row has another width. */
+function rowChanges(
+  engine: JSpreadsheetWorksheetInstance,
+  { data, next, columns }: { data: CellInput[][]; next: Worksheet; columns: number },
+  { y, changes }: { y: number; changes: CellPatch[] },
+): boolean {
+  const current = data[y],
+    source = next.data[y];
+  if (current?.length !== columns || engine.records?.[y]?.length !== columns) return false;
+  for (let x = 0; x < columns; x++) {
+    // The engine holds an empty string where the workbook has no value.
+    const value = source?.[x] ?? '';
+    if (current[x] === value) continue;
+    changes.push({ x, y, value });
+    if (changes.length > PATCH_LIMIT) return false;
+  }
+  return true;
+}
+
 /** Update the engine's values in place when only cell values changed and the grid keeps
  * its extent: rebuilding every row makes the browser restyle and lay out every cell.
  * Returns false, changing nothing, when the rows must be rebuilt with `syncWorksheetData`.
@@ -82,23 +103,14 @@ export function patchWorksheetData(
 ): boolean {
   const data = engine.options?.data as CellInput[][] | undefined;
   const [columns, rows] = gridWorksheetExtent(next, logicalExtent);
-  if (!data || data.length !== rows || engine.records?.length !== rows) return false;
-  const changes: { x: number; y: number; value: CellInput }[] = [];
-  for (let y = 0; y < rows; y++) {
-    const current = data[y],
-      source = next.data[y];
-    if (current?.length !== columns || engine.records[y]?.length !== columns) return false;
-    for (let x = 0; x < columns; x++) {
-      // The engine holds an empty string where the workbook has no value.
-      const value = source?.[x] ?? '';
-      if (current[x] === value) continue;
-      changes.push({ x, y, value });
-      if (changes.length > PATCH_LIMIT) return false;
-    }
-  }
+  const records = engine.records;
+  if (!data || data.length !== rows || records?.length !== rows) return false;
+  const changes: CellPatch[] = [];
+  for (let y = 0; y < rows; y++)
+    if (!rowChanges(engine, { data, next, columns }, { y, changes })) return false;
   for (const { x, y, value } of changes) {
     data[y][x] = value;
-    const cell = engine.records[y][x]?.element;
+    const cell = records[y][x]?.element;
     if (cell instanceof HTMLElement && !cell.classList.contains('editor'))
       cell.textContent = String(value);
   }
