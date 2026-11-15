@@ -34,13 +34,13 @@ import {
   gridBodyBounds,
   gridViewport,
   gridZoomScale,
-  measureGridSelection,
   placeGridCorner,
   restoreGridScroll,
   scrollGridCellIntoView,
   syncFrozenColumnOffsets,
   syncFrozenColumns,
 } from './grid-geometry.js';
+import { measureGridSelection } from './grid-selection.js';
 import { deliveredHeader, useHeaderResize } from './header-resize.js';
 import {
   focusJSpreadsheetWorksheet,
@@ -221,11 +221,13 @@ export function WorkbookGrid(props: WorkbookGridProps) {
       body = gridBodyBounds(sheet, viewport);
     const offset = { left: body.left - body.origin.left, top: body.top - body.origin.top };
     const selectionStyles = (range: CellSelection) =>
-      measureGridSelection(sheet, current.worksheet, range, viewport).map((style) => ({
-        ...style,
-        left: Number(style.left ?? 0) - offset.left,
-        top: Number(style.top ?? 0) - offset.top,
-      }));
+      measureGridSelection(sheet, { sheet: current.worksheet, selection: range }, viewport).map(
+        (style) => ({
+          ...style,
+          left: Number(style.left ?? 0) - offset.left,
+          top: Number(style.top ?? 0) - offset.top,
+        }),
+      );
     setClip({
       position: 'absolute',
       pointerEvents: 'none',
@@ -399,7 +401,7 @@ export function WorkbookGrid(props: WorkbookGridProps) {
       },
       restoreViewport(position) {
         const sheet = worksheet();
-        if (sheet) restoreGridScroll(gridViewport(sheet), position, 1, 1);
+        if (sheet) restoreGridScroll(gridViewport(sheet), position, { from: 1, to: 1 });
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one controller for the grid's life; its methods read refs only
@@ -615,7 +617,8 @@ export function WorkbookGrid(props: WorkbookGridProps) {
       appliedExtent.current = nextExtent;
       appliedZoom.current = props.zoom ?? 100;
       paint(handle.current, props);
-      if (scale !== previousScale) restoreGridScroll(viewport, scroll, previousScale, scale);
+      if (scale !== previousScale)
+        restoreGridScroll(viewport, scroll, { from: previousScale, to: scale });
       refreshGridRowWindow(sheet);
       if (!zoomOnly && !draggingSelection.current) selectGridRange(props.selection, false);
       scheduleReferences();

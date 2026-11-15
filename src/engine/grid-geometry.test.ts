@@ -7,12 +7,12 @@ import {
   expandMergedSelection,
   gridBodyBounds,
   gridZoomScale,
-  measureGridSelection,
   restoreGridScroll,
   scrollGridCellIntoView,
   syncFrozenColumnOffsets,
   syncFrozenColumns,
 } from './grid-geometry.js';
+import { measureGridSelection } from './grid-selection.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
 
@@ -119,7 +119,7 @@ describe('SE-CHROME-5.1: grid-only zoom keeps authored geometry and pixel stroke
 
   it('preserves the logical scroll anchor using only the inner viewport', () => {
     const { viewport } = grid();
-    restoreGridScroll(viewport, { left: 150.5, top: 240.25 }, 1, 1.5);
+    restoreGridScroll(viewport, { left: 150.5, top: 240.25 }, { from: 1, to: 1.5 });
     expect(viewport.scrollLeft).toBe(225.75);
     expect(viewport.scrollTop).toBe(360.375);
     expect(gridZoomScale(undefined)).toBe(1);
@@ -186,14 +186,16 @@ describe('SE-UI-1.1: local selection geometry', () => {
       right: 410,
       bottom: 420,
     });
-    expect(measureGridSelection(engine, sheet, { x1: 0, y1: 0, x2: 0, y2: 0 }, viewport)).toEqual([
+    expect(
+      measureGridSelection(engine, { sheet, selection: { x1: 0, y1: 0, x2: 0, y2: 0 } }, viewport),
+    ).toEqual([
       expect.objectContaining({ left: 55, top: 24, width: 95, height: 24, borderLeftWidth: 0 }),
     ]);
   });
   it('measures only rectangle corners, including with unrelated merges elsewhere', () => {
     const { engine, sheet, viewport, records } = grid();
     sheet.mergeCells = { Z99: [2, 2] };
-    measureGridSelection(engine, sheet, { x1: 0, y1: 0, x2: 2, y2: 1 }, viewport);
+    measureGridSelection(engine, { sheet, selection: { x1: 0, y1: 0, x2: 2, y2: 1 } }, viewport);
     const reads = records
       .flat()
       .reduce(
@@ -204,7 +206,9 @@ describe('SE-UI-1.1: local selection geometry', () => {
   });
   it('measures all four edges of a cell or reversed range in CSS pixels', () => {
     const { engine, sheet, viewport } = grid();
-    expect(measureGridSelection(engine, sheet, { x1: 0, y1: 0, x2: 0, y2: 0 }, viewport)).toEqual([
+    expect(
+      measureGridSelection(engine, { sheet, selection: { x1: 0, y1: 0, x2: 0, y2: 0 } }, viewport),
+    ).toEqual([
       expect.objectContaining({
         left: 50,
         top: 24,
@@ -215,9 +219,9 @@ describe('SE-UI-1.1: local selection geometry', () => {
         boxSizing: 'border-box',
       }),
     ]);
-    expect(measureGridSelection(engine, sheet, { x1: 2, y1: 1, x2: 0, y2: 0 }, viewport)).toEqual([
-      expect.objectContaining({ left: 50, top: 24, width: 300, height: 48 }),
-    ]);
+    expect(
+      measureGridSelection(engine, { sheet, selection: { x1: 2, y1: 1, x2: 0, y2: 0 } }, viewport),
+    ).toEqual([expect.objectContaining({ left: 50, top: 24, width: 300, height: 48 })]);
   });
 
   it('expands hidden merged endpoints to the full merged rectangle', () => {
@@ -233,9 +237,9 @@ describe('SE-UI-1.1: local selection geometry', () => {
       x2: 1,
       y2: 1,
     });
-    expect(measureGridSelection(engine, sheet, { x1: 1, y1: 1, x2: 1, y2: 1 }, viewport)).toEqual([
-      expect.objectContaining({ left: 50, top: 24, width: 200, height: 48 }),
-    ]);
+    expect(
+      measureGridSelection(engine, { sheet, selection: { x1: 1, y1: 1, x2: 1, y2: 1 } }, viewport),
+    ).toEqual([expect.objectContaining({ left: 50, top: 24, width: 200, height: 48 })]);
   });
 
   it('splits across frozen columns and hides clipped or internal stroke sides', () => {
@@ -243,13 +247,21 @@ describe('SE-UI-1.1: local selection geometry', () => {
     sheet.freezeColumns = 1;
     vi.mocked(records[0][1].element.getBoundingClientRect).mockReturnValue(rect(110, 44, 100, 24));
     vi.mocked(records[0][2].element.getBoundingClientRect).mockReturnValue(rect(210, 44, 100, 24));
-    const pieces = measureGridSelection(engine, sheet, { x1: 0, y1: 0, x2: 2, y2: 0 }, viewport);
+    const pieces = measureGridSelection(
+      engine,
+      { sheet, selection: { x1: 0, y1: 0, x2: 2, y2: 0 } },
+      viewport,
+    );
     expect(pieces).toEqual([
       expect.objectContaining({ left: 50, width: 100, borderRightWidth: 0 }),
       expect.objectContaining({ left: 150, width: 150, borderLeftWidth: 0 }),
     ]);
     vi.mocked(records[0][2].element.getBoundingClientRect).mockReturnValue(rect(350, 10, 100, 50));
-    const [clipped] = measureGridSelection(engine, sheet, { x1: 2, y1: 0, x2: 2, y2: 0 }, viewport);
+    const [clipped] = measureGridSelection(
+      engine,
+      { sheet, selection: { x1: 2, y1: 0, x2: 2, y2: 0 } },
+      viewport,
+    );
     expect(clipped).toEqual(
       expect.objectContaining({
         left: 340,
