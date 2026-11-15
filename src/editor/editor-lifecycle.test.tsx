@@ -7,9 +7,31 @@ import { useSpreadsheetEditor } from './use-editor.js';
 import type { SpreadsheetEditorHandle } from './contracts.js';
 import { createMemoryHost } from '../host/memory-host.js';
 import { createWorkbookSession } from '../host/workbook-session.js';
-import type { HostResult, SavedState, WorkbookStoreAdapter } from '../host/adapters.js';
+import type {
+  HostResult,
+  SavedState,
+  VersionStoreAdapter,
+  WorkbookStoreAdapter,
+  WorkbookVersion,
+} from '../host/adapters.js';
 
-const entry = { id: 'saved', timestamp: '2026-01-01T00:00:00Z', author: { id: 'a', name: 'Alex' } };
+const version: WorkbookVersion = {
+  revision: 'r0',
+  sequence: 0,
+  savedAt: '2026-01-01T00:00:00Z',
+  author: 'alex',
+  label: 'Saved',
+};
+/** A version store holding `version`, whose content is a one-cell workbook. */
+function versionStore() {
+  return {
+    list: vi.fn<VersionStoreAdapter['list']>(async () => ({ ok: true, value: [version] })),
+    load: vi.fn<VersionStoreAdapter['load']>(async () => ({
+      ok: true,
+      value: createWorkbook([['old']]),
+    })),
+  };
+}
 
 /** A loaded session whose saves wait until the test answers them through `answers`. */
 async function heldSession(data: string[][]) {
@@ -68,9 +90,9 @@ describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => 
 
   it('commits native input and saves it before history navigation', async () => {
     const { session, save, answers } = await heldSession([['a']]);
-    const onOpen = vi.fn();
+    const versions = versionStore();
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({ session, history: { entries: [entry], onOpen } }),
+      useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
     act(() => {
       result.current.setNativeDraft({ x: 0, y: 0, text: 'native' });
@@ -84,41 +106,41 @@ describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => 
         }),
       };
     });
-    let opening!: Promise<void>;
+    let opening!: Promise<unknown>;
     act(() => {
-      opening = result.current.openHistorical(entry);
+      opening = result.current.openVersion(version);
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save.mock.calls[0][1].content.worksheets[0].data[0][0]).toBe('native');
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.viewedVersion).toBeNull();
     await act(async () => {
       answers[0]();
       await opening;
     });
-    expect(onOpen).toHaveBeenCalledExactlyOnceWith(entry);
+    expect(result.current.viewedVersion).toEqual(version);
   });
 
   it('keeps history closed after a refused save or an edit newer than its save', async () => {
-    const onOpen = vi.fn();
+    const versions = versionStore();
     const { session, save, answers } = await heldSession([['a']]);
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({ session, history: { entries: [entry], onOpen } }),
+      useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
     act(() => result.current.proposeCells([['b']], 0, 0));
-    let refused!: Promise<void>;
+    let refused!: Promise<unknown>;
     act(() => {
-      refused = result.current.openHistorical(entry);
+      refused = result.current.openVersion(version);
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     await act(async () => {
       answers[0]({ ok: false, error: { kind: 'unavailable', message: 'Save refused' } });
       await refused;
     });
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.viewedVersion).toBeNull();
     expect(result.current.notice).toBe('Save refused');
-    let opening!: Promise<void>;
+    let opening!: Promise<unknown>;
     act(() => {
-      opening = result.current.openHistorical(entry);
+      opening = result.current.openVersion(version);
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
     act(() => result.current.proposeCells([['later']], 0, 0));
@@ -126,18 +148,18 @@ describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => 
       answers[1]();
       await opening;
     });
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.viewedVersion).toBeNull();
     expect(result.current.handle.getState().dirty).toBe(true);
   });
 
   it('does not manufacture a save while opening history from a pristine session', async () => {
-    const onOpen = vi.fn();
+    const versions = versionStore();
     const { session, save } = await heldSession([['a']]);
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({ session, history: { entries: [entry], onOpen } }),
+      useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
-    await act(() => result.current.openHistorical(entry));
-    expect(onOpen).toHaveBeenCalledExactlyOnceWith(entry);
+    await act(() => result.current.openVersion(version));
+    expect(result.current.viewedVersion).toEqual(version);
     expect(save).not.toHaveBeenCalled();
   });
 });

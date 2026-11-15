@@ -455,48 +455,7 @@ export function PropertiesPanel({ editor: e }: { editor: SpreadsheetEditorContro
 }
 
 export function HistoryPanel({ editor: e }: { editor: SpreadsheetEditorController }) {
-  const stored = e.props.history;
-  if (stored)
-    return (
-      <div className="se-history" aria-label="Saved workbook history">
-        <h3>Version history</h3>
-        {stored.onRefresh && (
-          <Button size="sm" onPress={() => e.attempt(() => stored.onRefresh!())}>
-            Refresh history
-          </Button>
-        )}
-        {stored.loading && <Spinner label="Loading history" />}
-        {stored.error && <InlineError>{stored.error}</InlineError>}
-        {!stored.loading && !stored.entries.length && <p>No saved versions.</p>}
-        <ol>
-          {[...stored.entries]
-            .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
-            .map((entry) => (
-              <li key={entry.id}>
-                <ContextMenuTrigger>
-                  <Button variant="ghost" content="parts">
-                    <Attribution person={{ name: entry.author.name }} time={entry.timestamp} />
-                    {entry.message && <span>{entry.message}</span>}
-                    {entry.state && <span>State: {entry.state}</span>}
-                    {entry.revision && <span>Revision: {entry.revision}</span>}
-                  </Button>
-                  <Menu
-                    aria-label="Snapshot actions"
-                    items={[
-                      {
-                        id: 'open',
-                        label: 'View historical version',
-                        ...editorCommandMetadata('open-history'),
-                        onAction: () => e.attempt(() => e.openHistorical(entry)),
-                      },
-                    ]}
-                  />
-                </ContextMenuTrigger>
-              </li>
-            ))}
-        </ol>
-      </div>
-    );
+  if (e.props.versions && e.props.workbookId !== undefined) return <VersionsPanel editor={e} />;
   return (
     <div className="se-history">
       <h3>Editing history</h3>
@@ -513,6 +472,114 @@ export function HistoryPanel({ editor: e }: { editor: SpreadsheetEditorControlle
       <Button isDisabled={!e.canWrite || !e.canRedo} onPress={e.redo}>
         Redo last change
       </Button>
+    </div>
+  );
+}
+
+/** The workbook's saved versions, from the host's version store (SE-ADAPTERS-5.1). */
+function VersionsPanel({ editor: e }: { editor: SpreadsheetEditorController }) {
+  const { versions, loading, error, refresh } = e.versionList;
+  const [label, setLabel] = useState('');
+  const [renaming, setRenaming] = useState<{ revision: string; label: string } | null>(null);
+  return (
+    <div className="se-history" aria-label="Saved workbook history">
+      <h3>Version history</h3>
+      {e.canSaveVersion && (
+        <form
+          className="se-history__save"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void e.saveVersion(label.trim() || null).then((saved) => saved && setLabel(''));
+          }}
+        >
+          <TextField label="Version name" value={label} onChange={setLabel} />
+          <Button type="submit" size="sm">
+            Save version
+          </Button>
+        </form>
+      )}
+      <Button size="sm" onPress={refresh}>
+        Refresh history
+      </Button>
+      {loading && <Spinner label="Loading history" />}
+      {error && <InlineError>{error}</InlineError>}
+      {!loading && !error && !versions.length && <p>No saved versions.</p>}
+      <ol>
+        {versions.map((version) => (
+          <li
+            key={version.revision}
+            data-current={e.viewedVersion?.revision === version.revision || undefined}
+          >
+            {renaming?.revision === version.revision ? (
+              <form
+                className="se-history__rename"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void e
+                    .renameVersion(version, renaming.label.trim() || null)
+                    .then((renamed) => renamed && setRenaming(null));
+                }}
+              >
+                <TextField
+                  label="Version name"
+                  value={renaming.label}
+                  onChange={(value) => setRenaming({ revision: version.revision, label: value })}
+                  autoFocus
+                />
+                <Button type="submit" size="sm">
+                  Rename
+                </Button>
+                <Button size="sm" variant="ghost" onPress={() => setRenaming(null)}>
+                  Cancel
+                </Button>
+              </form>
+            ) : (
+              <ContextMenuTrigger>
+                <Button variant="ghost" content="parts">
+                  <Attribution
+                    person={{ name: version.author ? e.personName(version.author) : 'Unknown' }}
+                    time={version.savedAt}
+                  />
+                  <span>{version.label ?? 'Saved automatically'}</span>
+                </Button>
+                <Menu
+                  aria-label="Version actions"
+                  items={[
+                    {
+                      id: 'open',
+                      label: 'View this version',
+                      ...editorCommandMetadata('open-history'),
+                      onAction: () => void e.openVersion(version),
+                    },
+                    ...(e.canRenameVersion
+                      ? [
+                          {
+                            id: 'rename',
+                            label: 'Rename version',
+                            onAction: () =>
+                              setRenaming({
+                                revision: version.revision,
+                                label: version.label ?? '',
+                              }),
+                          },
+                        ]
+                      : []),
+                    ...(e.canRestoreVersion
+                      ? [
+                          {
+                            id: 'restore',
+                            label: 'Restore this version',
+                            onAction: () => void e.restoreVersion(version),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              </ContextMenuTrigger>
+            )}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
