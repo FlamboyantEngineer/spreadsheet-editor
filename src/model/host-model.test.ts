@@ -72,8 +72,8 @@ describe('SE-HOST-MODEL-1: canonical authored quantities and stable extent', () 
         id: 'thread',
         sheetId: sheet.id,
         range: 'M20',
-        resolved: false,
-        posts: [{ id: 'post', author: stamp.actor, text: 'edge', createdAt: stamp.time }],
+        state: 'open',
+        entries: [{ id: 'post', author: stamp.actor.id, text: 'edge', createdAt: stamp.time }],
       },
     ];
     expect(worksheetExtent(sheet, workbook)).toEqual({ columns: 13, rows: 20 });

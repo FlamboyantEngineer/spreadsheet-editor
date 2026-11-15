@@ -51,11 +51,11 @@ function exampleWorkbook(): Workbook {
       id: 'edge-thread',
       sheetId: 'host-edge',
       range: 'D5',
-      resolved: false,
-      posts: [
+      state: 'open',
+      entries: [
         {
           id: 'edge-post',
-          author: { id: 'host', name: 'Example host' },
+          author: 'host',
           text: 'An annotation extends this otherwise blank worksheet.',
           createdAt: '2026-11-11T12:00:00Z',
         },

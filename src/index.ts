@@ -6,7 +6,8 @@ export type {
   ReviewActor,
   SpreadsheetComment,
   SpreadsheetSuggestion,
-  CommentPost,
+  CommentEntry,
+  CommentDecision,
   SuggestedCellChange,
   CellFormat,
 } from './model/review.js';

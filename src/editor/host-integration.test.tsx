@@ -204,7 +204,7 @@ describe('SE-HOST-1/2: accepted transactions and session lifecycle', () => {
     expect(result.current.canEdit).toBe(false);
     expect(result.current.canSuggest).toBe(false);
     act(() => result.current.postComment('Comment only'));
-    expect(result.current.workbook.comments?.[0].posts[0].text).toBe('Comment only');
+    expect(result.current.workbook.comments?.[0].entries[0].text).toBe('Comment only');
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('accepted');
   });
 
@@ -472,6 +472,41 @@ describe('SE-HOST-3/4: authoritative values, drafts and result search', () => {
   });
 });
 
+describe('SE-REVIEW-1.6: comment authors are named through identity', () => {
+  it('resolves stored person ids and shows an unknown id as itself', async () => {
+    const workbook = createWorkbook([['1']]);
+    workbook.comments = [
+      {
+        id: 'thread',
+        sheetId: 'sheet-1',
+        range: 'A1',
+        state: 'open',
+        entries: [
+          { id: 'one', author: 'morgan', text: 'First', createdAt: '2026-11-10T12:00:00Z' },
+          {
+            id: 'two',
+            author: 'gone',
+            text: 'Second',
+            createdAt: '2026-11-10T12:01:00Z',
+            reactions: { '+1': ['reviewer'] },
+          },
+        ],
+      },
+    ];
+    const identity = createMemoryHost({
+      reader: { id: 'reviewer', name: 'Reviewer' },
+      people: [{ id: 'morgan', name: 'Morgan' }],
+    }).identity;
+    const resolvePeople = vi.spyOn(identity, 'resolvePeople');
+    const { result } = renderHook(() => useSpreadsheetEditor({ defaultValue: workbook, identity }));
+    expect(result.current.personName('morgan')).toBe('morgan');
+    await waitFor(() => expect(result.current.personName('morgan')).toBe('Morgan'));
+    expect(result.current.personName('gone')).toBe('gone');
+    expect(result.current.personName('reviewer')).toBe('Reviewer');
+    expect(resolvePeople).toHaveBeenCalledWith(['gone', 'morgan']);
+  });
+});
+
 describe('SE-ADAPTERS-2.3: the editor takes identity and capabilities', () => {
   it('attributes the reader from identity and offers at most what the capabilities allow', () => {
     const { result, rerender } = renderHook(
@@ -489,10 +524,7 @@ describe('SE-ADAPTERS-2.3: the editor takes identity and capabilities', () => {
     expect(result.current.canEdit).toBe(true);
     expect(result.current.canDecide).toBe(false);
     act(() => result.current.postComment('Mine'));
-    expect(result.current.workbook.comments?.[0].posts[0].author).toEqual({
-      id: 'reviewer',
-      name: 'Reviewer',
-    });
+    expect(result.current.workbook.comments?.[0].entries[0].author).toBe('reviewer');
     rerender({
       ...result.current.props,
       capabilities: { ...READ_ONLY_CAPABILITIES, suggest: true },

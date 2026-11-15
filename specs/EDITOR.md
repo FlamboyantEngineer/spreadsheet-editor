@@ -63,6 +63,7 @@ Verification: `e2e/labs.spec.ts` at 1440, 768 and 390 pixels, plus `e2e/editor.s
 A worksheet of 10,000 cells stays smooth to type into and edit, and one of 50,000 cells stays usable. The grid's per-edit work is limited to the cells that changed:
 
 - Typing in a cell rewrites only the draft cell and the cells whose value or readiness changed; unchanged cells keep their text, presentation and DOM nodes.
+- A row whose values, inputs, formats and presentation are the same objects as at the last paint, and that holds no draft or open cell editor, is not visited, unless the engine has rewritten one of its cells. The editor gives a values row a new identity whenever a cell in it changes value or readiness.
 - Committing an edit updates changed values in place. The grid rebuilds its rows only when its extent changes or more than 2,000 cells change at once.
 - Zoom and authored styles are applied to every cell only when zoom changes; otherwise only to cells whose authored style changed and cells the engine has newly created. At 100% the stylesheet's own text metrics apply without inline copies.
 - Shared-border reconciliation visits only cells with an inline border or a clipboard edge and their right and bottom neighbors. Unchanged column, row and frozen-column measures are not rewritten.
@@ -72,7 +73,7 @@ The grid does not window its rows; that is decided once the model's own per-edit
 
 Implementation: `src/engine/cell-renderer.ts`, `src/engine/worksheet-presentation.ts`, `src/engine/shared-grid-borders.ts`, `src/engine/worksheet-data.ts`, `src/engine/grid-geometry.ts`, `src/engine/workbook-grid.tsx`, `labs/src/large-lab.tsx`.
 
-Verification: `e2e/grid-budget.spec.ts` (mutation and time budgets on the large worksheet), `src/engine/cell-renderer.test.ts`, `src/engine/shared-grid-borders.test.ts`, `src/engine/worksheet-data.test.ts`, `src/engine/grid-geometry.test.ts`.
+Verification: `e2e/grid-budget.spec.ts` (mutation and time budgets on the large worksheet), `src/engine/grid-budget.test.ts`, `src/engine/cell-renderer.test.ts`, `src/engine/shared-grid-borders.test.ts`, `src/engine/worksheet-data.test.ts`, `src/engine/grid-geometry.test.ts`.
 
 ## SE-LABS-4 — Shared lab shell
 
@@ -118,7 +119,7 @@ A workbook of 10,000 cells stays smooth to edit and one of 50,000 cells stays us
 
 - A command names the cells it writes; its cell patches compare only those cells. A command that names none is compared by value in place, without copying or serializing unchanged cells.
 - What the editor produced itself is not validated or copied again: a client calculation result is trusted, the host's frozen baseline is copied only when the host reads it, and a draft is attributed to its contributor once.
-- What depends only on a calculation result (the reverse dependencies, the ready values) is computed once per result. A keystroke walks only the cells its draft cell reaches, and output rows without a pending cell keep their identity.
+- What depends only on a calculation result (the reverse dependencies, the ready values) is computed once per result. A keystroke walks only the cells its draft cell reaches, and output rows without a pending cell keep their identity, while a row with one is always new.
 
 While the client or server recalculates after an edit, the editor keeps showing the last ready value of every cell that does not read an edited cell, directly or through other formulas; only those readers show as pending. The calculation itself stays pending with no current result, so exports and document insertion still wait for it. A structural or naming change shows every cell as pending.
 

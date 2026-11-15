@@ -66,6 +66,40 @@ describe('SE-PERF-1: grid work scales with what changed', () => {
     expect(records[0][0].element.textContent).toBe('a');
   });
 
+  it('skips a row whose values and input rows are the same objects as last paint', () => {
+    const { handle, records } = engineGrid([]);
+    const raw = [
+      ['a', 'b'],
+      ['c', 'd'],
+    ];
+    const values = [
+      ['a', 'b'],
+      ['c', 'd'],
+    ];
+    renderCalculatedCells(handle, values, undefined, raw);
+    const read = vi.spyOn(records[1][0].element.classList, 'contains');
+    // Row 0 has a new values row; row 1 keeps its identity, so its cells are not visited.
+    renderCalculatedCells(handle, [['A', 'b'], values[1]], undefined, raw);
+    expect(records[0][0].element.textContent).toBe('A');
+    expect(read).not.toHaveBeenCalled();
+    // A cell the engine rewrote is painted again even in an unchanged row.
+    records[1][1].element.textContent = '=raw';
+    renderCalculatedCells(handle, [['A', 'b'], values[1]], undefined, raw);
+    expect(records[1][1].element.textContent).toBe('d');
+  });
+
+  it('paints a draft row again once its draft ends', () => {
+    const { handle, records } = engineGrid([]);
+    const raw = [['a', 'b']];
+    const values = [['a', 'b']];
+    const formats = {};
+    const presentation = { sheetId: 's', draft: { x: 1, y: 0, text: 'typed' } };
+    renderCalculatedCells(handle, values, undefined, raw, '…', formats, false, presentation);
+    expect(records[0][1].element.textContent).toBe('typed');
+    renderCalculatedCells(handle, values, undefined, raw, '…', formats, false, { sheetId: 's' });
+    expect(records[0][1].element.textContent).toBe('b');
+  });
+
   it('compares calculated numbers by content, so a new result repaints nothing', () => {
     const { handle, records } = engineGrid([]);
     const number = () => ({

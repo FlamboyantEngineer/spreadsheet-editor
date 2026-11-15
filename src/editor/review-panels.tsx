@@ -23,11 +23,11 @@ import { Attribution } from '@flamboyantengineer/ui-components/attribution';
 import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
 import { selectionAddress } from '../model/editing.js';
 import {
-  editCommentPost,
-  deleteCommentPost,
+  editCommentEntry,
+  deleteCommentEntry,
   replyToComment,
   toggleCommentReaction,
-  updateComment,
+  setCommentState,
 } from '../model/review.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
 import { editorCommandMetadata } from './editor-commands.js';
@@ -43,19 +43,19 @@ export function CommentsPanel({
   const threads = (e.workbook.comments ?? []).filter((thread) =>
     threadId
       ? thread.id === threadId
-      : !thread.suggestionId &&
+      : !thread.suggestion &&
         (filter === 'mine'
-          ? thread.posts.some((post) => post.author.id === e.actor.id)
-          : filter === 'all' || thread.resolved === (filter === 'resolved')),
+          ? thread.entries.some((entry) => entry.author === e.actor.id)
+          : filter === 'all' || thread.state === filter),
   );
   if (!threadId) {
     const conversations = (e.workbook.comments ?? [])
       .filter((thread) =>
         filter === 'mine'
-          ? thread.posts.some((post) => post.author.id === e.actor.id)
-          : filter === 'all' || thread.resolved === (filter === 'resolved'),
+          ? thread.entries.some((entry) => entry.author === e.actor.id)
+          : filter === 'all' || thread.state === filter,
       )
-      .sort((a, b) => b.posts.at(-1)!.createdAt.localeCompare(a.posts.at(-1)!.createdAt));
+      .sort((a, b) => b.entries.at(-1)!.createdAt.localeCompare(a.entries.at(-1)!.createdAt));
     return (
       <div className="se-comments" aria-label="Workbook comments">
         <div className="se-comments__actions">
@@ -93,7 +93,7 @@ export function CommentsPanel({
         )}
         {!conversations.length && <p>No {filter === 'all' ? '' : filter + ' '}comments.</p>}
         {conversations.map((thread) => {
-          const proposal = e.workbook.suggestions?.find((item) => item.id === thread.suggestionId);
+          const proposal = e.workbook.suggestions?.find((item) => item.id === thread.suggestion);
           const sheet = e.workbook.worksheets.find((sheet) => sheet.id === thread.sheetId);
           return (
             <div key={thread.id} className="se-comments__conversation">
@@ -105,18 +105,19 @@ export function CommentsPanel({
                       ? 'Workbook comment'
                       : `${sheet?.name ?? 'Deleted worksheet'}!${thread.range}`}
                 </strong>
-                <span>{proposal?.summary ?? thread.posts[0].text}</span>
+                <span>{proposal?.summary ?? thread.entries[0].text}</span>
                 <Attribution
                   person={{
                     name:
-                      thread.posts[0].author.id === e.actor.id
+                      thread.entries[0].author === e.actor.id
                         ? 'You'
-                        : thread.posts[0].author.name,
+                        : e.personName(thread.entries[0].author),
                   }}
-                  time={thread.posts.at(-1)!.createdAt}
+                  time={thread.entries.at(-1)!.createdAt}
                 />
                 <span>
-                  {thread.posts.length - 1} replies{thread.resolved ? ' · Resolved' : ''}
+                  {thread.entries.length - 1} replies
+                  {thread.state === 'resolved' ? ' · Resolved' : ''}
                 </span>
               </Button>
             </div>
@@ -171,7 +172,7 @@ export function CommentsPanel({
       )}
       {threads.map((thread) => {
         const sheet = e.workbook.worksheets.find((sheet) => sheet.id === thread.sheetId);
-        const proposal = e.workbook.suggestions?.find((item) => item.id === thread.suggestionId);
+        const proposal = e.workbook.suggestions?.find((item) => item.id === thread.suggestion);
         return (
           <div key={thread.id}>
             {e.props.getCommentLink && (
@@ -234,20 +235,23 @@ export function CommentsPanel({
                   </Button>
                 )
               }
-              isResolved={thread.resolved}
+              isResolved={thread.state === 'resolved'}
               isReadOnly={!e.canComment}
               onResolvedChange={(resolved) =>
                 e.attempt(() =>
                   e.commit(
-                    updateComment(e.workbook, thread.id, (thread) => {
-                      thread.resolved = resolved;
-                    }),
+                    setCommentState(
+                      e.workbook,
+                      thread.id,
+                      resolved ? 'resolved' : 'open',
+                      e.stamp(),
+                    ),
                     resolved ? 'Resolve comment' : 'Reopen comment',
                   ),
                 )
               }
               composer={
-                !thread.resolved && e.canComment ? (
+                thread.state === 'open' && e.canComment ? (
                   <CommentComposer
                     autoFocus={!!threadId}
                     value={e.replyDrafts[thread.id] ?? ''}
@@ -271,18 +275,18 @@ export function CommentsPanel({
                 ) : null
               }
             >
-              {thread.posts.map((post) => (
+              {thread.entries.map((post) => (
                 <CommentThreadReply
                   key={post.id}
-                  author={{ name: post.author.name, colorKey: post.author.id }}
+                  author={{ name: e.personName(post.author), colorKey: post.author }}
                   time={post.createdAt}
                   text={post.text}
-                  isEdited={!!post.updatedAt}
+                  isEdited={!!post.editedAt}
                   onEdit={
-                    e.canComment && post.author.id === e.actor.id
+                    e.canComment && post.author === e.actor.id
                       ? (text) =>
                           e.commit(
-                            editCommentPost(
+                            editCommentEntry(
                               e.workbook,
                               thread.id,
                               post.id,
@@ -295,10 +299,10 @@ export function CommentsPanel({
                       : undefined
                   }
                   onDelete={
-                    e.canComment && post.author.id === e.actor.id
+                    e.canComment && post.author === e.actor.id
                       ? () =>
                           e.commit(
-                            deleteCommentPost(e.workbook, thread.id, post.id, e.actor.id),
+                            deleteCommentEntry(e.workbook, thread.id, post.id, e.actor.id),
                             'Delete comment',
                           )
                       : undefined
@@ -310,12 +314,7 @@ export function CommentsPanel({
                         emoji,
                         count: people.length,
                         isReacted: people.includes(e.actor.id),
-                        people: people.map((id) =>
-                          id === e.actor.id
-                            ? e.actor.name
-                            : (thread.posts.find((post) => post.author.id === id)?.author.name ??
-                              id),
-                        ),
+                        people: people.map(e.personName),
                       }))}
                       onToggle={
                         e.canComment

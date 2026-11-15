@@ -107,19 +107,19 @@ describe('SE-HOST-1: atomic serialized operation application', () => {
     const a = replyToComment(initial, 'thread', 'a', stamp('a'));
     const b = replyToComment(initial, 'thread', 'b', stamp('b'));
     const reactionA = updateComment(a, 'thread', (thread) => {
-      thread.posts[0].reactions = { '+1': ['a'] };
+      thread.entries[0].reactions = { '+1': ['a'] };
     });
     const reactionB = updateComment(b, 'thread', (thread) => {
-      thread.posts[0].reactions = { '+1': ['b'] };
+      thread.entries[0].reactions = { '+1': ['b'] };
     });
     const opA = annotationOperation(initial, reactionA),
       opB = annotationOperation(initial, reactionB);
     const shared = applyWorkbookOperations(applyWorkbookOperations(initial, [opA]), [opB]);
-    expect(shared.comments![0].posts.map((post) => post.id)).toEqual(['thread', 'a', 'b']);
-    expect(shared.comments![0].posts[0].reactions).toEqual({ '+1': ['a', 'b'] });
+    expect(shared.comments![0].entries.map((entry) => entry.id)).toEqual(['thread', 'a', 'b']);
+    expect(shared.comments![0].entries[0].reactions).toEqual({ '+1': ['a', 'b'] });
     const undone = applyWorkbookOperations(shared, invertWorkbookOperations([opA]));
-    expect(undone.comments![0].posts.map((post) => post.id)).toEqual(['thread', 'b']);
-    expect(undone.comments![0].posts[0].reactions).toEqual({ '+1': ['b'] });
+    expect(undone.comments![0].entries.map((entry) => entry.id)).toEqual(['thread', 'b']);
+    expect(undone.comments![0].entries[0].reactions).toEqual({ '+1': ['b'] });
   });
   it('merges independent geometry fields and rejects competing fields/order without partial application', () => {
     const initial = base();

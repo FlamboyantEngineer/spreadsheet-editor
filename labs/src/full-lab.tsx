@@ -40,6 +40,9 @@ function TablePreview({ insertion }: { insertion: Extract<DocumentInsertion, { k
   );
 }
 
+const alex = { id: 'alex', name: 'Alex' };
+const morgan = { id: 'morgan', name: 'Morgan' };
+
 export function FullLab() {
   const excel = useExcelLab();
   const [workbook, setWorkbook] = useState(sample);
@@ -57,8 +60,8 @@ export function FullLab() {
   const [readOnly, setReadOnly] = useState(false);
   const identities = useMemo(
     () => ({
-      alex: createMemoryHost({ reader: { id: 'alex', name: 'Alex' } }).identity,
-      morgan: createMemoryHost({ reader: { id: 'morgan', name: 'Morgan' } }).identity,
+      alex: createMemoryHost({ reader: alex, people: [morgan] }).identity,
+      morgan: createMemoryHost({ reader: morgan, people: [alex] }).identity,
     }),
     [],
   );

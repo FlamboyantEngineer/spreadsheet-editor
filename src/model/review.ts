@@ -19,24 +19,44 @@ export interface ReviewActor {
   id: string;
   name: string;
 }
-export interface CommentPost {
+/** One comment of a thread, shaped like the document editor's comment entries. */
+export interface CommentEntry {
   id: string;
-  author: ReviewActor;
+  /** The id of the person who wrote it; the host's identity adapter gives their name. */
+  author: string;
   text: string;
+  /** When it was posted: an ISO 8601 date and time. */
   createdAt: string;
-  updatedAt?: string;
+  /** When its text was last changed, if it was. */
+  editedAt?: string;
+  /** The people who reacted to it, by the emoji they reacted with. */
   reactions?: Record<string, string[]>;
 }
+/** How the suggestion a thread discusses was decided, by whom and when. */
+export interface CommentDecision {
+  decision: 'accept' | 'reject';
+  suggestion: string;
+  /** The id of the person who decided it. */
+  by: string;
+  at: string;
+}
+/** A comment thread on a range of cells or on the whole workbook. */
 export interface SpreadsheetComment {
   id: string;
+  state: 'open' | 'resolved';
+  /** The opening comment, then the replies, oldest first. */
+  entries: CommentEntry[];
   sheetId?: string;
   range?: string;
   scope?: 'range' | 'workbook';
-  suggestionId?: string;
-  suggestionDecision?: 'accepted' | 'rejected';
-  resolved: boolean;
+  /** The suggestion the thread discusses, when it does. */
+  suggestion?: string;
+  /** How its suggestion was decided, once it was. */
+  decision?: CommentDecision;
+  /** Who resolved it and when, while it is resolved. */
+  resolvedBy?: string;
+  resolvedAt?: string;
   orphaned?: boolean;
-  posts: CommentPost[];
 }
 export interface SuggestedCellChange {
   sheetId: string;
@@ -113,10 +133,8 @@ export function addComment(
       id: stamp.id,
       sheetId,
       range: parseSpreadsheetRange(range)!.address,
-      resolved: false,
-      posts: [
-        { id: stamp.id, author: { ...stamp.actor }, text: text.trim(), createdAt: stamp.time },
-      ],
+      state: 'open',
+      entries: [{ id: stamp.id, author: stamp.actor.id, text: text.trim(), createdAt: stamp.time }],
     },
   ];
   return next;
@@ -134,6 +152,25 @@ export function updateComment(
   return next;
 }
 
+/** Resolve or reopen a thread, recording who resolved it and when (SE-REVIEW-1.7). */
+export function setCommentState(
+  workbook: Workbook,
+  id: string,
+  state: SpreadsheetComment['state'],
+  stamp: Pick<ReviewStamp, 'time' | 'actor'>,
+): Workbook {
+  return updateComment(workbook, id, (thread) => {
+    thread.state = state;
+    if (state === 'resolved') {
+      thread.resolvedBy = stamp.actor.id;
+      thread.resolvedAt = stamp.time;
+    } else {
+      delete thread.resolvedBy;
+      delete thread.resolvedAt;
+    }
+  });
+}
+
 export function replyToComment(
   workbook: Workbook,
   id: string,
@@ -142,17 +179,17 @@ export function replyToComment(
 ): Workbook {
   if (!text.trim()) throw new TypeError('A reply needs text.');
   return updateComment(workbook, id, (thread) => {
-    if (thread.resolved) throw new Error('Reopen the thread before replying.');
-    thread.posts.push({
+    if (thread.state === 'resolved') throw new Error('Reopen the thread before replying.');
+    thread.entries.push({
       id: stamp.id,
-      author: { ...stamp.actor },
+      author: stamp.actor.id,
       text: text.trim(),
       createdAt: stamp.time,
     });
   });
 }
 
-export function editCommentPost(
+export function editCommentEntry(
   workbook: Workbook,
   threadId: string,
   postId: string,
@@ -162,27 +199,26 @@ export function editCommentPost(
 ): Workbook {
   if (!text.trim()) throw new TypeError('A comment needs text.');
   return updateComment(workbook, threadId, (thread) => {
-    const post = thread.posts.find((post) => post.id === postId);
-    if (!post || post.author.id !== actorId)
-      throw new Error('Only the author can edit this comment.');
+    const post = thread.entries.find((post) => post.id === postId);
+    if (!post || post.author !== actorId) throw new Error('Only the author can edit this comment.');
     post.text = text.trim();
-    post.updatedAt = time;
+    post.editedAt = time;
   });
 }
 
-export function deleteCommentPost(
+export function deleteCommentEntry(
   workbook: Workbook,
   threadId: string,
   postId: string,
   actorId: string,
 ): Workbook {
   const next = updateComment(workbook, threadId, (thread) => {
-    const post = thread.posts.find((post) => post.id === postId);
-    if (!post || post.author.id !== actorId)
+    const post = thread.entries.find((post) => post.id === postId);
+    if (!post || post.author !== actorId)
       throw new Error('Only the author can delete this comment.');
-    thread.posts = thread.posts.filter((post) => post.id !== postId);
+    thread.entries = thread.entries.filter((post) => post.id !== postId);
   });
-  next.comments = next.comments?.filter((thread) => thread.posts.length);
+  next.comments = next.comments?.filter((thread) => thread.entries.length);
   return next;
 }
 
@@ -194,8 +230,8 @@ export function toggleCommentReaction(
   actorId: string,
 ): Workbook {
   return updateComment(workbook, threadId, (thread) => {
-    const post = thread.posts.find((post) => post.id === postId);
-    if (!post) throw new RangeError('Unknown comment post.');
+    const post = thread.entries.find((post) => post.id === postId);
+    if (!post) throw new RangeError('Unknown comment entry.');
     const users = post.reactions?.[emoji] ?? [];
     post.reactions = {
       ...post.reactions,
@@ -358,12 +394,12 @@ export function proposeWorkbookChange(
       id: stamp.id + '-thread',
       sheetId: anchor.sheetId,
       range,
-      resolved: false,
-      suggestionId: stamp.id,
-      posts: [
+      state: 'open',
+      suggestion: stamp.id,
+      entries: [
         {
           id: stamp.id + '-post',
-          author: { ...stamp.actor },
+          author: stamp.actor.id,
           text: summary,
           createdAt: stamp.time,
         },
@@ -455,8 +491,15 @@ export function decideSuggestion(
     }
   const linked = next.comments?.find((thread) => thread.id === suggestion!.commentThreadId);
   if (linked) {
-    linked.resolved = true;
-    linked.suggestionDecision = decision;
+    linked.state = 'resolved';
+    linked.resolvedBy = stamp.actor.id;
+    linked.resolvedAt = stamp.time;
+    linked.decision = {
+      decision: decision === 'accepted' ? 'accept' : 'reject',
+      suggestion: suggestion.id,
+      by: stamp.actor.id,
+      at: stamp.time,
+    };
   }
   suggestion.status = decision;
   suggestion.decidedBy = { ...stamp.actor };
@@ -465,6 +508,7 @@ export function decideSuggestion(
 }
 
 export function assertReviewData(workbook: Workbook): void {
+  const validId = (value: unknown) => typeof value === 'string' && value.length > 0;
   const validActor = (value: ReviewActor) =>
     value && typeof value.id === 'string' && value.id.length > 0 && typeof value.name === 'string';
   const validInput = (value: unknown) =>
@@ -491,24 +535,34 @@ export function assertReviewData(workbook: Workbook): void {
       (thread.scope === 'workbook'
         ? thread.sheetId !== undefined || thread.range !== undefined
         : typeof thread.sheetId !== 'string' || !parseSpreadsheetRange(thread.range ?? '')) ||
-      typeof thread.resolved !== 'boolean' ||
-      !Array.isArray(thread.posts) ||
-      !thread.posts.length ||
-      thread.posts.length > 10_000 ||
-      !unique(thread.posts.map((post) => post?.id))
+      !['open', 'resolved'].includes(thread.state) ||
+      !Array.isArray(thread.entries) ||
+      !thread.entries.length ||
+      thread.entries.length > 10_000 ||
+      !unique(thread.entries.map((post) => post?.id)) ||
+      (thread.suggestion !== undefined && !validId(thread.suggestion)) ||
+      (thread.resolvedBy !== undefined && !validId(thread.resolvedBy)) ||
+      (thread.resolvedAt !== undefined && !validTime(thread.resolvedAt)) ||
+      (thread.decision !== undefined &&
+        (!thread.decision ||
+          !['accept', 'reject'].includes(thread.decision.decision) ||
+          !validId(thread.decision.suggestion) ||
+          !validId(thread.decision.by) ||
+          !validTime(thread.decision.at)))
     )
       throw new TypeError('Invalid comment thread.');
-    for (const post of thread.posts)
+    for (const post of thread.entries)
       if (
         !post ||
         typeof post.id !== 'string' ||
-        !validActor(post.author) ||
+        !validId(post.author) ||
         typeof post.text !== 'string' ||
         post.text.length > 50_000 ||
-        !validTime(post.createdAt)
+        !validTime(post.createdAt) ||
+        (post.editedAt !== undefined && !validTime(post.editedAt))
       )
-        throw new TypeError('Invalid comment post.');
-    for (const post of thread.posts)
+        throw new TypeError('Invalid comment entry.');
+    for (const post of thread.entries)
       if (
         post.reactions !== undefined &&
         (!post.reactions ||
@@ -593,7 +647,12 @@ export function findOpenComment(
   const target = parseSpreadsheetRange(range);
   if (!target) return;
   return workbook.comments?.find((thread) => {
-    if (thread.resolved || thread.orphaned || thread.suggestionId || thread.sheetId !== sheetId)
+    if (
+      thread.state === 'resolved' ||
+      thread.orphaned ||
+      thread.suggestion ||
+      thread.sheetId !== sheetId
+    )
       return false;
     const anchor = parseSpreadsheetRange(thread.range ?? '');
     return (
@@ -611,8 +670,8 @@ export function addWorkbookComment(workbook: Workbook, text: string, stamp: Revi
   (next.comments ??= []).push({
     id: stamp.id,
     scope: 'workbook',
-    resolved: false,
-    posts: [{ id: stamp.id, author: { ...stamp.actor }, text: text.trim(), createdAt: stamp.time }],
+    state: 'open',
+    entries: [{ id: stamp.id, author: stamp.actor.id, text: text.trim(), createdAt: stamp.time }],
   });
   return next;
 }
