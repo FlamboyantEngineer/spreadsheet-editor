@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSpreadsheetCopy, pasteSpreadsheetCopy } from './clipboard.js';
-import { translateFormulaReferences } from './structure.js';
+import { translateFormulaReferences } from './formula-references.js';
 import { createWorkbook } from './workbook.js';
 
 describe('SE-HOST-MODEL-3.1: authored clipboard references', () => {

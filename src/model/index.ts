@@ -6,6 +6,11 @@ export * from './editing.js';
 export * from './extent.js';
 export * from './formula-parser.js';
 export * from './formula-reference-parser.js';
+export {
+  rewriteStructureReferences,
+  type StructureSheets,
+  translateFormulaReferences,
+} from './formula-references.js';
 export * from './operations.js';
 export * from './presence.js';
 export * from './provenance.js';

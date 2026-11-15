@@ -9,7 +9,7 @@ import {
 import { extendWorksheetIdentities } from './extent.js';
 import { type AuthoredCellState, authoredCellState } from './operations.js';
 import { formatSpreadsheetAddress } from './spreadsheet-addressing.js';
-import { translateFormulaReferences } from './structure.js';
+import { translateFormulaReferences } from './formula-references.js';
 import {
   assertWorkbook,
   type CellInput,
