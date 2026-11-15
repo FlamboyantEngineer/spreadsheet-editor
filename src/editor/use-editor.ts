@@ -20,7 +20,11 @@ import {
   type WorkbookChangeContext,
 } from '../model/operations.js';
 import { createWorkbookEntityId, worksheetCalculationExtent } from '../model/extent.js';
-import { acceptedPresentation, usePublication } from './use-publication.js';
+import {
+  acceptedPresentation,
+  usePublication,
+  useRecalculatingDisplay,
+} from './use-publication.js';
 import type { SpreadsheetEditorHandle, SpreadsheetEditorState } from './public-host.js';
 import { createClientCalculator } from '../calculation/provider.js';
 import {
@@ -369,6 +373,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     previewWorkbook !== workbook,
   );
   const visibleCalculation = previewWorkbook !== workbook ? previewCalculation : calculation;
+  const shown = useRecalculatingDisplay(
+    previewWorkbook,
+    visibleCalculation,
+    props.calculation?.mode !== 'external',
+  );
   const publication = useMemo(
     () => ({ inputKey: visibleCalculation.inputKey, revision: visibleCalculation.revision }),
     [visibleCalculation.inputKey, visibleCalculation.revision],
@@ -386,7 +395,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     () =>
       draftCell
         ? pendingCalculationCells(
-            visibleCalculation.result,
+            shown.result,
             [calculationCellKey(sheet.id, draftCell.x, draftCell.y)],
             draftCell.x >= calculationExtent.columns || draftCell.y >= calculationExtent.rows
               ? [sheet.id]
@@ -394,7 +403,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           )
         : NO_CELLS,
     [
-      visibleCalculation.result,
+      shown.result,
       sheet.id,
       calculationExtent.columns,
       calculationExtent.rows,
@@ -404,21 +413,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     ],
   );
   const readyCells = useMemo(
-    () => withoutPending(visibleCalculation.readyCells, pendingCells),
-    [visibleCalculation.readyCells, pendingCells],
+    () => withoutPending(shown.readyCells, pendingCells),
+    [shown.readyCells, pendingCells],
   );
   const presentation = acceptedPresentation(
     props.cellPresentation,
     visibleCalculation.inputKey,
     visibleCalculation.revision,
   );
-  const acceptedOutput = visibleCalculation.result?.worksheets.find(
-    (result) => result.id === sheet.id,
-  )?.values;
+  const acceptedOutput = shown.result?.worksheets.find((result) => result.id === sheet.id)?.values;
   // Ready values change with the result; a draft only blanks the rows its pending cells are in.
   const readyOutput = useMemo(
-    () => readyValues(acceptedOutput, visibleCalculation.readyCells, sheet.id),
-    [acceptedOutput, visibleCalculation.readyCells, sheet.id],
+    () => readyValues(acceptedOutput, shown.readyCells, sheet.id),
+    [acceptedOutput, shown.readyCells, sheet.id],
   );
   const output = useMemo(
     () => withoutPendingValues(readyOutput, pendingCells, sheet.id),
@@ -999,9 +1006,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         if (hasDraft && x === selection.x1 && y === selection.y1) return pending.value;
         if (!readyCells.has(calculationCellKey(sheet.id, x, y))) return cell;
         return formatWorksheetCell(
-          visibleCalculation.result?.worksheets.find((item) => item.id === sheet.id)?.values[y]?.[
-            x
-          ] ?? null,
+          shown.result?.worksheets.find((item) => item.id === sheet.id)?.values[y]?.[x] ?? null,
           sheet.formats?.[formatSpreadsheetAddress(x, y)],
           props.display,
         );
@@ -1378,9 +1383,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           const key = calculationCellKey(sheet.id, x, y),
             ready = readyCells.has(key);
           const rawResult =
-            visibleCalculation.result?.worksheets.find((entry) => entry.id === sheet.id)?.values[
-              y
-            ]?.[x] ?? null;
+            shown.result?.worksheets.find((entry) => entry.id === sheet.id)?.values[y]?.[x] ?? null;
           const cellPresentation = presentation?.cells[key];
           const text = ready
             ? (cellPresentation?.text ??
@@ -1399,7 +1402,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       ),
     );
     return matches;
-  }, [workbook, query, visibleCalculation.result, readyCells, presentation, props.display]);
+  }, [workbook, query, shown.result, readyCells, presentation, props.display]);
   const matchIndex =
     activeMatch === null
       ? -1

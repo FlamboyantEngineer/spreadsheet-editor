@@ -120,6 +120,8 @@ A workbook of 10,000 cells stays smooth to edit and one of 50,000 cells stays us
 - What the editor produced itself is not validated or copied again: a client calculation result is trusted, the host's frozen baseline is copied only when the host reads it, and a draft is attributed to its contributor once.
 - What depends only on a calculation result (the reverse dependencies, the ready values) is computed once per result. A keystroke walks only the cells its draft cell reaches, and output rows without a pending cell keep their identity.
 
+While the client or server recalculates after an edit, the editor keeps showing the last ready value of every cell that does not read an edited cell, directly or through other formulas; only those readers show as pending. The calculation itself stays pending with no current result, so exports and document insertion still wait for it. A structural or naming change shows every cell as pending.
+
 Calculation itself still recalculates the whole workbook; a calculation worker and incremental recalculation are not part of this requirement.
 
 Implementation: `src/editor/use-editor.ts`, `src/editor/command-operations.ts`, `src/editor/use-publication.ts`, `src/editor/use-calculation.ts`, `src/model/operations.ts`, `src/calculation/publication.ts`.

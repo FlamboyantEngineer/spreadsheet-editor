@@ -1,11 +1,14 @@
 'use client';
 import { useMemo, useRef } from 'react';
+import type { CalculationResult } from '../calculation/evaluator.js';
+import { calculationFormats, worksheetCalculationExtent } from '../model/extent.js';
 import type { Workbook } from '../model/workbook.js';
 import type { CalculationOptions } from '../calculation/evaluator.js';
 import type { CalculationProvider } from '../calculation/provider.js';
 import {
   assertExternalCalculationSnapshot,
   calculationCellKey,
+  pendingCalculationCells,
   orderedJson,
   workbookCalculationKey,
 } from '../calculation/publication.js';
@@ -124,4 +127,69 @@ export function acceptedPresentation(
       throw new TypeError('Invalid cell presentation decoration.');
   }
   return value;
+}
+
+/** Cells whose calculation inputs differ between two workbooks of the same structure, or null. */
+function changedCalculationCells(
+  before: Workbook,
+  after: Workbook,
+): { cells: string[]; extents: string[] } | null {
+  if (before.worksheets.length !== after.worksheets.length) return null;
+  const cells: string[] = [],
+    extents: string[] = [];
+  for (const [index, sheet] of before.worksheets.entries()) {
+    const next = after.worksheets[index];
+    const inputs = (value: typeof sheet) =>
+      orderedJson({
+        id: value.id,
+        name: value.name,
+        inputValues: value.inputValues,
+        rowIds: value.rowIds,
+        columnIds: value.columnIds,
+        formats: calculationFormats(value),
+      });
+    if (inputs(sheet) !== inputs(next)) return null;
+    const a = worksheetCalculationExtent(sheet),
+      b = worksheetCalculationExtent(next);
+    if (a.rows !== b.rows || a.columns !== b.columns) extents.push(sheet.id);
+    for (let y = 0; y < Math.max(sheet.data.length, next.data.length); y++) {
+      const previous = sheet.data[y],
+        current = next.data[y];
+      if (previous === current) continue;
+      for (let x = 0; x < Math.max(previous?.length ?? 0, current?.length ?? 0); x++)
+        if ((previous?.[x] ?? null) !== (current?.[x] ?? null))
+          cells.push(calculationCellKey(sheet.id, x, y));
+    }
+  }
+  return { cells, extents };
+}
+
+/**
+ * What the editor shows while the client or server recalculates: the last ready result, with
+ * the cells that read an edited cell pending, like a draft. The publication itself stays pending,
+ * so exports and insertions still wait for the current result.
+ */
+export function useRecalculatingDisplay(
+  workbook: Workbook,
+  publication: ReturnType<typeof usePublication>,
+  enabled: boolean,
+): { result: CalculationResult | null; readyCells: ReadonlySet<string> } {
+  const settled = useRef<{
+    workbook: Workbook;
+    result: CalculationResult;
+    readyCells: ReadonlySet<string>;
+  } | null>(null);
+  if (publication.status === 'ready' && publication.result)
+    settled.current = { workbook, result: publication.result, readyCells: publication.readyCells };
+  const last = settled.current;
+  const recalculating = enabled && publication.status === 'pending' && last !== null;
+  return useMemo(() => {
+    if (!recalculating) return publication;
+    const changed = changedCalculationCells(last.workbook, workbook);
+    if (!changed) return publication;
+    const pending = pendingCalculationCells(last.result, changed.cells, changed.extents);
+    const readyCells = new Set<string>();
+    for (const key of last.readyCells) if (!pending.has(key)) readyCells.add(key);
+    return { result: last.result, readyCells };
+  }, [recalculating, last, workbook, publication]);
 }

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
+import { createWorkbook, type Workbook } from '../model/workbook.js';
+import { calculateWorkbook, type CalculationResult } from '../calculation/evaluator.js';
+import { calculationCellKey } from '../calculation/publication.js';
 import { writeCells } from '../model/editing.js';
 import type { SpreadsheetEditorProps, SpreadsheetSaveContext } from './contracts.js';
 import { useSpreadsheetEditor } from './use-editor.js';
@@ -585,5 +587,39 @@ describe('SE-HOST-MODEL-2 and SE-PERF-1: change context', () => {
         ],
       },
     ]);
+  });
+});
+
+describe('SE-PERF-1: recalculating after an edit', () => {
+  it('keeps cells that do not read the edited cell ready while the result is pending', async () => {
+    const replies: { workbook: Workbook; finish(result: CalculationResult): void }[] = [];
+    const provider = {
+      calculate: (workbook: Workbook) =>
+        new Promise<CalculationResult>((finish) => replies.push({ workbook, finish })),
+    };
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1', '=A1*2', '5', '=C1+1']]),
+        calculation: { mode: 'server', provider },
+      }),
+    );
+    const key = (x: number) => calculationCellKey('sheet-1', x, 0);
+    await waitFor(() => expect(replies).toHaveLength(1));
+    await act(async () => replies[0].finish(calculateWorkbook(replies[0].workbook)));
+    expect(result.current.readyCells.has(key(3))).toBe(true);
+    act(() => result.current.setDraftValue('2'));
+    act(() => void result.current.applyFormula());
+    await waitFor(() => expect(replies).toHaveLength(2));
+    expect(result.current.calculation.status).toBe('pending');
+    expect(result.current.calculation.result).toBeNull();
+    expect([0, 1, 2, 3].map((x) => result.current.readyCells.has(key(x)))).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+    expect(result.current.output?.[0][3]).toMatchObject({ numerator: '6' });
+    await act(async () => replies[1].finish(calculateWorkbook(replies[1].workbook)));
+    expect(result.current.output?.[0][1]).toMatchObject({ numerator: '4' });
   });
 });
