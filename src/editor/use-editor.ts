@@ -82,6 +82,7 @@ import {
 import { createDocumentInsertion } from '../document/insertion.js';
 import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
 import { FULL_CAPABILITIES, resolveSpreadsheetMode } from '../host/capabilities.js';
+import { usePersonNames } from './use-person-names.js';
 
 export type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
@@ -204,6 +205,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const person = props.identity?.currentPerson();
     return person ? { id: person.id, name: person.name } : { id: 'local-user', name: 'You' };
   }, [props.identity]);
+  const personName = usePersonNames(props.identity, workbook.comments, actor);
   const peers = useMemo(
     () =>
       remoteCollaborators(props.collaborators ?? [], actor.id).map((person) => ({
@@ -880,7 +882,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function openComment(id: string) {
     const thread = workbook.comments?.find((thread) => thread.id === id);
     if (!thread) return;
-    if (thread.scope === 'workbook' || thread.resolved || thread.orphaned) {
+    if (thread.scope === 'workbook' || thread.state === 'resolved' || thread.orphaned) {
       setActiveCommentId(thread.id);
       return;
     }
@@ -934,7 +936,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   useEffect(() => {
     const thread = workbook.comments?.find((thread) => thread.id === activeCommentId);
-    if (activeCommentId !== 'draft' && (!thread || thread.resolved || thread.orphaned))
+    if (activeCommentId !== 'draft' && (!thread || thread.state === 'resolved' || thread.orphaned))
       setActiveCommentId(null);
   }, [workbook]);
   function decide(id: string, action: 'accepted' | 'rejected') {
@@ -1610,6 +1612,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     canComment,
     canDecide,
     actor,
+    personName,
     stamp,
     draftKey,
     draftValue,

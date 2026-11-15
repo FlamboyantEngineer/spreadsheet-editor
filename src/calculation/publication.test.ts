@@ -83,11 +83,11 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
           id: 'thread',
           sheetId: 'inputs',
           range: 'A1',
-          resolved: false,
-          posts: [
+          state: 'open',
+          entries: [
             {
               id: 'post',
-              author: { id: 'peer', name: 'Peer' },
+              author: 'peer',
               text: 'Comment',
               createdAt: '2026-11-11T12:00:00Z',
             },
@@ -109,7 +109,7 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
     expect(
       workbookCalculationKey(
         mutate(next, (value) => {
-          value.comments![0].posts[0].text = 'Edited comment';
+          value.comments![0].entries[0].text = 'Edited comment';
           value.suggestions![0].changes[0].after = '4';
         }),
       ),
@@ -159,11 +159,11 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
           id: 'thread',
           sheetId: 'inputs',
           range: 'AC103',
-          resolved: false,
-          posts: [
+          state: 'open',
+          entries: [
             {
               id: 'post',
-              author: { id: 'peer', name: 'Peer' },
+              author: 'peer',
               text: 'Far comment',
               createdAt: '2026-11-11T12:00:00Z',
             },
