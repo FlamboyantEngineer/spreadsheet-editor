@@ -2,7 +2,7 @@
 
 The editor reaches what lies outside it through adapters the host passes in: who the reader is, what they may do, where workbooks and their versions are stored, where the other people in a workbook are, and the page's lifecycle. The adapters follow the document editor's host adapters by name and shape, so a host that embeds both editors passes the same identity, permissions and versions adapters to each. The `./host` entry holds the types, an in-memory host and pure causal transaction receipt bookkeeping; it needs no DOM.
 
-The editor is switched to these adapters one concern at a time (identity, presence and permissions, saving, history). Until then [HOST-INTEGRATION.md](HOST-INTEGRATION.md) describes the props the editor takes.
+The editor is switched to these adapters one concern at a time. It takes the reader's identity and capabilities now (SE-ADAPTERS-2.3); presence, saving and history follow, and until then [HOST-INTEGRATION.md](HOST-INTEGRATION.md) describes the props it takes for them.
 
 ## SE-ADAPTERS-1 - Contract
 
@@ -58,6 +58,13 @@ The `permissions` adapter shall give the reader's capabilities on a workbook and
 
 Implementation: `src/host/adapters.ts`, `src/host/memory-host.ts`
 Verification: `src/host/memory-host.test.ts`
+
+### SE-ADAPTERS-2.3 - The editor's identity and capabilities
+
+The editor shall take the host's `identity` adapter, whose reader (`currentPerson`, by id and name) is the actor of the comments, suggestions and decisions they make, and `capabilities`, all of them by default. It shall offer at most the mode `resolveSpreadsheetMode` gives: Authoring and every mode below it for a reader who may edit; Reviewing, and no other mode, for one who may only suggest or comment, and Reading when the features they may use there are turned off; Reading alone otherwise, with no mode to choose. Within a mode, editing needs `edit`, suggesting `suggest`, commenting `comment`, and deciding suggestions `decide` in Authoring. A historical version is read-only whatever the capabilities.
+
+Implementation: `src/editor/use-editor.ts`, `src/editor/spreadsheet-editor.tsx`, `src/editor/editor-toolbar.tsx`, `src/editor/editor-menus.ts`
+Verification: `src/editor/host-integration.test.tsx`, `src/editor/use-editor.test.ts`
 
 ## SE-ADAPTERS-3 - In-memory host
 

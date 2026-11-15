@@ -11,6 +11,7 @@ import {
   type Workbook,
   type WorkbookChangeContext,
 } from '@flamboyantengineer/spreadsheet-editor';
+import { READ_ONLY_CAPABILITIES } from '@flamboyantengineer/spreadsheet-editor/host';
 
 /** Project the host's current accepted state and commit synchronously in its serialized lane. */
 export function createHostWorkbookBinding(host: {
@@ -60,8 +61,7 @@ export function HostIntegratedSpreadsheet(props: HostIntegrationProps) {
       value={props.workbook}
       editorRef={props.editorRef}
       calculation={{ mode: 'external', snapshot: props.publication }}
-      readOnly={!props.canEdit}
-      permissions={{ edit: props.canEdit, comment: false, suggest: false }}
+      capabilities={{ ...READ_ONLY_CAPABILITIES, edit: props.canEdit }}
       features={{ comments: false, suggestions: false, modeControl: false }}
       undo={props.undo}
       formulaFunctions={props.formulaFunctions}

@@ -54,11 +54,11 @@ export type {
   SpreadsheetHistoricalView,
   CalculationMode,
   SpreadsheetMode,
-  SpreadsheetPermissions,
   SpreadsheetClipboard,
   SpreadsheetHostPanel,
 } from './contracts.js';
 export * from './public-host.js';
+import { READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 const WorkbookGrid = lazy(() => import('../engine/workbook-grid.js'));
 
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
@@ -66,7 +66,7 @@ export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
     <SpreadsheetEditorInstance
       key={props.sessionKey ?? 'spreadsheet'}
       {...props}
-      readOnly={props.readOnly || !!props.historical}
+      capabilities={props.historical ? READ_ONLY_CAPABILITIES : props.capabilities}
     />
   );
 }
@@ -159,7 +159,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
   }, [contextPoint, context, contextKind]);
   useEffect(() => {
     context.setItems(contextItems());
-  }, [e.workbook, e.selection, e.mode, props.readOnly, props.permissions, context, contextKind]);
+  }, [e.workbook, e.selection, e.mode, e.capabilities, context, contextKind]);
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.nativeEvent.isComposing || event.repeat) return;
     if (event.altKey && !((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'm'))
