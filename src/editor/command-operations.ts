@@ -10,14 +10,21 @@ import {
 } from '../model/operations.js';
 import { orderedJson } from '../calculation/publication.js';
 
-/** Sparse cell/layout patches complement commands which carry their own line operations. */
-export function commandOperations(before: Workbook, after: Workbook): WorkbookOperation[] {
+/**
+ * Sparse cell/layout patches complement commands which carry their own line operations.
+ * `targets` limits the cell patches to the addresses the command wrote.
+ */
+export function commandOperations(
+  before: Workbook,
+  after: Workbook,
+  targets?: ReadonlyMap<string, Iterable<string>>,
+): WorkbookOperation[] {
   const operations: WorkbookOperation[] = [];
   for (const sheet of before.worksheets) {
     const next = after.worksheets.find((value) => value.id === sheet.id);
     if (next) operations.push(...collectLineGrowthOperations(sheet, next));
   }
-  operations.push(...collectCellOperations(before, after));
+  operations.push(...collectCellOperations(before, after, targets));
   if (before.name !== after.name)
     operations.push({
       kind: 'workbook-metadata',

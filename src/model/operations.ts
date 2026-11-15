@@ -153,7 +153,42 @@ export function collectLineGrowthOperations(
   }
   return operations;
 }
-/** Only authored/metadata positions are visited, never an implicit blank matrix. Structure comes from the original command. */
+const METADATA = ['style', 'formats', 'inputValues', 'cellProvenance'] as const;
+function sameEntry(a: unknown, b: unknown): boolean {
+  return a === b || (typeof a === 'object' && typeof b === 'object' && equal(a, b));
+}
+/**
+ * Addresses whose authored state may differ, found by comparing values in place: data by
+ * position, then each metadata map by key. Nothing is copied or serialized for an unchanged
+ * cell, so an untargeted diff stays cheap on a large sheet (SE-PERF-1).
+ */
+function changedAddresses(sheet: Worksheet, next: Worksheet): Set<string> {
+  const addresses = new Set<string>();
+  if (sheet.data !== next.data)
+    for (let y = 0; y < Math.max(sheet.data.length, next.data.length); y++) {
+      const before = sheet.data[y],
+        after = next.data[y];
+      if (before === after) continue;
+      for (let x = 0; x < Math.max(before?.length ?? 0, after?.length ?? 0); x++)
+        if ((before?.[x] ?? null) !== (after?.[x] ?? null))
+          addresses.add(formatSpreadsheetAddress(x, y));
+    }
+  for (const field of METADATA) {
+    const before: Record<string, unknown> = sheet[field] ?? {},
+      after: Record<string, unknown> = next[field] ?? {};
+    if (before === after) continue;
+    for (const address of Object.keys(before))
+      if (!sameEntry(before[address], after[address])) addresses.add(address);
+    for (const address of Object.keys(after))
+      if (!Object.hasOwn(before, address)) addresses.add(address);
+  }
+  return addresses;
+}
+/**
+ * Cell patches between two workbooks. `targets` limits the comparison to the addresses a command
+ * wrote; without it, only authored positions that differ are visited, never an implicit blank
+ * matrix. Structure comes from the original command.
+ */
 export function collectCellOperations(
   before: Workbook,
   after: Workbook,
@@ -161,13 +196,11 @@ export function collectCellOperations(
 ): WorkbookOperation[] {
   const operations: WorkbookOperation[] = [];
   for (const sheet of before.worksheets) {
-    const next = after.worksheets.find((candidate) => candidate.id === sheet.id);
-    if (!next) continue;
-    const addresses =
-      targets?.get(sheet.id) ?? new Set([...authoredAddresses(sheet), ...authoredAddresses(next)]);
     if (targets && !targets.has(sheet.id)) continue;
+    const next = after.worksheets.find((candidate) => candidate.id === sheet.id);
+    if (!next || next === sheet) continue;
     const changes: WorkbookCellChange[] = [];
-    for (const address of addresses) {
+    for (const address of targets?.get(sheet.id) ?? changedAddresses(sheet, next)) {
       const previous = authoredCellState(sheet, address),
         current = authoredCellState(next, address);
       if (equal(previous, current)) continue;

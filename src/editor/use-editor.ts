@@ -20,7 +20,11 @@ import {
   type WorkbookChangeContext,
 } from '../model/operations.js';
 import { createWorkbookEntityId, worksheetCalculationExtent } from '../model/extent.js';
-import { acceptedPresentation, usePublication } from './use-publication.js';
+import {
+  acceptedPresentation,
+  usePublication,
+  useRecalculatingDisplay,
+} from './use-publication.js';
 import type { SpreadsheetEditorHandle, SpreadsheetEditorState } from './public-host.js';
 import { createClientCalculator } from '../calculation/provider.js';
 import {
@@ -80,6 +84,79 @@ import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './
 
 export type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
+const NO_CELLS: ReadonlySet<string> = new Set();
+/** Cell addresses a command wrote, by worksheet id. */
+type CellTargets = Map<string, Iterable<string>>;
+function mergeTargets(a: CellTargets, b: CellTargets): CellTargets {
+  const merged: CellTargets = new Map();
+  for (const source of [a, b])
+    for (const [id, addresses] of source)
+      merged.set(id, new Set([...(merged.get(id) ?? []), ...addresses]));
+  return merged;
+}
+function blockTargets(sheetId: string, x: number, y: number, values: unknown[][]): CellTargets {
+  return new Map([
+    [
+      sheetId,
+      values.flatMap((row, dy) => row.map((_cell, dx) => formatSpreadsheetAddress(x + dx, y + dy))),
+    ],
+  ]);
+}
+/** Ready cells less a draft's pending cells, without copying the ready set per keystroke. */
+function withoutPending(
+  ready: ReadonlySet<string>,
+  pending: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (!pending.size) return ready;
+  const view: ReadonlySet<string> = {
+    get size() {
+      return [...view].length;
+    },
+    has: (key) => ready.has(key) && !pending.has(key),
+    *[Symbol.iterator]() {
+      for (const key of ready) if (!pending.has(key)) yield key;
+    },
+    *keys() {
+      yield* view;
+    },
+    *values() {
+      yield* view;
+    },
+    *entries() {
+      for (const key of view) yield [key, key];
+    },
+    forEach(callback, thisArg) {
+      for (const key of view) callback.call(thisArg, key, key, view);
+    },
+  } as ReadonlySet<string>;
+  return view;
+}
+function readyValues<T>(
+  values: readonly (readonly T[])[] | undefined,
+  ready: ReadonlySet<string>,
+  sheetId: string,
+): (T | null)[][] | undefined {
+  return values?.map((row, y) =>
+    row.map((value, x) => (ready.has(calculationCellKey(sheetId, x, y)) ? value : null)),
+  );
+}
+/** Blank a draft's pending cells; rows without one keep their identity. */
+function withoutPendingValues<T>(
+  values: (T | null)[][] | undefined,
+  pending: ReadonlySet<string>,
+  sheetId: string,
+): (T | null)[][] | undefined {
+  if (!values || !pending.size) return values;
+  let next: (T | null)[][] | undefined;
+  for (const key of pending) {
+    const [id, x, y] = JSON.parse(key) as [string, number, number];
+    if (id !== sheetId || values[y]?.[x] == null) continue;
+    next ??= [...values];
+    if (next[y] === values[y]) next[y] = [...values[y]];
+    next[y][x] = null;
+  }
+  return next ?? values;
+}
 function immutableBaseline(workbook: Workbook): Workbook {
   const snapshot = copyWorkbook(workbook),
     pending: object[] = [snapshot];
@@ -296,6 +373,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     previewWorkbook !== workbook,
   );
   const visibleCalculation = previewWorkbook !== workbook ? previewCalculation : calculation;
+  const shown = useRecalculatingDisplay(
+    previewWorkbook,
+    visibleCalculation,
+    props.calculation?.mode !== 'external',
+  );
   const publication = useMemo(
     () => ({ inputKey: visibleCalculation.inputKey, revision: visibleCalculation.revision }),
     [visibleCalculation.inputKey, visibleCalculation.revision],
@@ -308,20 +390,20 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const draftCell = draftDirty
     ? { x: selection.x1, y: selection.y1, text: draft!.value }
     : nativeDraft;
-  const calculationExtent = worksheetCalculationExtent(sheet);
+  const calculationExtent = useMemo(() => worksheetCalculationExtent(sheet), [sheet]);
   const pendingCells = useMemo(
     () =>
       draftCell
         ? pendingCalculationCells(
-            visibleCalculation.result,
+            shown.result,
             [calculationCellKey(sheet.id, draftCell.x, draftCell.y)],
             draftCell.x >= calculationExtent.columns || draftCell.y >= calculationExtent.rows
               ? [sheet.id]
               : [],
           )
-        : new Set<string>(),
+        : NO_CELLS,
     [
-      visibleCalculation.result,
+      shown.result,
       sheet.id,
       calculationExtent.columns,
       calculationExtent.rows,
@@ -331,23 +413,23 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     ],
   );
   const readyCells = useMemo(
-    () => new Set([...visibleCalculation.readyCells].filter((key) => !pendingCells.has(key))),
-    [visibleCalculation.readyCells, pendingCells],
+    () => withoutPending(shown.readyCells, pendingCells),
+    [shown.readyCells, pendingCells],
   );
   const presentation = acceptedPresentation(
     props.cellPresentation,
     visibleCalculation.inputKey,
     visibleCalculation.revision,
   );
-  const acceptedOutput = visibleCalculation.result?.worksheets.find(
-    (result) => result.id === sheet.id,
-  )?.values;
+  const acceptedOutput = shown.result?.worksheets.find((result) => result.id === sheet.id)?.values;
+  // Ready values change with the result; a draft only blanks the rows its pending cells are in.
+  const readyOutput = useMemo(
+    () => readyValues(acceptedOutput, shown.readyCells, sheet.id),
+    [acceptedOutput, shown.readyCells, sheet.id],
+  );
   const output = useMemo(
-    () =>
-      acceptedOutput?.map((row, y) =>
-        row.map((value, x) => (readyCells.has(calculationCellKey(sheet.id, x, y)) ? value : null)),
-      ),
-    [acceptedOutput, readyCells, sheet.id],
+    () => withoutPendingValues(readyOutput, pendingCells, sheet.id),
+    [readyOutput, pendingCells, sheet.id],
   );
   const style = parseCellStyle(
     previewSheet.style?.[selectionAddress({ ...selection, x2: selection.x1, y2: selection.y1 })],
@@ -382,10 +464,15 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     source: WorkbookChangeContext['source'] = 'user',
   ) {
     assertWorkbook(next);
+    const previous = workbook;
+    let baseline: Workbook | undefined;
     const context: WorkbookChangeContext = {
       transactionId: (props.idFactory ?? createWorkbookEntityId)('transaction'),
       source,
-      baseline: immutableBaseline(workbook),
+      // The detached, frozen copy is made only for a host that reads it (SE-PERF-1).
+      get baseline() {
+        return (baseline ??= immutableBaseline(previous));
+      },
       operations: structuredClone(operations),
     };
     try {
@@ -399,10 +486,15 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (!props.value) setLocal(next);
     setSavePhase('dirty');
   }
-  function commit(next: Workbook, label = 'Edit workbook', operations?: WorkbookOperation[]) {
+  /** `targets` names the cells a command wrote, so its patches need no whole-workbook diff. */
+  function commit(
+    next: Workbook,
+    label = 'Edit workbook',
+    operations?: WorkbookOperation[],
+    targets?: CellTargets,
+  ) {
     if (next === workbook) return;
-    assertWorkbook(next);
-    const acceptedOperations = operations ?? commandOperations(workbook, next);
+    const acceptedOperations = operations ?? commandOperations(workbook, next, targets);
     publish(next, acceptedOperations);
     setHistory({
       head: next,
@@ -423,6 +515,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     label: string,
     operation?: { sheetId: string; change: StructureChange },
     operations?: WorkbookOperation[],
+    targets?: CellTargets,
   ) {
     if (!alive.current) return false;
     if (!canWrite) {
@@ -447,7 +540,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
             source: 'human',
             at: new Date().toISOString(),
           });
-    commit(accepted, canSuggest ? `Suggest: ${label}` : label, canSuggest ? undefined : operations);
+    commit(
+      accepted,
+      canSuggest ? `Suggest: ${label}` : label,
+      canSuggest ? undefined : operations,
+      targets,
+    );
     if (canSuggest) {
       setPanel('suggestions');
       setPanelOpen(true);
@@ -459,10 +557,13 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     transform: (base: Workbook) => Workbook | WorkbookCommandResult,
     label: string,
     operation?: { sheetId: string; change: StructureChange },
+    written?: CellTargets,
   ): boolean {
-    const pending = draftRef.current;
+    const pending = draftRef.current,
+      draftTargets: CellTargets = new Map();
     let base = workbook;
     if (pending?.key === draftKey && pending.value !== String(authored)) {
+      draftTargets.set(sheet.id, [formatSpreadsheetAddress(selection.x1, selection.y1)]);
       base = writeCells(
         base,
         sheet.id,
@@ -476,8 +577,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         warn(`${locked.name} is editing a cell in this selection. Try again after they finish.`);
         return false;
       }
-      // Structural transforms move this attribution together with the authored cell.
-      if (canEdit)
+      // Structural transforms move this attribution together with the authored cell; other
+      // commands are attributed once, in `mutate`.
+      if (canEdit && operation)
         base = attributeCellChanges(workbook, base, {
           actor,
           source: 'human',
@@ -493,8 +595,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         label,
         operation,
         result.operations
-          ? [...collectCellOperations(workbook, base), ...result.operations]
+          ? [...collectCellOperations(workbook, base, draftTargets), ...result.operations]
           : undefined,
+        written && mergeTargets(written, draftTargets),
       )
     )
       return false;
@@ -678,7 +781,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function applyFormula(): boolean {
     const pending = draftRef.current;
     if (pending?.key !== draftKey || pending.value === String(authored)) return true;
-    return mutateWithDraft((base) => base, `Edit ${selectionAddress(selection)}`);
+    return mutateWithDraft(
+      (base) => base,
+      `Edit ${selectionAddress(selection)}`,
+      undefined,
+      new Map(),
+    );
   }
   function setDraftValue(value: string) {
     setDraft({ key: draftKey, value });
@@ -691,6 +799,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const changed = mutate(
       writeCells(workbook, sheet.id, x, y, values, props.idFactory),
       'Edit cells',
+      undefined,
+      undefined,
+      blockTargets(sheet.id, x, y, values),
     );
     if (changed) setDraft(null);
     return changed;
@@ -703,6 +814,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     mutateWithDraft(
       (base) => formatCells(base, sheet.id, selection, properties, format),
       `Format ${selectionAddress(selection)}`,
+      undefined,
+      new Map([[sheet.id, selectionCells(selection).map((cell) => cell.address)]]),
     );
   }
   function toggleFormat(property: string, value: string) {
@@ -893,9 +1006,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         if (hasDraft && x === selection.x1 && y === selection.y1) return pending.value;
         if (!readyCells.has(calculationCellKey(sheet.id, x, y))) return cell;
         return formatWorksheetCell(
-          visibleCalculation.result?.worksheets.find((item) => item.id === sheet.id)?.values[y]?.[
-            x
-          ] ?? null,
+          shown.result?.worksheets.find((item) => item.id === sheet.id)?.values[y]?.[x] ?? null,
           sheet.formats?.[formatSpreadsheetAddress(x, y)],
           props.display,
         );
@@ -926,6 +1037,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           ? pasteSpreadsheetCopy(base, sheet.id, x, y, cached, selection, props.idFactory)
           : writeCells(base, sheet.id, x, y, values, props.idFactory),
       'Paste cells',
+      undefined,
+      matching ? undefined : blockTargets(sheet.id, x, y, values),
     );
     if (changed && cached?.cut && matching) copied.current = null;
   }
@@ -1270,9 +1383,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           const key = calculationCellKey(sheet.id, x, y),
             ready = readyCells.has(key);
           const rawResult =
-            visibleCalculation.result?.worksheets.find((entry) => entry.id === sheet.id)?.values[
-              y
-            ]?.[x] ?? null;
+            shown.result?.worksheets.find((entry) => entry.id === sheet.id)?.values[y]?.[x] ?? null;
           const cellPresentation = presentation?.cells[key];
           const text = ready
             ? (cellPresentation?.text ??
@@ -1291,7 +1402,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       ),
     );
     return matches;
-  }, [workbook, query, visibleCalculation.result, readyCells, presentation, props.display]);
+  }, [workbook, query, shown.result, readyCells, presentation, props.display]);
   const matchIndex =
     activeMatch === null
       ? -1
@@ -1336,6 +1447,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         return next;
       },
       all ? 'Replace all matches' : 'Replace match',
+      undefined,
+      targets.reduce<CellTargets>((cells, match) => {
+        const list = (cells.get(match.sheetId) as string[] | undefined) ?? [];
+        list.push(formatSpreadsheetAddress(match.x, match.y));
+        return cells.set(match.sheetId, list);
+      }, new Map()),
     );
     return targets.length;
   }
