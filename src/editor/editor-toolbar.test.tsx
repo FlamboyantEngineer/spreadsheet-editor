@@ -12,6 +12,7 @@ import type { SpreadsheetEditorProps } from './contracts.js';
 import { editorCommandMetadata } from './editor-commands.js';
 import { editorMenus } from './editor-menus.js';
 import { EditorToolbar } from './editor-toolbar.js';
+import { FULL_CAPABILITIES } from '../host/capabilities.js';
 
 function fixture(
   props: Partial<SpreadsheetEditorProps> = {},
@@ -30,6 +31,8 @@ function fixture(
     workbook,
     sheet: workbook.worksheets[0],
     mode: 'author',
+    capabilities: FULL_CAPABILITIES,
+    locked: false,
     canWrite: true,
     canEdit: true,
     canComment: true,

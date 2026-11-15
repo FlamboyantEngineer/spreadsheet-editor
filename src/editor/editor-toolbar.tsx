@@ -169,7 +169,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
               hint={`Editing mode: ${e.mode === 'author' ? 'Authoring' : e.mode === 'review' ? 'Reviewing' : 'Reading'}`}
               icon={editorGlyphs[e.mode]}
               iconOnly
-              disabled={e.props.readOnly}
+              disabled={e.locked}
               items={menus.review
                 .slice(0, 3)
                 .map((item) => ({ ...item, isSelected: item.id === e.mode }))}
@@ -183,25 +183,22 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
               size="sm"
               label="Editing mode"
               value={e.mode}
-              isDisabled={e.props.readOnly}
+              isDisabled={e.locked}
               options={[
                 {
                   id: 'author',
                   label: 'Authoring',
-                  isDisabled: e.props.permissions?.edit === false,
+                  isDisabled: !e.capabilities.edit,
                 },
                 {
                   id: 'review',
                   label: 'Reviewing',
-                  isDisabled:
-                    e.props.permissions?.suggest === false ||
-                    e.props.features?.suggestions === false,
+                  isDisabled: !e.capabilities.suggest || e.props.features?.suggestions === false,
                 },
                 {
                   id: 'read',
                   label: 'Reading',
-                  isDisabled:
-                    e.props.permissions?.edit === false && e.props.permissions?.suggest !== false,
+                  isDisabled: !e.capabilities.edit && e.capabilities.suggest,
                 },
               ]}
               onChange={(value) => e.setMode(value as typeof e.mode)}

@@ -5,6 +5,9 @@ import { mountLabBar } from '@flamboyantengineer/ui-components/labs';
 import { labStorage } from './settings.js';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
+import { createMemoryHost } from '../../src/host/index.js';
+
+const alex = createMemoryHost({ reader: { id: 'alex', name: 'Alex' } }).identity;
 import type { Workbook } from '../../src/model/index.js';
 import { FullLab } from './full-lab.js';
 import { HostLab } from './host-lab.js';
@@ -131,7 +134,7 @@ function EmbeddedLab() {
               setSaved(false);
             }}
             title="Mass budget"
-            currentUser={{ id: 'alex', name: 'Alex' }}
+            identity={alex}
             onSave={async () => {
               setSaved(true);
             }}
