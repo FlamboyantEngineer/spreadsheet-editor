@@ -47,6 +47,8 @@ export function syncSharedGridBorders(engine: JSpreadsheetWorksheetInstance) {
     const x = Number(cell.dataset.x),
       y = Number(cell.dataset.y);
     if (
+      // A detached row has no computed style; the row window reconciles it once attached.
+      !cell.isConnected ||
       cell.style.display === 'none' ||
       cell.classList.contains('editor') ||
       !Number.isInteger(x) ||

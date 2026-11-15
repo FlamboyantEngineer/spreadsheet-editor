@@ -12,6 +12,7 @@
  * available; otherwise a key change remounts the wrapper with the new dataset.
  */
 
+import { GRID_SPACER_CLASS } from './row-window.js';
 import {
   createElement,
   useCallback,
@@ -931,9 +932,26 @@ function observeJSpreadsheetCellSpill(
     }
     const changedRows = new Map<JSpreadsheetWorksheetInstance, Set<number>>();
     for (const mutation of mutations) {
+      if (mutation.type === 'childList' && mutation.target.nodeName === 'TBODY') {
+        // The row window attaches and detaches known rows; rows edited while detached were
+        // not observed, so a row refreshes when it is attached. New rows refresh every row.
+        for (const node of mutation.addedNodes) {
+          const owner = rowOwners.get(node);
+          if (owner) {
+            const rows = changedRows.get(owner.worksheet) ?? new Set<number>();
+            rows.add(owner.rowIndex);
+            changedRows.set(owner.worksheet, rows);
+          } else if (!(node instanceof Element && node.classList.contains(GRID_SPACER_CLASS))) {
+            refreshAll();
+            return;
+          }
+        }
+        continue;
+      }
       // Walk from a text node to its cell and row, or stop at a changed column or row list.
       let node: Node | null = mutation.target;
       for (let depth = 0; node && depth < 3; depth += 1, node = node.parentNode) {
+        if (node instanceof Element && node.classList.contains(GRID_SPACER_CLASS)) break;
         const owner = rowOwners.get(node);
         if (owner) {
           const rows = changedRows.get(owner.worksheet) ?? new Set<number>();
