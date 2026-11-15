@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { assertWorkbook, createWorkbook, setWorkbookCell } from './workbook.js';
+import { assertWorkbook, createWorkbook } from './workbook.js';
 import { parseFormula } from './formula-parser.js';
+import { writeCells } from './editing.js';
 
 describe('SE-MODEL-1: portable workbook and parser', () => {
   it('edits without mutating source input', () => {
     const original = createWorkbook([['1E-25']]);
-    const next = setWorkbookCell(original, 'sheet-1', 1, 0, '=1-A1');
+    const next = writeCells(original, 'sheet-1', 1, 0, [['=1-A1']]);
     expect(original.worksheets[0].data).toEqual([['1E-25']]);
     expect(next.worksheets[0].data).toEqual([['1E-25', '=1-A1']]);
   });

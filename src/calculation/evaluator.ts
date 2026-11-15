@@ -1,6 +1,6 @@
 import { worksheetCalculationExtent } from '../model/extent.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
-import { parseFormula, FormulaSyntaxError, type FormulaNode } from '../model/formula-parser.js';
+import { parseFormula, type FormulaNode } from '../model/formula-parser.js';
 import {
   assertWorkbook,
   worksheetNameKey,
@@ -361,11 +361,7 @@ export function calculateWorkbook(
     try {
       const input: CellInput = workbook.worksheets[sheetIndex].data[y]?.[x] ?? null;
       const address = formatSpreadsheetAddress(x, y);
-      const canonical = (
-        workbook.worksheets[sheetIndex] as (typeof workbook.worksheets)[number] & {
-          inputValues?: Record<string, NumericValue>;
-        }
-      ).inputValues?.[address];
+      const canonical = workbook.worksheets[sheetIndex].inputValues?.[address];
       cellDependencies.set(
         publicKey(sheetIndex, x, y),
         cellDependencies.get(publicKey(sheetIndex, x, y)) ?? new Set(),
@@ -436,13 +432,7 @@ export function calculateWorkbook(
       }
     } catch (error) {
       if (error instanceof NeedCell) throw error;
-      result = errorValue(
-        error instanceof CalculationError
-          ? error.code
-          : error instanceof FormulaSyntaxError
-            ? '#ERROR!'
-            : '#ERROR!',
-      );
+      result = errorValue(error instanceof CalculationError ? error.code : '#ERROR!');
     }
     if (readBudgets.get(key)?.exhausted || operations > maxOperations)
       result = errorValue('#LIMIT!');
@@ -926,8 +916,6 @@ export function calculateWorkbook(
               (sum, value) => arithmetic.add(sum, arithmetic.multiply(value, value)),
               zero,
             );
-          if (name === 'AVERAGE')
-            return arithmetic.divide(sum, arithmetic.parse(String(values.length)));
           if (name === 'MIN' || name === 'MAX')
             return values.reduce(
               (a, b) => (arithmetic.compare(a, b) > 0 === (name === 'MIN') ? b : a),

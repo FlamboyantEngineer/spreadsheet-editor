@@ -75,6 +75,7 @@ export async function buildLabs() {
     embedded: 'Embedded in an app',
     full: 'Full editor',
     host: 'Host integration',
+    large: 'Large worksheet',
   })) {
     await writeFile(
       resolve(output, `${page}.html`),

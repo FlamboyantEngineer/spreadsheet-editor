@@ -4,7 +4,7 @@ A standalone React spreadsheet editor built on [`@flamboyantengineer/ui-componen
 
 - Exact rational arithmetic, including scientific notation, large integers and cancellation. `1E-25` stays nonzero; `1-1E-25` stays distinct from `1`; `1-(1-1E-25)` returns exactly `1E-25`.
 - Client or server calculations through the same headless evaluator. Server mode accepts a host provider or the included HTTP adapter and Fetch-standard route handler.
-- Full editor chrome: File/Edit/Insert/Format/View/Review menus, formatting toolbar, formula bar, worksheet tabs, find/replace, side panels, save status, accessible selection statistics and worksheet-strip zoom. Embedded actions use the UI library’s default icon toolbar. Formula entry uses FormulaBar/CodeEditor: Enter commits and moves down, Ctrl/Command+Enter commits in place, and Escape cancels. Worksheet names edit directly in tabs with double-click or F2. Grid zoom scales cells and text inside a fixed viewport with one-pixel strokes.
+- Full editor chrome: File/Edit/Insert/Format/View/Review menus, formatting toolbar, formula bar, worksheet tabs, find/replace, side panels, save status, accessible selection statistics and worksheet-strip zoom. Embedded actions use the UI library’s default icon toolbar. Formula entry uses the UI library’s CodeEditor and CompletionList: Enter commits and moves down, Ctrl/Command+Enter commits in place, and Escape cancels. Worksheet names edit directly in tabs with double-click or F2. Grid zoom scales cells and text inside a fixed viewport with one-pixel strokes.
 - Threaded comments with replies, editing, reactions, resolve/reopen and cell markers. Reviewing mode records cell and formatting suggestions with explicit acceptance/rejection and conflict checks.
 - Cross-sheet formulas, ranges, undo/redo, row/column insertion and deletion, reference rewriting, resizing, frozen columns, merged cells and independent editor instances.
 - Document insertion as an ordinary table snapshot or an editable spreadsheet retaining live formulas.
@@ -169,6 +169,8 @@ const result = calculateWorkbook(prepared.workbook); // run through your authori
 const download = await exportXlsx(prepared.workbook, result, { signal });
 ```
 
+`exceljs`, `fflate` and `parse5` are optional peer dependencies used only by `/excel`: a host that imports that entry installs them; a browser-only host does not.
+
 Import discards Excel formula caches and preserves authored decimal XML, formulas, common formatting, merges and geometry. Review the loss report before replacing a workbook. Both helpers run in bounded child processes (640 MiB heap, 768 MiB RSS, two minutes, 100 MiB output); XLSX input is limited to 20 MiB, 200 worksheets and 250,000 non-empty cells. Two exports may run concurrently per process. Export uses the supplied existing results and captured external operands, performs no calculation, and disables automatic Excel recalculation. Exact values Excel cannot represent natively remain text.
 
 `onImportXlsx` connects your file picker, prepared preview and confirmation; return the confirmed workbook or `null`. `onExportXlsx` receives a captured workbook and matching current result. Production hosts should export authorized stored versions rather than trusting browser-submitted results. The labs demonstrate these adapters with a read-only server-prepared preview. See [EXCEL.md](specs/EXCEL.md).
@@ -195,7 +197,6 @@ The server-safe `createDocumentInsertion(workbook, result, options)` helper expo
 | `…/model`                                | Versioned workbook, addressing and extracted formula parsers         |
 | `…/document`                             | Both document insertion payloads and table projection                |
 | `…/excel`                                | Optional Node-only bounded XLSX import/export and conversion reports |
-| `…/engine`                               | Advanced browser-only Jspreadsheet host and engine helpers           |
 
 ```sh
 npm run check
@@ -203,4 +204,4 @@ npm run check
 
 Checks include lint, formatting, types, unit tests, a clean package build, built-entry-point imports in plain Node, and Chromium browser tests. Browser tests use `CHROMIUM_PATH`, system Chromium when available, or Playwright's browser (`npx playwright install chromium`). CI installs the public base library without a private-repository token.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [source provenance](NOTICE.md). The [host compatibility contract](specs/HOST-COMPATIBILITY.md) records implemented differences, deliberate numerical choices and application integration boundaries. Unknown functions return `#NAME?`; hosts supply authorized external formulas and constants through `FormulaHost`. CSV/JSON and clipboard operations are built in.
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [behavior specifications](specs/EDITOR.md) and [notices](NOTICE.md). The [host compatibility contract](specs/HOST-COMPATIBILITY.md) records implemented differences, deliberate numerical choices and application integration boundaries. Unknown functions return `#NAME?`; hosts supply authorized external formulas and constants through `FormulaHost`. CSV/JSON and clipboard operations are built in.

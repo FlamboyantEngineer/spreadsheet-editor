@@ -102,8 +102,12 @@ describe('SE-CR-2.18: grid-only zoom keeps authored geometry and pixel strokes',
       expect(engine.options?.columns?.[25].width).toBe(zoom);
       expect(engine.options?.rows?.[99].height).toBe((24 * zoom) / 100);
       expect(table.querySelector<HTMLElement>('col')!.style.width).toBe(`${(50 * zoom) / 100}px`);
-      expect(records[0][0].element.style.fontSize).toBe(`${(16 * zoom) / 100}px`);
-      expect(records[0][1].element.style.fontSize).toBe(`${(12 * zoom) / 100}px`);
+      // At 100% the stylesheet's own metrics apply; no inline copy is written.
+      expect(getComputedStyle(records[0][0].element).fontSize).toBe(`${(16 * zoom) / 100}px`);
+      expect(getComputedStyle(records[0][1].element).fontSize).toBe(`${(12 * zoom) / 100}px`);
+      expect(records[0][1].element.style.fontSize).toBe(
+        zoom === 100 ? '' : `${(12 * zoom) / 100}px`,
+      );
       expect(records[0][0].element.style.borderRightWidth).toBe('1px');
       expect(sheet).toEqual(original);
       expect(engine.options?.style).toEqual(sheet.style);

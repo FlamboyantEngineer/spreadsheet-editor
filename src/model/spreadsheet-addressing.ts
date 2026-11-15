@@ -1,26 +1,11 @@
 /**
- * @file Canonical A1 spreadsheet addressing helpers shared by the server and
- *   the browser apps.
+ * @file Canonical A1 spreadsheet addressing helpers: column-name <-> index math, `A1` cell-address
+ * parse/format and range parse/normalize. Dependency-free, so the model, calculation and browser
+ * modules all share it.
  *
- * Single source of truth for spreadsheet column-name <-> index math, `A1`
- * cell-address parse/format, range parse/normalize, and merge-cell span
- * normalization. The same logic previously existed as five drifting forks
- * (backend-root spreadsheet helpers, the collaboration snapshot adapter, the
- * spreadsheet-editor worksheet model, the doc-editor reference renderer, and
- * the cross-sheet formula shim); those sites now delegate here.
- *
- * Dependency-free on purpose: the spreadsheet grid is a browser carveout and
- * this module is imported by both server modules and client bundles, following
- * the `apps/shared/src/document-numbering.ts` shared-module pattern.
- *
- * Coordinate conventions: `x` is the 0-based column index, `y` is the 0-based
- * row index; formatted `A1` rows are 1-based. Parsers accept lowercase input,
- * strip every `$` anchor, and reject row `0`, leading-zero rows, and malformed
- * column names by returning `null`. Call sites with deliberately different
- * validation (the collaboration snapshot adapter accepts leading-zero rows and
- * rejects `$` anchors; the cross-sheet formula shim accepts at most one
- * leading `$` per part) keep their own input validation and delegate only the
- * shared math.
+ * Coordinate conventions: `x` is the 0-based column index, `y` is the 0-based row index; formatted
+ * `A1` rows are 1-based. Parsers accept lowercase input, strip every `$` anchor, and reject row `0`,
+ * leading-zero rows, and malformed column names by returning `null`.
  */
 
 /**
@@ -136,35 +121,4 @@ export function parseSpreadsheetRange(value: unknown): SpreadsheetRange | null {
         ? formatSpreadsheetAddress(x1, y1)
         : `${formatSpreadsheetAddress(x1, y1)}:${formatSpreadsheetAddress(x2, y2)}`,
   };
-}
-
-/**
- * Normalizes spreadsheet merge-cell spans, dropping invalid or no-op entries.
- * Anchor addresses are case/anchor-normalized through the shared parser.
- * @param source - The merge-cell map (address -> `[colspan, rowspan]`).
- * @returns The normalized merge-cell map.
- */
-export function normalizeSpreadsheetMergeCells(source: unknown): Record<string, [number, number]> {
-  if (!source || typeof source !== 'object') return {};
-  return Object.entries(source as Record<string, unknown>).reduce(
-    (acc: Record<string, [number, number]>, [address, span]) => {
-      if (!Array.isArray(span) || span.length < 2) return acc;
-      const parsedAddress = parseSpreadsheetAddress(address);
-      const colspan = Number(span[0]);
-      const rowspan = Number(span[1]);
-      if (
-        !parsedAddress ||
-        !Number.isInteger(colspan) ||
-        !Number.isInteger(rowspan) ||
-        colspan < 1 ||
-        rowspan < 1
-      ) {
-        return acc;
-      }
-      if (colspan === 1 && rowspan === 1) return acc;
-      acc[formatSpreadsheetAddress(parsedAddress.x, parsedAddress.y)] = [colspan, rowspan];
-      return acc;
-    },
-    {},
-  );
 }

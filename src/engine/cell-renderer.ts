@@ -43,6 +43,25 @@ export interface GridCellPresentation {
 const previousPresentations = new WeakMap<JSpreadsheetHostHandle, Set<HTMLElement>>();
 const portalTargets = new WeakMap<HTMLElement, HTMLElement>();
 const presentationTitles = new WeakMap<HTMLElement, string>();
+/** What a cell was last painted from, so an unchanged cell is not painted again. */
+interface PaintedCell {
+  settings: object;
+  value: CellValue;
+  raw: CellInput | undefined;
+  ready: boolean;
+  drafting: boolean;
+  hint: unknown;
+  format: CellFormat | undefined;
+  /** The cell's first child after painting; the engine replaces it when it rewrites the cell. */
+  node: ChildNode | null;
+  content: ReactNode | undefined;
+}
+const paintedCells = new WeakMap<HTMLElement, PaintedCell>();
+/** Settings shared by every cell; a new object means every cell is painted again. */
+const paintSettings = new WeakMap<
+  JSpreadsheetHostHandle,
+  { inputs: readonly unknown[]; token: object }
+>();
 function clearCellPresentation(cell: HTMLElement) {
   if (cell.dataset.sePresentation !== undefined) {
     if (cell.title === presentationTitles.get(cell)) cell.removeAttribute('title');
@@ -58,13 +77,55 @@ function clearCellPresentation(cell: HTMLElement) {
 export function clearCalculatedPresentation(handle: JSpreadsheetHostHandle) {
   for (const cell of previousPresentations.get(handle) ?? []) {
     clearCellPresentation(cell);
+    paintedCells.delete(cell);
     const target = portalTargets.get(cell);
     if (target) target.remove();
     portalTargets.delete(cell);
   }
   previousPresentations.delete(handle);
+  paintSettings.delete(handle);
 }
-/** Only engine-owned cells are painted; raw data and formulas remain untouched. */
+
+/** Calculated values compare by content: a new calculation result holds new objects. */
+function sameCellValue(a: CellValue, b: CellValue): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const keys = Object.keys(a) as (keyof typeof a)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => {
+    const left: unknown = a[key],
+      right: unknown = (b as typeof a)[key];
+    return (
+      left === right ||
+      (typeof left === 'object' &&
+        typeof right === 'object' &&
+        JSON.stringify(left) === JSON.stringify(right))
+    );
+  });
+}
+
+/** The settings token for this paint: unchanged while every shared input is unchanged. */
+function settingsToken(
+  handle: JSpreadsheetHostHandle,
+  inputs: readonly unknown[],
+  force: boolean,
+): object {
+  const previous = paintSettings.get(handle);
+  if (
+    !force &&
+    previous &&
+    previous.inputs.every((input, index) => Object.is(input, inputs[index]))
+  )
+    return previous.token;
+  const token = {};
+  paintSettings.set(handle, { inputs, token });
+  return token;
+}
+
+/** Only engine-owned cells are painted; raw data and formulas remain untouched. A cell
+ * whose value, input, format, readiness and presentation are unchanged is left as it is.
+ * `repaint` paints every cell again, for when other presentation has changed the cells.
+ */
 export function renderCalculatedCells(
   handle: JSpreadsheetHostHandle,
   values: CellValue[][] | undefined,
@@ -74,13 +135,13 @@ export function renderCalculatedCells(
   formats: Record<string, CellFormat> = {},
   showFormulas = false,
   presentation?: GridCellPresentation,
+  repaint = false,
 ): CellPortal[] {
   const worksheet = worksheetFrom(handle);
   if (!worksheet?.getCellFromCoords) return [];
   const portals: CellPortal[] = [];
   const touched = new Set<HTMLElement>();
   const previous = previousPresentations.get(handle) ?? new Set<HTMLElement>();
-  for (const cell of previous) clearCellPresentation(cell);
   const accepted = presentation?.publication;
   const hints =
     accepted &&
@@ -88,27 +149,70 @@ export function renderCalculatedCells(
     presentation.cellPresentation.revision === accepted.revision
       ? presentation.cellPresentation.cells
       : undefined;
-  const visible: CellValue[][] =
-    values ??
-    raw.map((row) =>
-      row.map((value) =>
-        typeof value === 'string' && value.trimStart().startsWith('=')
+  const settings = settingsToken(
+    handle,
+    [
+      display,
+      unavailableText,
+      showFormulas,
+      presentation?.sheetId,
+      presentation?.renderCellContent,
+      // Host content receives the publication; text alone does not depend on it.
+      presentation?.renderCellContent && accepted?.inputKey,
+      presentation?.renderCellContent && accepted?.revision,
+    ],
+    repaint,
+  );
+  const hasFormats = Object.keys(formats).length > 0;
+  const keyPrefix = `[${JSON.stringify(presentation?.sheetId)},`;
+  const draft = presentation?.draft;
+  const readyCells = presentation?.readyCells;
+  const rows = values ?? raw;
+  for (let y = 0; y < rows.length; y++) {
+    const row = rows[y],
+      rawRow = raw[y];
+    for (let x = 0; x < row.length; x++) {
+      const cell = worksheet.getCellFromCoords(x, y);
+      if (!cell) continue;
+      if (cell.classList.contains('editor')) {
+        // The engine rewrites the cell when its editor closes.
+        paintedCells.delete(cell);
+        continue;
+      }
+      const input = rawRow?.[x];
+      const value: CellValue = values
+        ? values[y][x]
+        : typeof input === 'string' && input.trimStart().startsWith('=')
           ? unavailableText
-          : typeof value === 'number'
-            ? String(value)
-            : value,
-      ),
-    );
-  visible.forEach((row, y) =>
-    row.forEach((value, x) => {
-      const cell = worksheet.getCellFromCoords?.(x, y);
-      if (!cell || cell.classList.contains('editor')) return;
-      const key = JSON.stringify([presentation?.sheetId, x, y]);
-      const draft = presentation?.draft;
+          : typeof input === 'number'
+            ? String(input)
+            : (input as CellValue);
+      // Equal to calculationCellKey(sheetId, x, y), without a JSON.stringify per cell.
+      const key = `${keyPrefix}${x},${y}]`;
       const drafting = draft?.x === x && draft.y === y;
-      const ready = !drafting && (!presentation?.readyCells || presentation.readyCells.has(key));
+      const ready = !drafting && (!readyCells || readyCells.has(key));
       const hint = ready ? hints?.[key] : undefined;
-      const authoredFormat = formats[formatSpreadsheetAddress(x, y)];
+      const authoredFormat = hasFormats ? formats[formatSpreadsheetAddress(x, y)] : undefined;
+      touched.add(cell);
+      const painted = paintedCells.get(cell);
+      if (
+        painted &&
+        painted.settings === settings &&
+        !drafting &&
+        !painted.drafting &&
+        painted.ready === ready &&
+        painted.raw === input &&
+        painted.hint === hint &&
+        painted.format === authoredFormat &&
+        painted.node === cell.firstChild &&
+        sameCellValue(painted.value, value)
+      ) {
+        const target = portalTargets.get(cell);
+        if (painted.content !== undefined && target)
+          portals.push({ key, target, content: painted.content });
+        continue;
+      }
+      clearCellPresentation(cell);
       const format: CellFormat | undefined =
         hint?.defaultUnit && !authoredFormat
           ? { kind: 'unit', unit: hint.defaultUnit }
@@ -116,14 +220,11 @@ export function renderCalculatedCells(
       const calculatedText = formatWorksheetCell(value, format, display);
       const text = drafting
         ? draft.text
-        : !ready && raw[y]?.[x] !== null && raw[y]?.[x] !== undefined && raw[y]?.[x] !== ''
+        : !ready && input !== null && input !== undefined && input !== ''
           ? unavailableText
-          : showFormulas &&
-              typeof raw[y]?.[x] === 'string' &&
-              String(raw[y][x]).trimStart().startsWith('=')
-            ? String(raw[y][x])
+          : showFormulas && typeof input === 'string' && input.trimStart().startsWith('=')
+            ? input
             : (hint?.text ?? calculatedText);
-      touched.add(cell);
       if (hint) {
         cell.dataset.sePresentation = '';
         if (hint.tooltip) {
@@ -143,13 +244,14 @@ export function renderCalculatedCells(
               y,
               inputKey: accepted.inputKey,
               revision: accepted.revision,
-              rawInput: raw[y]?.[x] ?? null,
+              rawInput: input ?? null,
               value,
               presentation: hint,
               calculatedText,
             })
           : undefined;
-      if (content !== undefined && !showFormulas) {
+      const portal = content !== undefined && !showFormulas;
+      if (portal) {
         let target = portalTargets.get(cell);
         if (!target || target.parentElement !== cell) {
           target = cell.ownerDocument.createElement('span');
@@ -163,24 +265,39 @@ export function renderCalculatedCells(
         if (target || cell.textContent !== text) cell.textContent = text;
         portalTargets.delete(cell);
       }
-      cell.dataset.approximate = String(
+      const approximate = String(
         typeof value === 'object' && value !== null && value.kind === 'number' && value.approximate,
       );
-    }),
-  );
-  if (presentation?.draft) {
-    const { x, y, text } = presentation.draft;
+      if (cell.dataset.approximate !== approximate) cell.dataset.approximate = approximate;
+      paintedCells.set(cell, {
+        settings,
+        value,
+        raw: input,
+        ready,
+        drafting,
+        hint,
+        format: authoredFormat,
+        node: cell.firstChild,
+        content: portal ? content : undefined,
+      });
+    }
+  }
+  if (draft) {
+    const { x, y, text } = draft;
     const cell = worksheet.getCellFromCoords(x, y);
     if (cell && !cell.classList.contains('editor')) {
-      cell.textContent = text;
+      if (cell.textContent !== text) cell.textContent = text;
       cell.dataset.approximate = 'false';
       clearCellPresentation(cell);
       portalTargets.delete(cell);
+      paintedCells.delete(cell);
       touched.add(cell);
     }
   }
   for (const cell of previous)
     if (!touched.has(cell)) {
+      clearCellPresentation(cell);
+      paintedCells.delete(cell);
       const target = portalTargets.get(cell);
       if (target) target.remove();
       portalTargets.delete(cell);
@@ -189,22 +306,41 @@ export function renderCalculatedCells(
   previousPresentations.set(handle, touched);
   return portals;
 }
+/** Cells marked for each grid, and what they were marked from. */
+const reviewMarkers = new WeakMap<
+  JSpreadsheetHostHandle,
+  { inputs: readonly unknown[]; cells: HTMLElement[] }
+>();
+
+/** Mark cells with open comments and pending suggestions. Returns false when nothing
+ * changed: the same inputs on the same cells are left as they are.
+ */
 export function renderReviewMarkers(
   handle: JSpreadsheetHostHandle,
   sheetId: string,
   comments: SpreadsheetComment[] = [],
   suggestions: SpreadsheetSuggestion[] = [],
-): void {
+): boolean {
   const worksheet = worksheetFrom(handle);
-  if (!worksheet?.getCellFromCoords) return;
-  const root = worksheet.element ?? worksheet.root;
-  root
-    ?.querySelectorAll<HTMLElement>('[data-se-comments], [data-se-suggestions]')
-    .forEach((cell) => {
-      delete cell.dataset.seComments;
-      delete cell.dataset.seSuggestions;
-      cell.removeAttribute('title');
-    });
+  if (!worksheet?.getCellFromCoords) return false;
+  const inputs = [sheetId, comments, suggestions, worksheet.records?.length];
+  const previous = reviewMarkers.get(handle);
+  if (
+    previous &&
+    previous.inputs.every((input, index) => Object.is(input, inputs[index])) &&
+    previous.cells.every(
+      (cell) =>
+        cell.isConnected &&
+        (cell.dataset.seComments !== undefined || cell.dataset.seSuggestions !== undefined),
+    )
+  )
+    return false;
+  for (const cell of previous?.cells ?? []) {
+    delete cell.dataset.seComments;
+    delete cell.dataset.seSuggestions;
+    cell.removeAttribute('title');
+  }
+  const marked = new Set<HTMLElement>();
   for (const thread of comments) {
     if (thread.sheetId !== sheetId || thread.resolved || thread.orphaned || thread.suggestionId)
       continue;
@@ -221,6 +357,7 @@ export function renderReviewMarkers(
         if (cell) {
           cell.dataset.seComments = String(Number(cell.dataset.seComments ?? 0) + 1);
           cell.title = `${cell.dataset.seComments} open comment(s)`;
+          marked.add(cell);
         }
       }
     }
@@ -237,12 +374,20 @@ export function renderReviewMarkers(
       if (cell) {
         cell.dataset.seSuggestions = String(Number(cell.dataset.seSuggestions ?? 0) + 1);
         cell.title = [cell.title, `Suggestion: ${suggestion.summary}`].filter(Boolean).join('; ');
+        marked.add(cell);
       }
     }
   }
+  reviewMarkers.set(handle, { inputs, cells: [...marked] });
+  return (previous?.cells.length ?? 0) > 0 || marked.size > 0;
 }
 
-/** Contributor colours are presentation attributes, never authored cell styles. */
+/** What each grid's contributor colours were last painted from. */
+const paintedContributors = new WeakMap<JSpreadsheetHostHandle, readonly unknown[]>();
+
+/** Contributor colours are presentation attributes, never authored cell styles. Repaints
+ * only when the provenance, the edited cell, the visibility or the engine's cells change.
+ */
 export function renderContributors(
   handle: JSpreadsheetHostHandle,
   sheet: Worksheet,
@@ -251,8 +396,26 @@ export function renderContributors(
 ): void {
   const worksheet = worksheetFrom(handle);
   if (!worksheet?.records) return;
-  for (let y = 0; y < worksheet.records.length; y++) {
-    const row = worksheet.records[y];
+  const records = worksheet.records;
+  const inputs = [
+    visible,
+    visible ? sheet.cellProvenance : undefined,
+    visible ? editing?.x1 : undefined,
+    visible ? editing?.y1 : undefined,
+    // The cell being edited is skipped; the engine rewrites it when its editor closes.
+    visible ? (worksheet as { edition?: unknown[] }).edition?.[0] : undefined,
+    records.length,
+    records[0]?.length,
+    records[0]?.[0]?.element,
+    records[records.length - 1]?.[0]?.element,
+  ];
+  const previous = paintedContributors.get(handle);
+  // Hidden twice in a row: the cells carry no contributor attributes to clear.
+  if (previous && !visible && !previous[0]) return;
+  if (previous?.every((input, index) => Object.is(input, inputs[index]))) return;
+  paintedContributors.set(handle, inputs);
+  for (let y = 0; y < records.length; y++) {
+    const row = records[y];
     if (!row) continue;
     for (let x = 0; x < row.length; x++) {
       const cell = row[x]?.element;
