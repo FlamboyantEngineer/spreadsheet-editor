@@ -8,6 +8,7 @@ import { SpreadsheetEditor, createWorkbook } from '../../src/index.js';
 import type { Workbook } from '../../src/model/index.js';
 import { FullLab } from './full-lab.js';
 import { HostLab } from './host-lab.js';
+import { LargeLab } from './large-lab.js';
 import { engineeringSample } from './sample.js';
 import 'jsuites/dist/jsuites.css';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
@@ -42,6 +43,13 @@ const labs = [
       'Public lifecycle handles, captured results, function descriptors and React cell content.',
     detail:
       'Explore a host-controlled workbook with protected drafts, publication revisions, explicit save and durability callbacks.',
+  },
+  {
+    id: 'large',
+    title: 'Large worksheet',
+    description: 'A 10,000-cell worksheet for checking how the grid responds to typing and edits.',
+    detail:
+      'Type into cells and commit edits on a worksheet with 10,000 cells and a formula in every row. The browser tests hold its typing and commit times to a budget.',
   },
 ] as const;
 const current = labs.find((lab) => location.pathname === `/${lab.id}.html`);
@@ -171,6 +179,8 @@ function App() {
               <EmbeddedLab />
             ) : current.id === 'host' ? (
               <HostLab />
+            ) : current.id === 'large' ? (
+              <LargeLab />
             ) : (
               <FullLab />
             )}
@@ -184,7 +194,11 @@ function App() {
                   <a href={href(lab.id)}>{lab.title}</a>
                   <p>{lab.description}</p>
                   <code>
-                    {lab.id === 'host' ? 'editorRef + external results' : `chrome="${lab.id}"`}
+                    {lab.id === 'host'
+                      ? 'editorRef + external results'
+                      : lab.id === 'large'
+                        ? 'chrome="embedded", 10,000 cells'
+                        : `chrome="${lab.id}"`}
                   </code>
                 </li>
               ))}
