@@ -1,4 +1,5 @@
 import { DEFAULT_WORKBOOK_LIMITS, type Worksheet } from '../model/workbook.js';
+import { withLazyRebuild } from './row-window.js';
 import {
   extendWorksheetIdentities,
   worksheetExtent,
@@ -136,7 +137,8 @@ export function syncWorksheetData(
     }));
     options.rows = structuredClone(next.rows ?? {});
     options.mergeCells = structuredClone(next.mergeCells ?? {});
-    engine.setData?.(next.data.map((row) => [...row]));
+    // A rebuild attaches only the first rows; the row window places the rest (SE-PERF-1).
+    withLazyRebuild(engine, () => engine.setData?.(next.data.map((row) => [...row])));
   } finally {
     options.allowInsertColumn = permissions.allowInsertColumn;
     options.allowDeleteColumn = permissions.allowDeleteColumn;

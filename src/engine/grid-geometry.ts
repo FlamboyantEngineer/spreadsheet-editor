@@ -3,6 +3,7 @@ import type { CellSelection } from '../model/editing.js';
 import type { Worksheet } from '../model/workbook.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import { gridRowWindow, revealGridRows } from './row-window.js';
 
 /** Zoom is presentation state; all engine measurements are already CSS pixels. */
 export function gridZoomScale(zoom = 100): number {
@@ -152,7 +153,8 @@ export function gridBodyBounds(engine: JSpreadsheetWorksheetInstance, viewport: 
     ?.find((header) => header?.getBoundingClientRect().height > 0)
     ?.getBoundingClientRect();
   const row = engine.rows
-    ?.find((row) => (row?.element?.firstElementChild?.getBoundingClientRect().width ?? 0) > 0)
+    ?.slice(gridRowWindow(engine)?.start ?? 0)
+    .find((row) => (row?.element?.firstElementChild?.getBoundingClientRect().width ?? 0) > 0)
     ?.element.firstElementChild?.getBoundingClientRect();
   return {
     origin,
@@ -167,6 +169,23 @@ export function gridBodyBounds(engine: JSpreadsheetWorksheetInstance, viewport: 
     right,
     bottom,
   };
+}
+
+/**
+ * Place the fill handle at the selection's last cell as the engine does. The engine measures
+ * that cell when the selection changes, which reads nothing while its row is detached.
+ */
+export function placeGridCorner(engine: JSpreadsheetWorksheetInstance) {
+  const last = engine.highlighted?.at(-1)?.element as HTMLElement | undefined,
+    corner = engine.corner,
+    content = engine.content;
+  if (!last?.isConnected || !corner || !content) return;
+  const bounds = content.getBoundingClientRect(),
+    rect = last.getBoundingClientRect();
+  const top = `${rect.top - bounds.top + content.scrollTop + rect.height - 4}px`,
+    left = `${rect.left - bounds.left + content.scrollLeft + rect.width - 4}px`;
+  if (corner.style.top !== top) corner.style.top = top;
+  if (corner.style.left !== left) corner.style.left = left;
 }
 
 /** CE's absolutely positioned fill handle must not paint or intercept clicks over headers. */
@@ -242,8 +261,14 @@ export function measureGridSelection(
         }
       : { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
   }
-  const lastY = Math.min(range.y2, (engine.records?.length ?? range.y2 + 1) - 1);
-  const firstY = Math.max(0, range.y1),
+  // Detached rows lie outside the viewport; the attached rows bound what can be seen.
+  const attached = gridRowWindow(engine);
+  const lastY = Math.min(
+    range.y2,
+    (engine.records?.length ?? range.y2 + 1) - 1,
+    (attached?.end ?? Infinity) - 1,
+  );
+  const firstY = Math.max(0, range.y1, attached?.start ?? 0),
     lastX = Math.min(range.x2, (engine.cols?.length ?? range.x2 + 1) - 1);
   for (const part of [0, 1] as const) {
     const firstX = Math.max(0, range.x1, part === 1 ? frozenCount : 0),
@@ -297,6 +322,7 @@ export function scrollGridCellIntoView(
   x: number,
   y: number,
 ) {
+  revealGridRows(engine, y);
   const viewport = gridViewport(engine),
     cell = engine.getCellFromCoords?.(x, y);
   if (!viewport || !cell) return;
