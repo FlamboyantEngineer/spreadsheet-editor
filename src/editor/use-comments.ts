@@ -13,36 +13,17 @@ import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
 import type { Workbook, Worksheet } from '../model/workbook.js';
 import type { GridController } from './contracts.js';
 
-/** Comment threads and suggestion decisions: the composer, the open thread and reply drafts. */
-export function useComments({
-  workbook,
-  sheet,
-  selection,
-  initialCommentId,
-  canComment,
-  canDecide,
-  grid,
-  select,
-  openPanel,
-  commit,
-  stamp,
-}: {
+interface CommentNavigation {
   workbook: Workbook;
-  sheet: Worksheet;
-  selection: CellSelection;
   initialCommentId: string | undefined;
-  canComment: boolean;
-  canDecide: boolean;
   grid: RefObject<GridController | null>;
   select: (range: CellSelection, targetSheetId?: string) => boolean;
-  openPanel: (id: string) => void;
-  commit: (next: Workbook, label?: string) => void;
-  stamp: () => ReviewStamp;
-}) {
+}
+
+/** The open thread and the composer: opening a thread selects its range (SE-REVIEW-1.1). */
+function useOpenComment({ workbook, initialCommentId, grid, select }: CommentNavigation) {
   const [commentComposer, setCommentComposer] = useState(false);
-  const [commentScope, setCommentScope] = useState<'range' | 'workbook'>('range');
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   function openComment(id: string) {
     const thread = workbook.comments?.find((thread) => thread.id === id);
     if (!thread) return;
@@ -60,6 +41,73 @@ export function useComments({
     setActiveCommentId(id);
     grid.current?.releaseKeyboard();
   }
+  const openInitialComment = useEffectEvent((id: string) => openComment(id));
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a host deep link opens its thread when it is given
+    if (initialCommentId) openInitialComment(initialCommentId);
+  }, [initialCommentId]);
+  const closeVanishedComment = useEffectEvent((current: Workbook) => {
+    const thread = current.comments?.find((thread) => thread.id === activeCommentId);
+    if (activeCommentId !== 'draft' && (!thread || thread.state === 'resolved' || thread.orphaned))
+      setActiveCommentId(null);
+  });
+  // A thread that leaves the workbook closes, and stays closed if an undo brings it back.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closes once per workbook change
+    closeVanishedComment(workbook);
+  }, [workbook]);
+  return {
+    commentComposer,
+    setCommentComposer,
+    activeCommentId,
+    setActiveCommentId,
+    openComment,
+  };
+}
+
+interface CommentInputs extends CommentNavigation {
+  sheet: Worksheet;
+  selection: CellSelection;
+  canComment: boolean;
+  canDecide: boolean;
+  openPanel: (id: string) => void;
+  commit: (next: Workbook, label?: string) => void;
+  stamp: () => ReviewStamp;
+}
+
+/** The workbook with a new range or workbook comment. */
+function commentedWorkbook(
+  workbook: Workbook,
+  {
+    scope,
+    sheetId,
+    selection,
+  }: { scope: 'range' | 'workbook'; sheetId: string; selection: CellSelection },
+  { text, meta }: { text: string; meta: ReviewStamp },
+) {
+  return scope === 'workbook'
+    ? addWorkbookComment(workbook, text, meta)
+    : addComment(workbook, { sheetId, range: selectionAddress(selection), text }, meta);
+}
+
+/** Comment threads and suggestion decisions: the composer, the open thread and reply drafts. */
+export function useComments({
+  workbook,
+  sheet,
+  selection,
+  initialCommentId,
+  canComment,
+  canDecide,
+  grid,
+  select,
+  openPanel,
+  commit,
+  stamp,
+}: CommentInputs) {
+  const { commentComposer, setCommentComposer, activeCommentId, setActiveCommentId, openComment } =
+    useOpenComment({ workbook, initialCommentId, grid, select });
+  const [commentScope, setCommentScope] = useState<'range' | 'workbook'>('range');
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   function beginComment() {
     if (!canComment) return;
     const existing = findOpenComment(workbook, sheet.id, selectionAddress(selection));
@@ -83,37 +131,20 @@ export function useComments({
     if (!canComment) return;
     const meta = stamp();
     commit(
-      commentScope === 'workbook'
-        ? addWorkbookComment(workbook, text, meta)
-        : addComment(
-            workbook,
-            { sheetId: sheet.id, range: selectionAddress(selection), text },
-            meta,
-          ),
+      commentedWorkbook(
+        workbook,
+        { scope: commentScope, sheetId: sheet.id, selection },
+        { text, meta },
+      ),
       'Add comment',
     );
     setCommentComposer(false);
     if (commentScope === 'range') setActiveCommentId(meta.id);
   }
-  const openInitialComment = useEffectEvent((id: string) => openComment(id));
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a host deep link opens its thread when it is given
-    if (initialCommentId) openInitialComment(initialCommentId);
-  }, [initialCommentId]);
   function openSuggestion(id: string) {
     const item = workbook.suggestions?.find((suggestion) => suggestion.id === id);
     if (item?.commentThreadId) openComment(item.commentThreadId);
   }
-  const closeVanishedComment = useEffectEvent((current: Workbook) => {
-    const thread = current.comments?.find((thread) => thread.id === activeCommentId);
-    if (activeCommentId !== 'draft' && (!thread || thread.state === 'resolved' || thread.orphaned))
-      setActiveCommentId(null);
-  });
-  // A thread that leaves the workbook closes, and stays closed if an undo brings it back.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- closes once per workbook change
-    closeVanishedComment(workbook);
-  }, [workbook]);
   function decide(id: string, action: 'accepted' | 'rejected') {
     if (canDecide)
       commit(

@@ -19,8 +19,8 @@ export interface EditorLifecycle {
   state: SpreadsheetEditorState;
 }
 
-/** The handle hosts reach through `editorRef`; it reads the editor only through these refs. */
-export function createEditorHandle(refs: {
+/** The refs the editor's imperative handle reads. */
+interface EditorHandleRefs {
   alive: RefObject<boolean>;
   lifecycle: RefObject<EditorLifecycle>;
   latestWorkbook: RefObject<Workbook>;
@@ -29,17 +29,54 @@ export function createEditorHandle(refs: {
   session: () => WorkbookSession | null | undefined;
   errorNotice: RefObject<string | null>;
   listeners: RefObject<Set<() => void>>;
-}): SpreadsheetEditorHandle {
-  const {
-    alive,
-    lifecycle,
-    latestWorkbook,
-    draftRef,
-    nativeDraftRef,
-    session,
-    errorNotice,
-    listeners,
-  } = refs;
+}
+
+/** A detached copy of the editor's state, with its draft and the session's status. */
+function editorState({
+  lifecycle,
+  latestWorkbook,
+  draftRef,
+  nativeDraftRef,
+  session,
+  errorNotice,
+}: EditorHandleRefs): SpreadsheetEditorState {
+  const pending = draftRef.current;
+  const current = lifecycle.current.state;
+  const target = lifecycle.current.draftTarget;
+  const draftDirty =
+    !!nativeDraftRef.current ||
+    (!!pending &&
+      pending.value !==
+        String(
+          latestWorkbook.current.worksheets.find((value) => value.id === target.sheetId)?.data[
+            target.y
+          ]?.[target.x] ?? '',
+        ));
+  return structuredClone({
+    ...current,
+    dirty: !!session()?.status().dirty || draftDirty,
+    draftDirty,
+    saving: session()?.status().phase === 'saving',
+    flushing: current.flushing,
+    error: sessionErrorMessage(session()?.status() ?? null) ?? errorNotice.current,
+  });
+}
+
+function selectTarget(lifecycle: EditorLifecycle, target: { sheetId: string; range: string }) {
+  const range = parseSpreadsheetRange(target.range);
+  if (!range) throw new TypeError('Invalid selection range.');
+  if (
+    !lifecycle.select(
+      { x1: range.start.x, y1: range.start.y, x2: range.end.x, y2: range.end.y },
+      target.sheetId,
+    )
+  )
+    throw new Error('Could not select the requested cell.');
+}
+
+/** The handle hosts reach through `editorRef`; it reads the editor only through these refs. */
+export function createEditorHandle(refs: EditorHandleRefs): SpreadsheetEditorHandle {
+  const { alive, lifecycle, latestWorkbook, listeners } = refs;
   const requireSession = () => {
     if (!alive.current) throw new Error('The editor session has ended.');
   };
@@ -66,38 +103,11 @@ export function createEditorHandle(refs: {
     },
     getState() {
       requireSession();
-      const pending = draftRef.current;
-      const current = lifecycle.current.state;
-      const target = lifecycle.current.draftTarget;
-      const draftDirty =
-        !!nativeDraftRef.current ||
-        (!!pending &&
-          pending.value !==
-            String(
-              latestWorkbook.current.worksheets.find((value) => value.id === target.sheetId)?.data[
-                target.y
-              ]?.[target.x] ?? '',
-            ));
-      return structuredClone({
-        ...current,
-        dirty: !!session()?.status().dirty || draftDirty,
-        draftDirty,
-        saving: session()?.status().phase === 'saving',
-        flushing: current.flushing,
-        error: sessionErrorMessage(session()?.status() ?? null) ?? errorNotice.current,
-      });
+      return editorState(refs);
     },
     select(target) {
       requireSession();
-      const range = parseSpreadsheetRange(target.range);
-      if (!range) throw new TypeError('Invalid selection range.');
-      if (
-        !lifecycle.current.select(
-          { x1: range.start.x, y1: range.start.y, x2: range.end.x, y2: range.end.y },
-          target.sheetId,
-        )
-      )
-        throw new Error('Could not select the requested cell.');
+      selectTarget(lifecycle.current, target);
     },
     subscribe(listener) {
       requireSession();
