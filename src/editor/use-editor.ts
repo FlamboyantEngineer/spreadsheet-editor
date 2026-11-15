@@ -159,7 +159,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     () => [viewedVersion?.version.author ?? null, ...versionList.versions.map((v) => v.author)],
     [viewedVersion, versionList.versions],
   );
-  const personName = usePersonNames(props.identity, workbook.comments, actor, versionAuthors);
+  const personName = usePersonNames(props.identity, {
+    comments: workbook.comments,
+    actor,
+    others: versionAuthors,
+  });
   const [showContributors, setShowContributors] = useState(false);
   const [zoom, setZoom] = useState(100),
     [showGridlines, setShowGridlines] = useState(true),
@@ -296,7 +300,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       head: next,
       past: [
         ...currentHistory.past.slice(-49),
-        historyEntry(workbook, next, label, structuredClone(acceptedOperations)),
+        historyEntry({ previous: workbook, next }, label, structuredClone(acceptedOperations)),
       ],
       future: [],
     });
@@ -571,7 +575,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       'Edit cells',
       undefined,
       undefined,
-      blockTargets(sheet.id, x, y, values),
+      blockTargets(sheet.id, { x, y }, values),
     );
     if (changed) setDraft(null);
     return changed;
@@ -787,7 +791,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           : writeCells(base, values, { sheetId: sheet.id, x, y, idFactory: props.idFactory }),
       'Paste cells',
       undefined,
-      matching ? undefined : blockTargets(sheet.id, x, y, values),
+      matching ? undefined : blockTargets(sheet.id, { x, y }, values),
     );
     if (changed && cached?.cut && matching) copied.current = null;
   }
@@ -862,7 +866,11 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (!canEdit || !workbook.worksheets.some((value) => value.id === targetSheetId)) return false;
     let activatedId: string | undefined;
     const changed = mutateWithDraft((base) => {
-      const result = applySheetCommand(base, command, targetSheetId, sheet.id, props.idFactory);
+      const result = applySheetCommand(base, command, {
+        targetSheetId,
+        activeSheetId: sheet.id,
+        idFactory: props.idFactory,
+      });
       activatedId = result.activatedId;
       return result.workbook;
     }, `${command} worksheet`);
@@ -918,7 +926,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       if (!Number.isFinite(measure) || measure <= 0 || measure > 2000)
         throw new RangeError('Enter a positive size up to 2000 pixels.');
       mutateWithDraft(
-        (base) => resizeSelection(base, sheet.id, selection, dialog, measure),
+        (base) => resizeSelection(base, { sheetId: sheet.id, selection }, { dialog, measure }),
         dialog === 'row-height' ? 'Set row height' : 'Set column width',
       );
     }
@@ -934,7 +942,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     setActiveMatch,
     matches,
     matchIndex,
-  } = useFind(workbook, shown.result, readyCells, presentation, props.display);
+  } = useFind(workbook, {
+    result: shown.result,
+    readyCells,
+    presentation,
+    display: props.display,
+  });
   function navigateMatch(direction: number) {
     if (!matches.length) return;
     const current = matchIndex >= 0 ? matchIndex : direction < 0 ? 0 : -1;
@@ -950,7 +963,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     ).filter((match) => match.authored);
     if (!targets.length) return 0;
     mutateWithDraft(
-      (base) => replaceMatches(base, targets, query, text, all),
+      (base) => replaceMatches(base, targets, { query, text, all }),
       all ? 'Replace all matches' : 'Replace match',
       undefined,
       matchTargets(targets),

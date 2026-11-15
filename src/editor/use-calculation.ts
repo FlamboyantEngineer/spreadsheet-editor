@@ -18,13 +18,18 @@ export function acceptedCalculationKey(workbook: Workbook): string {
   return key;
 }
 
+/** How a calculation runs: its options, whether it runs at all, and whether to re-validate it. */
+export interface CalculationRun {
+  options?: CalculationOptions | undefined;
+  enabled?: boolean | undefined;
+  /** The built-in client calculator's own results are not re-validated (SE-PERF-2.1). */
+  trusted?: boolean | undefined;
+}
+
 export function useCalculation(
   workbook: Workbook,
   provider: CalculationProvider,
-  options?: CalculationOptions,
-  enabled = true,
-  /** The built-in client calculator's own results are not re-validated (SE-PERF-2.1). */
-  trusted = false,
+  { options, enabled = true, trusted = false }: CalculationRun = {},
 ) {
   const inputKey = useMemo(() => acceptedCalculationKey(workbook), [workbook]);
   const request = useMemo(

@@ -68,8 +68,7 @@ function shapeOf(workbook: Workbook, operations: readonly WorkbookOperation[]): 
 
 /** Record a step: `previous` is the workbook before it and `next` the one after it. */
 export function historyEntry(
-  previous: Workbook,
-  next: Workbook,
+  { previous, next }: { previous: Workbook; next: Workbook },
   label: string,
   operations: WorkbookOperation[],
 ): HistoryEntry {
@@ -96,73 +95,83 @@ function restoreShape(sheet: Worksheet, shape: SheetShape) {
     else if (sheet[field] && !Object.keys(sheet[field]).length) delete sheet[field];
 }
 
+type Side = 'before' | 'after';
+type Operation<K extends WorkbookOperation['kind']> = Extract<WorkbookOperation, { kind: K }>;
+type CellChange = Operation<'cells'>['changes'][number];
+
+function rebuildCell(sheet: Worksheet, change: CellChange, side: Side) {
+  const state = change[side],
+    { x, y } = requireDefined(parseSpreadsheetAddress(change.address));
+  while (sheet.data.length <= y) sheet.data.push([]);
+  while (sheet.data[y].length <= x) sheet.data[y].push(null);
+  sheet.data[y][x] = structuredClone(state.value);
+  for (const [field, key] of CELL_MAPS) {
+    const value = state[key];
+    if (value !== undefined)
+      (sheet[field] ??= {} as never)[change.address] = structuredClone(value as never);
+    else if (sheet[field]) delete sheet[field][change.address];
+  }
+}
+
+function rebuildGeometry(sheet: Worksheet, geometry: Operation<'geometry'>[Side]) {
+  for (const field of ['minDimensions', 'columns', 'rows', 'freezeColumns'] as const)
+    if (geometry[field] === undefined) delete sheet[field];
+    else (sheet as unknown as Record<string, unknown>)[field] = structuredClone(geometry[field]);
+}
+
+function rebuildAnnotations(next: Workbook, annotations: Operation<'annotations'>[Side]) {
+  for (const field of ['comments', 'suggestions'] as const) {
+    const value = annotations[field];
+    if (value === undefined) delete next[field];
+    else next[field] = structuredClone(value) as never;
+  }
+}
+
+/** Applies one side of a rebuilt operation to `next`. */
+function rebuildOperation(next: Workbook, operation: WorkbookOperation, side: Side) {
+  const sheetOf = (id: string) => requireDefined(next.worksheets.find((sheet) => sheet.id === id));
+  switch (operation.kind) {
+    case 'cells': {
+      const sheet = sheetOf(operation.sheetId);
+      for (const change of operation.changes) rebuildCell(sheet, change, side);
+      return;
+    }
+    case 'geometry':
+      return rebuildGeometry(sheetOf(operation.sheetId), operation[side]);
+    case 'merges':
+      sheetOf(operation.sheetId).mergeCells = structuredClone(operation[side]);
+      return;
+    case 'annotations':
+      return rebuildAnnotations(next, operation[side]);
+    case 'workbook-metadata':
+      if (operation[side].name === undefined) delete next.name;
+      else next.name = operation[side].name;
+      return;
+    case 'sheet-rename':
+      sheetOf(operation.sheetId).name = operation[side];
+      return;
+    case 'sheet-reorder':
+      next.worksheets = operation[side].map(sheetOf);
+      return;
+    case 'lines':
+    case 'sheet-add':
+    case 'sheet-delete':
+    case 'replace':
+      // An entry holding any of these keeps a whole snapshot instead (REBUILT).
+      throw new Error(`A ${operation.kind} step is restored from its snapshot.`);
+  }
+}
+
 /** Rebuild one side of a rebuilt entry from `current`, the workbook on the other side. */
 function rebuildWorkbook(
   current: Workbook,
   entry: Extract<HistoryEntry, { shapes: unknown }>,
-  side: 'before' | 'after',
+  side: Side,
 ): Workbook {
-  const next = copyWorkbook(current),
-    sheetOf = (id: string) => requireDefined(next.worksheets.find((sheet) => sheet.id === id));
-  for (const operation of entry.operations)
-    switch (operation.kind) {
-      case 'cells': {
-        const sheet = sheetOf(operation.sheetId);
-        for (const change of operation.changes) {
-          const state = change[side],
-            { x, y } = requireDefined(parseSpreadsheetAddress(change.address));
-          while (sheet.data.length <= y) sheet.data.push([]);
-          while (sheet.data[y].length <= x) sheet.data[y].push(null);
-          sheet.data[y][x] = structuredClone(state.value);
-          for (const [field, key] of CELL_MAPS) {
-            const value = state[key];
-            if (value === undefined) {
-              if (sheet[field]) delete sheet[field][change.address];
-            } else (sheet[field] ??= {} as never)[change.address] = structuredClone(value as never);
-          }
-        }
-        break;
-      }
-      case 'geometry': {
-        const sheet = sheetOf(operation.sheetId),
-          geometry = operation[side];
-        for (const field of ['minDimensions', 'columns', 'rows', 'freezeColumns'] as const)
-          if (geometry[field] === undefined) delete sheet[field];
-          else
-            (sheet as unknown as Record<string, unknown>)[field] = structuredClone(geometry[field]);
-        break;
-      }
-      case 'merges': {
-        const sheet = sheetOf(operation.sheetId),
-          merges = operation[side];
-        sheet.mergeCells = structuredClone(merges);
-        break;
-      }
-      case 'annotations':
-        for (const field of ['comments', 'suggestions'] as const) {
-          const value = operation[side][field];
-          if (value === undefined) delete next[field];
-          else next[field] = structuredClone(value) as never;
-        }
-        break;
-      case 'workbook-metadata':
-        if (operation[side].name === undefined) delete next.name;
-        else next.name = operation[side].name;
-        break;
-      case 'sheet-rename':
-        sheetOf(operation.sheetId).name = operation[side];
-        break;
-      case 'sheet-reorder':
-        next.worksheets = operation[side].map(sheetOf);
-        break;
-      case 'lines':
-      case 'sheet-add':
-      case 'sheet-delete':
-      case 'replace':
-        // An entry holding any of these keeps a whole snapshot instead (REBUILT).
-        throw new Error(`A ${operation.kind} step is restored from its snapshot.`);
-    }
-  for (const [id, shape] of entry.shapes[side]) restoreShape(sheetOf(id), shape);
+  const next = copyWorkbook(current);
+  for (const operation of entry.operations) rebuildOperation(next, operation, side);
+  for (const [id, shape] of entry.shapes[side])
+    restoreShape(requireDefined(next.worksheets.find((sheet) => sheet.id === id)), shape);
   return next;
 }
 

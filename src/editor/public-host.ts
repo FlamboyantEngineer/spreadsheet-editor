@@ -18,6 +18,31 @@ export const BUILTIN_FORMULA_FUNCTIONS: readonly FormulaFunctionDescriptor[] =
     description: `${name} function`,
   }));
 
+/** Registers the upper-case name and aliases of a descriptor, refusing invalid or seen names. */
+function descriptorNames(descriptor: FormulaFunctionDescriptor, seen: Set<string>) {
+  if ((descriptor.aliases?.length ?? 0) > 32) throw new RangeError('Too many formula aliases.');
+  const names = [descriptor.name, ...(descriptor.aliases ?? [])].map((name) => name.toUpperCase());
+  for (const name of names) {
+    if (!/^[A-Z_][A-Z0-9_.]*$/.test(name) || name.length > 128 || seen.has(name))
+      throw new TypeError(`Invalid or duplicate formula function: ${name}`);
+    seen.add(name);
+  }
+  return names;
+}
+
+function assertDescriptorText({ signature, description, insertText }: FormulaFunctionDescriptor) {
+  const validInsert =
+    insertText === undefined || (typeof insertText === 'string' && insertText.length <= 1024);
+  if (
+    typeof signature !== 'string' ||
+    typeof description !== 'string' ||
+    signature.length > 1024 ||
+    description.length > 8192 ||
+    !validInsert
+  )
+    throw new RangeError('Formula descriptor exceeds the text limit.');
+}
+
 export function formulaFunctionCatalog(
   host: readonly FormulaFunctionDescriptor[] = [],
   includeBuiltins = true,
@@ -25,24 +50,8 @@ export function formulaFunctionCatalog(
   if (host.length > 1024) throw new RangeError('Too many host formula descriptors.');
   const seen = new Set<string>();
   return [...(includeBuiltins ? BUILTIN_FORMULA_FUNCTIONS : []), ...host].map((descriptor) => {
-    if ((descriptor.aliases?.length ?? 0) > 32) throw new RangeError('Too many formula aliases.');
-    const names = [descriptor.name, ...(descriptor.aliases ?? [])].map((name) =>
-      name.toUpperCase(),
-    );
-    for (const name of names) {
-      if (!/^[A-Z_][A-Z0-9_.]*$/.test(name) || name.length > 128 || seen.has(name))
-        throw new TypeError(`Invalid or duplicate formula function: ${name}`);
-      seen.add(name);
-    }
-    if (
-      typeof descriptor.signature !== 'string' ||
-      typeof descriptor.description !== 'string' ||
-      descriptor.signature.length > 1024 ||
-      descriptor.description.length > 8192 ||
-      (descriptor.insertText !== undefined && typeof descriptor.insertText !== 'string') ||
-      (descriptor.insertText?.length ?? 0) > 1024
-    )
-      throw new RangeError('Formula descriptor exceeds the text limit.');
+    const names = descriptorNames(descriptor, seen);
+    assertDescriptorText(descriptor);
     return { ...descriptor, name: names[0], aliases: names.slice(1) };
   });
 }

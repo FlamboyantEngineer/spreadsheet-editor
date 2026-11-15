@@ -16,31 +16,8 @@ import {
   useRecalculatingDisplay,
 } from './use-publication.js';
 
-/**
- * What the grid and chrome show for the active worksheet: the calculation and its suggestion
- * preview, the selected cell's draft, and the ready values with a draft's pending cells blanked.
- */
-export function useCellDisplay({
-  props,
-  workbook,
-  sheet,
-  selection,
-  draft,
-  nativeDraft,
-  canSuggest,
-  actorId,
-  refreshVersion,
-}: {
-  props: SpreadsheetEditorProps;
-  workbook: Workbook;
-  sheet: Worksheet;
-  selection: CellSelection;
-  draft: { key: string; value: string } | null;
-  nativeDraft: { x: number; y: number; text: string } | null;
-  canSuggest: boolean;
-  actorId: string;
-  refreshVersion: number;
-}) {
+/** The provider and options every publication of this editor calculates with. */
+function useCalculationSetup(props: SpreadsheetEditorProps, refreshVersion: number) {
   const clientHost = props.calculation?.mode === 'client' ? props.calculation.host : undefined;
   const client = useMemo(() => createClientCalculator(clientHost), [clientHost]);
   const baseProvider = props.calculation?.mode === 'server' ? props.calculation.provider : client;
@@ -52,24 +29,44 @@ export function useCellDisplay({
   );
   const hostOptions =
     props.calculation?.mode === 'external' ? undefined : props.calculation?.options;
-  const calculationOptions = useMemo(
+  const options = useMemo(
     () => ({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, ...hostOptions }),
     [hostOptions],
   );
-  const calculation = usePublication(workbook, props.calculation, provider, calculationOptions);
+  return { provider, options };
+}
+
+interface ShownCalculationInputs {
+  props: SpreadsheetEditorProps;
+  workbook: Workbook;
+  canSuggest: boolean;
+  actorId: string;
+  refreshVersion: number;
+}
+
+/** The accepted calculation, the reviewer's suggestion preview, and what the grid shows of them. */
+function useShownCalculation({
+  props,
+  workbook,
+  canSuggest,
+  actorId,
+  refreshVersion,
+}: ShownCalculationInputs) {
+  const { provider, options } = useCalculationSetup(props, refreshVersion);
+  const calculation = usePublication(workbook, { mode: props.calculation, provider, options });
   const previewWorkbook = useMemo(
     () => (canSuggest ? previewSuggestions(workbook, actorId) : workbook),
     [workbook, actorId, canSuggest],
   );
-  const previewCalculation = usePublication(
-    previewWorkbook,
-    props.calculation?.mode === 'external'
-      ? { mode: 'external', snapshot: props.reviewCalculation ?? null }
-      : props.calculation,
+  const previewCalculation = usePublication(previewWorkbook, {
+    mode:
+      props.calculation?.mode === 'external'
+        ? { mode: 'external', snapshot: props.reviewCalculation ?? null }
+        : props.calculation,
     provider,
-    calculationOptions,
-    previewWorkbook !== workbook,
-  );
+    options,
+    enabled: previewWorkbook !== workbook,
+  });
   const visibleCalculation = previewWorkbook !== workbook ? previewCalculation : calculation;
   const shown = useRecalculatingDisplay(
     previewWorkbook,
@@ -80,9 +77,18 @@ export function useCellDisplay({
     () => ({ inputKey: visibleCalculation.inputKey, revision: visibleCalculation.revision }),
     [visibleCalculation.inputKey, visibleCalculation.revision],
   );
-  const previewSheet = requireDefined(
-    previewWorkbook.worksheets.find((value) => value.id === sheet.id),
-  );
+  return { calculation, previewWorkbook, visibleCalculation, shown, publication };
+}
+
+type DraftText = { key: string; value: string } | null;
+type DraftCell = { x: number; y: number; text: string } | null;
+
+/** The selected cell's authored input and its formula-bar draft, if that draft is dirty. */
+function selectedDraft(
+  { sheet, previewSheet }: { sheet: Worksheet; previewSheet: Worksheet },
+  selection: CellSelection,
+  { draft, nativeDraft }: { draft: DraftText; nativeDraft: DraftCell },
+) {
   const authored = previewSheet.data[selection.y1]?.[selection.x1] ?? '';
   const draftKey = `${sheet.id}:${selection.x1}:${selection.y1}`;
   const draftValue = draft?.key === draftKey ? draft.value : String(authored);
@@ -90,6 +96,15 @@ export function useCellDisplay({
   const draftCell = draftDirty
     ? { x: selection.x1, y: selection.y1, text: requireDefined(draft).value }
     : nativeDraft;
+  return { authored, draftKey, draftValue, draftDirty, draftCell };
+}
+
+/** The ready cells and values of the active worksheet, with a draft's pending cells blanked. */
+function usePendingDisplay(
+  shown: ReturnType<typeof useRecalculatingDisplay>,
+  sheet: Worksheet,
+  draftCell: DraftCell,
+) {
   const calculationExtent = useMemo(() => worksheetCalculationExtent(sheet), [sheet]);
   const draftX = draftCell?.x,
     draftY = draftCell?.y;
@@ -110,11 +125,6 @@ export function useCellDisplay({
     () => withoutPending(shown.readyCells, pendingCells),
     [shown.readyCells, pendingCells],
   );
-  const presentation = acceptedPresentation(
-    props.cellPresentation,
-    visibleCalculation.inputKey,
-    visibleCalculation.revision,
-  );
   const acceptedOutput = shown.result?.worksheets.find((result) => result.id === sheet.id)?.values;
   // Ready values change with the result; a draft only blanks the rows its pending cells are in.
   const readyOutput = useMemo(
@@ -125,12 +135,51 @@ export function useCellDisplay({
     () => withoutPendingValues(readyOutput, pendingCells, sheet.id),
     [readyOutput, pendingCells, sheet.id],
   );
-  const style = parseCellStyle(
-    previewSheet.style?.[selectionAddress({ ...selection, x2: selection.x1, y2: selection.y1 })],
+  return { readyCells, output };
+}
+
+/** The style and number format of the selection's first cell. */
+function selectedFormatting(previewSheet: Worksheet, selection: CellSelection) {
+  const address = selectionAddress({ ...selection, x2: selection.x1, y2: selection.y1 });
+  return {
+    style: parseCellStyle(previewSheet.style?.[address]),
+    cellFormat: previewSheet.formats?.[address] ?? { kind: 'general' as const },
+  };
+}
+
+/**
+ * What the grid and chrome show for the active worksheet: the calculation and its suggestion
+ * preview, the selected cell's draft, and the ready values with a draft's pending cells blanked.
+ */
+export function useCellDisplay({
+  props,
+  workbook,
+  sheet,
+  selection,
+  draft,
+  nativeDraft,
+  canSuggest,
+  actorId,
+  refreshVersion,
+}: ShownCalculationInputs & {
+  sheet: Worksheet;
+  selection: CellSelection;
+  draft: DraftText;
+  nativeDraft: DraftCell;
+}) {
+  const { calculation, previewWorkbook, visibleCalculation, shown, publication } =
+    useShownCalculation({ props, workbook, canSuggest, actorId, refreshVersion });
+  const previewSheet = requireDefined(
+    previewWorkbook.worksheets.find((value) => value.id === sheet.id),
   );
-  const cellFormat = previewSheet.formats?.[
-    selectionAddress({ ...selection, x2: selection.x1, y2: selection.y1 })
-  ] ?? { kind: 'general' as const };
+  const { authored, draftKey, draftValue, draftDirty, draftCell } = selectedDraft(
+    { sheet, previewSheet },
+    selection,
+    { draft, nativeDraft },
+  );
+  const { readyCells, output } = usePendingDisplay(shown, sheet, draftCell);
+  const presentation = acceptedPresentation(props.cellPresentation, visibleCalculation);
+  const { style, cellFormat } = selectedFormatting(previewSheet, selection);
   return {
     authored,
     calculation,
