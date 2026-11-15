@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { SpreadsheetEditor, createWorkbook, type CellInput } from '../../src/index.js';
+import { createMemoryHost } from '../../src/host/index.js';
+
+const alex = createMemoryHost({ reader: { id: 'alex', name: 'Alex' } }).identity;
 
 const COLUMNS = 25;
 
@@ -39,7 +42,7 @@ export function LargeLab() {
         aria-label="Large spreadsheet"
         value={workbook}
         onChange={setWorkbook}
-        currentUser={{ id: 'alex', name: 'Alex' }}
+        identity={alex}
       />
     </section>
   );

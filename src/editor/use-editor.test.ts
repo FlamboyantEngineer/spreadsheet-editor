@@ -7,8 +7,12 @@ import { calculationCellKey } from '../calculation/publication.js';
 import { writeCells } from '../model/editing.js';
 import type { SpreadsheetEditorProps, SpreadsheetSaveContext } from './contracts.js';
 import { useSpreadsheetEditor } from './use-editor.js';
+import { createMemoryHost } from '../host/memory-host.js';
+import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 
 const actor = { id: 'alex', name: 'Alex' };
+const identity = createMemoryHost({ reader: actor }).identity;
+const reviewer = { ...FULL_CAPABILITIES, edit: false };
 afterEach(() => vi.useRealTimers());
 describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   it('clamps reviewers, previews only their proposals, and blocks structural/save/decision commands', async () => {
@@ -18,9 +22,9 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
       {
         initialProps: {
           defaultValue: createWorkbook([['1E-25']]),
-          currentUser: actor,
+          identity,
           onSave,
-          permissions: { edit: false },
+          capabilities: reviewer,
         } as SpreadsheetEditorProps,
       },
     );
@@ -39,7 +43,7 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
     expect(result.current.workbook.worksheets[0].data).toEqual([['1E-25']]);
     expect(onSave).not.toHaveBeenCalled();
     const workbook = result.current.workbook;
-    rerender({ value: workbook, currentUser: actor, onSave, permissions: { edit: true } });
+    rerender({ value: workbook, identity, onSave, capabilities: FULL_CAPABILITIES });
     expect(result.current.previewSheet.data[0][0]).toBe('1E-25');
     act(() => result.current.decide(proposal.id, 'accepted'));
     expect(result.current.workbook.suggestions![0].status).toBe('pending'); // controlled host must publish the result
@@ -48,7 +52,7 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
         defaultValue: createWorkbook([['1', '2']]),
-        currentUser: actor,
+        identity,
         collaborators: [
           {
             id: 'morgan',
@@ -107,7 +111,7 @@ describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
       void cancelled.catch(() => {});
     });
     await waitFor(() => expect(requests).toHaveLength(2));
-    rerender({ onSave, readOnly: true });
+    rerender({ onSave, capabilities: READ_ONLY_CAPABILITIES });
     expect(requests[1].context.signal.aborted).toBe(true);
     unmount();
     requests[1].finish();
@@ -302,7 +306,7 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
   it('combines a formula draft and formatting into one change and undo entry', () => {
     const onChange = vi.fn();
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), currentUser: actor, onChange }),
+      useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), identity, onChange }),
     );
     act(() => result.current.setDraftValue('=1-1E-25'));
     act(() => result.current.format({ 'font-weight': 'bold' }));
@@ -320,7 +324,7 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
         defaultValue: createWorkbook([['1'], ['=A1']]),
-        currentUser: actor,
+        identity,
         onChange,
       }),
     );
@@ -561,7 +565,7 @@ describe('SE-HOST-MODEL-2 and SE-PERF-1: change context', () => {
           ['1', '2'],
           ['3', '4'],
         ]),
-        currentUser: actor,
+        identity,
         onChange,
       }),
     );
