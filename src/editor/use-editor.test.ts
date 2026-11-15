@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createWorkbook, type Workbook } from '../model/workbook.js';
+import type { PresenceAdapter } from '../host/presence-adapters.js';
 import { calculateWorkbook, type CalculationResult } from '../calculation/evaluator.js';
 import { calculationCellKey } from '../calculation/publication.js';
 import { writeCells } from '../model/editing.js';
@@ -14,6 +15,27 @@ const actor = { id: 'alex', name: 'Alex' };
 const identity = createMemoryHost({ reader: actor }).identity;
 const reviewer = { ...FULL_CAPABILITIES, edit: false };
 afterEach(() => vi.useRealTimers());
+
+const peerLocks = new Map<string, PresenceAdapter>();
+/**
+ * A presence adapter with one peer, Morgan, writing in a cell of the first worksheet. It is the
+ * same adapter for the same arguments, as a host's adapter stays the same between renders.
+ */
+function peerLock(id: string, range: string): PresenceAdapter {
+  const key = `${id} ${range}`;
+  const place = { sheetId: 'sheet-1', range };
+  const known = peerLocks.get(key);
+  if (known) return known;
+  const adapter: PresenceAdapter = {
+    publish: vi.fn(),
+    subscribe(_workbookId, onPeers) {
+      onPeers([{ id, name: 'Morgan', at: place, editLock: place, status: 'active' }]);
+      return () => {};
+    },
+  };
+  peerLocks.set(key, adapter);
+  return adapter;
+}
 describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
   it('clamps reviewers, previews only their proposals, and blocks structural/save/decision commands', async () => {
     const onSave = vi.fn();
@@ -53,14 +75,8 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
       useSpreadsheetEditor({
         defaultValue: createWorkbook([['1', '2']]),
         identity,
-        collaborators: [
-          {
-            id: 'morgan',
-            name: 'Morgan',
-            sheetId: 'sheet-1',
-            editLock: { x1: 1, x2: 1, y1: 0, y2: 0 },
-          },
-        ],
+        workbookId: 'book',
+        presence: peerLock('morgan', 'B1'),
       }),
     );
     act(() =>
@@ -241,14 +257,8 @@ describe('SE-CR-1.11/1.12 and SE-VH-1: save lifecycle', () => {
           defaultValue: createWorkbook([['1']]),
           onSave,
           history: { entries: [entry], onOpen },
-          collaborators: [
-            {
-              id: 'peer',
-              name: 'Morgan',
-              sheetId: 'sheet-1',
-              editLock: { x1: 0, x2: 0, y1: 0, y2: 0 },
-            },
-          ],
+          workbookId: 'book',
+          presence: peerLock('peer', 'A1'),
         } as SpreadsheetEditorProps,
       },
     );
@@ -378,14 +388,8 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
         defaultValue: workbook,
-        collaborators: [
-          {
-            id: 'peer',
-            name: 'Morgan',
-            sheetId: 'sheet-1',
-            editLock: { x1: 0, x2: 0, y1: 0, y2: 0 },
-          },
-        ],
+        workbookId: 'book',
+        presence: peerLock('peer', 'A1'),
       }),
     );
     act(() => result.current.setDraftValue('1E-25'));
