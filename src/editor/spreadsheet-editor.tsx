@@ -64,7 +64,7 @@ const WorkbookGrid = lazy(() => import('../engine/workbook-grid.js'));
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   return (
     <SpreadsheetEditorInstance
-      key={props.sessionKey ?? 'spreadsheet'}
+      key={`${props.workbookId ?? ''}\n${props.sessionKey ?? 'spreadsheet'}`}
       {...props}
       capabilities={props.historical ? READ_ONLY_CAPABILITIES : props.capabilities}
     />
@@ -296,7 +296,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
           onNavigate={(selection) => e.attempt(() => e.select(selection))}
           onEditingChange={(editing) => {
             setFormulaActive(editing);
-            e.publishPresence(editing ? 'Editing' : 'Viewing', editing);
+            e.publishPresence(editing);
           }}
           keepsEditing={keepsEditing}
           onLeaveEditor={() =>
@@ -376,7 +376,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                   onViewportChange={positionComment}
                   onEditStateChange={(editing) => {
                     setGridEditing(editing);
-                    e.publishPresence(editing ? 'Editing' : 'Viewing', editing);
+                    e.publishPresence(editing);
                   }}
                   onHeaderDelete={(axis) => e.attempt(() => e.structure(axis, 'delete'))}
                   onEditDraft={(value) =>

@@ -11,6 +11,8 @@ import { formulaFunctionCatalog } from './public-host.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 import { editorMenus } from './editor-menus.js';
 import { createMemoryHost } from '../host/memory-host.js';
+import { createMemoryPresenceRoom } from '../host/memory-presence.js';
+import type { SpreadsheetPeer } from '../host/presence-adapters.js';
 import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 
 const reviewerIdentity = createMemoryHost({
@@ -504,6 +506,48 @@ describe('SE-REVIEW-1.6: comment authors are named through identity', () => {
     expect(result.current.personName('gone')).toBe('gone');
     expect(result.current.personName('reviewer')).toBe('Reviewer');
     expect(resolvePeople).toHaveBeenCalledWith(['gone', 'morgan']);
+  });
+});
+
+describe('SE-ADAPTERS-4.3: the editor shares presence through the adapter', () => {
+  it('publishes the place and lock, shows the others and withdraws on unmount', () => {
+    const room = createMemoryPresenceRoom();
+    const reader = createMemoryHost({
+      reader: { id: 'reviewer', name: 'Reviewer' },
+      presence: room,
+    });
+    const other = room.join({ id: 'morgan', name: 'Morgan' });
+    const seen: (readonly SpreadsheetPeer[])[] = [];
+    const stop = other.subscribe('book', (peers) => seen.push(peers));
+    other.publish('book', {
+      at: { sheetId: 'sheet-1', range: 'B1' },
+      editLock: { sheetId: 'sheet-1', range: 'B1' },
+      status: 'active',
+    });
+    const { result, unmount } = renderHook(() =>
+      useSpreadsheetEditor({
+        defaultValue: createWorkbook([['1', '2']]),
+        identity: reader.identity,
+        presence: reader.presence,
+        workbookId: 'book',
+      }),
+    );
+    expect(result.current.peers).toMatchObject([
+      { id: 'morgan', sheetId: 'sheet-1', editLock: { x1: 1, x2: 1, y1: 0, y2: 0 } },
+    ]);
+    expect(seen.at(-1)).toMatchObject([
+      { id: 'reviewer', at: { sheetId: 'sheet-1', range: 'A1' }, editLock: null },
+    ]);
+    act(() => result.current.publishPresence(true));
+    expect(seen.at(-1)?.[0].editLock).toEqual({ sheetId: 'sheet-1', range: 'A1' });
+    act(() => {
+      result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 });
+    });
+    expect(result.current.lockedSelection?.name).toBe('Morgan');
+    expect(seen.at(-1)?.[0].at).toEqual({ sheetId: 'sheet-1', range: 'B1' });
+    unmount();
+    expect(seen.at(-1)).toEqual([]);
+    stop();
   });
 });
 
