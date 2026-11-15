@@ -42,6 +42,13 @@ export function sessionSavePhase(
   }
 }
 
+/** The current session failure, including autosaves started outside an editor action. */
+export function sessionErrorMessage(status: WorkbookSessionStatus | null): string | null {
+  if (status?.phase === 'conflict') return 'Someone else saved this workbook after you opened it.';
+  if (status?.phase === 'error') return status.error?.message ?? 'Could not save the workbook.';
+  return null;
+}
+
 /** The notice for a failed save or flush. */
 export function saveFailure(error: unknown, session: WorkbookSession): string {
   if (session.status().phase === 'conflict')

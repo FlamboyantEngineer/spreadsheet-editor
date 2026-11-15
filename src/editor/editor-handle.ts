@@ -4,6 +4,7 @@ import { copyWorkbook, type Workbook } from '../model/workbook.js';
 import type { CellSelection } from '../model/editing.js';
 import type { WorkbookSession } from '../host/workbook-session.js';
 import type { SpreadsheetEditorHandle, SpreadsheetEditorState } from './public-host.js';
+import { sessionErrorMessage } from './use-session-state.js';
 
 /** What the editor hands its imperative handle each render. */
 export interface EditorLifecycle {
@@ -83,7 +84,7 @@ export function createEditorHandle(refs: {
         draftDirty,
         saving: session()?.status().phase === 'saving',
         flushing: current.flushing,
-        error: errorNotice.current,
+        error: sessionErrorMessage(session()?.status() ?? null) ?? errorNotice.current,
       });
     },
     select(target) {

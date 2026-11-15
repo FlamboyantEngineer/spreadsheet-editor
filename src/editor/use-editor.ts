@@ -67,7 +67,7 @@ import type { WorkbookVersion } from '../host/adapters.js';
 import { useWorkbookVersions } from './use-workbook-versions.js';
 import { usePersonNames } from './use-person-names.js';
 import { useWorkbookPresence } from './use-workbook-presence.js';
-import { sessionSavePhase, useSessionState } from './use-session-state.js';
+import { sessionErrorMessage, sessionSavePhase, useSessionState } from './use-session-state.js';
 import { useSessionActions } from './use-session-actions.js';
 import { useNotice } from './use-notice.js';
 import { useComments } from './use-comments.js';
@@ -951,7 +951,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     draftDirty: draftDirty || !!nativeDraft,
     saving: savePhase === 'saving',
     flushing,
-    error: noticeTone === 'danger' ? notice : null,
+    error: sessionErrorMessage(session.status) ?? (noticeTone === 'danger' ? notice : null),
     calculation: {
       inputKey: visibleCalculation.inputKey,
       revision: visibleCalculation.revision,
