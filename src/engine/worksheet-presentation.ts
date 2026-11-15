@@ -41,6 +41,7 @@ const visualProperties = new Set([
 /** The zoom scale each cell's inline text metrics were last written for. */
 const presentedScale = new WeakMap<HTMLElement, number>();
 const engineScale = new WeakMap<JSpreadsheetWorksheetInstance, number>();
+const authoredStyles = new WeakMap<JSpreadsheetWorksheetInstance, Worksheet['style']>();
 /** Cells being edited during a zoom change; the next pass presents them. */
 const deferredCells = new WeakMap<JSpreadsheetWorksheetInstance, Set<HTMLElement>>();
 
@@ -104,7 +105,48 @@ export function syncWorksheetPresentation(
   for (const cell of deferredCells.get(engine) ?? []) if (cell.isConnected) pending.add(cell);
   const editing = new Set([...pending].filter((cell) => cell.classList.contains('editor')));
   deferredCells.set(engine, editing);
-  const cells = [...pending].filter((cell) => !editing.has(cell));
+  // Detached rows are presented when the row window attaches them (SE-PERF-1).
+  const attached: HTMLElement[] = [];
+  for (const cell of pending) {
+    if (editing.has(cell)) continue;
+    if (cell.isConnected) attached.push(cell);
+    else presentedScale.delete(cell);
+  }
+  presentCells(attached, next.style, scale);
+  const table = engine.table;
+  const cornerColumn = table?.querySelector<HTMLElement>('colgroup > col:first-child');
+  if (cornerColumn) {
+    const width = DEFAULT_ROW_HEADER_WIDTH * scale;
+    if (cornerColumn.style.width !== `${width}px`) cornerColumn.style.width = `${width}px`;
+    if (cornerColumn.getAttribute('width') !== String(width))
+      cornerColumn.setAttribute('width', String(width));
+  }
+  const header = table?.tHead?.rows[0];
+  const headerHeight = `${DEFAULT_ROW_HEIGHT * scale}px`;
+  if (header && header.style.height !== headerHeight) header.style.height = headerHeight;
+  // The engine's `options.style` is a getter that reads every cell's style attribute.
+  authoredStyles.set(engine, next.style);
+  const oldMerges = engine.getMerge?.();
+  if (oldMerges && !Array.isArray(oldMerges)) {
+    for (const [address, span] of Object.entries(oldMerges))
+      if (JSON.stringify(span) !== JSON.stringify(next.mergeCells?.[address]))
+        engine.removeMerge?.(address);
+  }
+  for (const [address, span] of Object.entries(next.mergeCells ?? {})) {
+    if (
+      !oldMerges ||
+      Array.isArray(oldMerges) ||
+      JSON.stringify(oldMerges[address]) !== JSON.stringify(span)
+    )
+      engine.setMerge?.(address, span[0], span[1]);
+  }
+  options.freezeColumns = next.freezeColumns ?? 0;
+  syncFrozenColumns(engine);
+  syncSharedGridBorders(engine);
+}
+
+/** Write zoomed text metrics on cells that are attached, from their computed style. */
+function presentCells(cells: HTMLElement[], authored: Worksheet['style'], scale: number) {
   // Resolve font units through CSS after restoring authored styles. Presentation-only
   // inline values are reset first so successive zooms never compound their scale.
   for (const cell of cells) {
@@ -114,7 +156,7 @@ export function syncWorksheetPresentation(
       Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0
         ? formatSpreadsheetAddress(x, y)
         : undefined;
-    const style = parseCellStyle(address ? next.style?.[address] : undefined);
+    const style = parseCellStyle(address ? authored?.[address] : undefined);
     cell.style.fontSize = style['font-size'] ?? '';
     cell.style.lineHeight = '';
     cell.style.padding = '';
@@ -150,37 +192,29 @@ export function syncWorksheetPresentation(
     cell.style.padding = padding.map((size) => `${size * scale}px`).join(' ');
     cell.style.textIndent = `${indent * scale}px`;
   }
-  const table = engine.table;
-  const cornerColumn = table?.querySelector<HTMLElement>('colgroup > col:first-child');
-  if (cornerColumn) {
-    const width = DEFAULT_ROW_HEADER_WIDTH * scale;
-    if (cornerColumn.style.width !== `${width}px`) cornerColumn.style.width = `${width}px`;
-    if (cornerColumn.getAttribute('width') !== String(width))
-      cornerColumn.setAttribute('width', String(width));
-  }
-  const header = table?.tHead?.rows[0];
-  const headerHeight = `${DEFAULT_ROW_HEIGHT * scale}px`;
-  if (header && header.style.height !== headerHeight) header.style.height = headerHeight;
-  const storedStyle = options.style;
-  if (storedStyle) {
-    for (const address of Object.keys(storedStyle)) delete storedStyle[address];
-    Object.assign(storedStyle, next.style);
-  }
-  const oldMerges = engine.getMerge?.();
-  if (oldMerges && !Array.isArray(oldMerges)) {
-    for (const [address, span] of Object.entries(oldMerges))
-      if (JSON.stringify(span) !== JSON.stringify(next.mergeCells?.[address]))
-        engine.removeMerge?.(address);
-  }
-  for (const [address, span] of Object.entries(next.mergeCells ?? {})) {
-    if (
-      !oldMerges ||
-      Array.isArray(oldMerges) ||
-      JSON.stringify(oldMerges[address]) !== JSON.stringify(span)
-    )
-      engine.setMerge?.(address, span[0], span[1]);
-  }
-  options.freezeColumns = next.freezeColumns ?? 0;
-  syncFrozenColumns(engine);
-  syncSharedGridBorders(engine);
+}
+
+/**
+ * Present the cells of rows the row window has just attached: cells written for another zoom,
+ * and, away from 100%, cells never presented. At 100% a cell without inline metrics needs
+ * nothing unless it has an authored style.
+ */
+export function presentAttachedRows(engine: JSpreadsheetWorksheetInstance, rows: number[]) {
+  const scale = engineScale.get(engine);
+  if (scale === undefined) return;
+  const authored = authoredStyles.get(engine);
+  const cells: HTMLElement[] = [];
+  for (const y of rows)
+    for (const record of engine.records?.[y] ?? []) {
+      const cell = record?.element as HTMLElement | undefined;
+      if (!cell || cell.classList.contains('editor')) continue;
+      const presented = presentedScale.get(cell);
+      if (
+        presented === undefined
+          ? scale !== 1 || !!authored?.[formatSpreadsheetAddress(Number(cell.dataset.x), y)]
+          : presented !== scale
+      )
+        cells.push(cell);
+    }
+  if (cells.length) presentCells(cells, authored, scale);
 }

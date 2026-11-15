@@ -69,11 +69,11 @@ A worksheet of 10,000 cells stays smooth to type into and edit, and one of 50,00
 - Shared-border reconciliation visits only cells with an inline border or a clipboard edge and their right and bottom neighbors. Unchanged column, row and frozen-column measures are not rewritten.
 - Native change capture compares cell data directly instead of serializing the worksheet.
 
-The grid does not window its rows; that is decided once the model's own per-edit work is reduced and these budgets are measured again.
+- Only the rows near the viewport are attached to the grid body, with about 20 rows of overscan on each side. Spacer rows stand for the detached rows at their own heights, so the scrollbar spans the whole worksheet and attached rows sit where they would otherwise. Rows attached later take the current zoom metrics, shared borders and text spill. Keyboard moves, find and scrolling a cell into view attach the target row before it is measured, a merge that crosses the window's edge is attached whole, and selection outlines are measured on the attached rows only. The engine builds every row; windowing is by rows, not columns.
 
-Implementation: `src/engine/cell-renderer.ts`, `src/engine/worksheet-presentation.ts`, `src/engine/shared-grid-borders.ts`, `src/engine/worksheet-data.ts`, `src/engine/grid-geometry.ts`, `src/engine/workbook-grid.tsx`, `labs/src/large-lab.tsx`.
+Implementation: `src/engine/cell-renderer.ts`, `src/engine/row-window.ts`, `src/engine/worksheet-presentation.ts`, `src/engine/shared-grid-borders.ts`, `src/engine/worksheet-data.ts`, `src/engine/grid-geometry.ts`, `src/engine/workbook-grid.tsx`, `labs/src/large-lab.tsx`.
 
-Verification: `e2e/grid-budget.spec.ts` (mutation and time budgets on the large worksheet), `src/engine/grid-budget.test.ts`, `src/engine/cell-renderer.test.ts`, `src/engine/shared-grid-borders.test.ts`, `src/engine/worksheet-data.test.ts`, `src/engine/grid-geometry.test.ts`.
+Verification: `e2e/grid-budget.spec.ts` (mutation and time budgets on the large worksheet), `e2e/row-window.spec.ts` (scrolling, keyboard moves, zoom, editing, find and selection on 50,000 cells), `src/engine/row-window.test.ts`, `src/engine/grid-budget.test.ts`, `src/engine/cell-renderer.test.ts`, `src/engine/shared-grid-borders.test.ts`, `src/engine/worksheet-data.test.ts`, `src/engine/grid-geometry.test.ts`.
 
 ## SE-LABS-4 — Shared lab shell
 
