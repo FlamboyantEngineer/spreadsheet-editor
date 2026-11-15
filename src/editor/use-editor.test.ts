@@ -8,7 +8,13 @@ import { calculationCellKey } from '../calculation/publication.js';
 import { writeCells } from '../model/editing.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { createWorkbookSession } from '../host/workbook-session.js';
-import type { HostResult, SavedState, WorkbookStoreAdapter } from '../host/adapters.js';
+import type {
+  HostResult,
+  SavedState,
+  VersionStoreAdapter,
+  WorkbookStoreAdapter,
+  WorkbookVersion,
+} from '../host/adapters.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 import { createMemoryHost } from '../host/memory-host.js';
 import { FULL_CAPABILITIES } from '../host/capabilities.js';
@@ -16,6 +22,23 @@ import { FULL_CAPABILITIES } from '../host/capabilities.js';
 const actor = { id: 'alex', name: 'Alex' };
 const identity = createMemoryHost({ reader: actor }).identity;
 const reviewer = { ...FULL_CAPABILITIES, edit: false };
+const version: WorkbookVersion = {
+  revision: 'r0',
+  sequence: 0,
+  savedAt: '2026-01-01T00:00:00Z',
+  author: 'alex',
+  label: 'Saved',
+};
+/** A version store holding `version`, whose content is a one-cell workbook. */
+function versionStore() {
+  return {
+    list: vi.fn<VersionStoreAdapter['list']>(async () => ({ ok: true, value: [version] })),
+    load: vi.fn<VersionStoreAdapter['load']>(async () => ({
+      ok: true,
+      value: createWorkbook([['old']]),
+    })),
+  };
+}
 afterEach(() => vi.useRealTimers());
 
 const peerLocks = new Map<string, PresenceAdapter>();
@@ -151,11 +174,10 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
   });
   it('autosaves through the session and saves before opening history', async () => {
     vi.useFakeTimers();
-    const onOpen = vi.fn();
-    const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
+    const versions = versionStore();
     const { session, store } = await openSession([['1']], { autosaveDelay: 100 });
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({ session, history: { entries: [entry], onOpen } }),
+      useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
     act(() =>
       result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit'),
@@ -170,13 +192,13 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
       result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit'),
     );
     await act(async () => {
-      await result.current.openHistorical(entry);
+      await result.current.openVersion(version);
     });
     expect(store.save).toHaveBeenCalledTimes(2);
-    expect(onOpen).toHaveBeenCalledWith(entry);
+    expect(result.current.viewedVersion).toEqual(version);
   });
   it('does not open a historical snapshot after a failed save or commit stale import results', async () => {
-    const onOpen = vi.fn();
+    const versions = versionStore();
     let resolveImport!: (value: ReturnType<typeof createWorkbook>) => void;
     const { session, store } = await openSession([['1']]);
     store.save.mockResolvedValue({
@@ -186,7 +208,8 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({
         session,
-        history: { entries: [], onOpen },
+        versions,
+        workbookId: 'book',
         onImportXlsx: () =>
           new Promise((resolve) => {
             resolveImport = resolve;
@@ -206,52 +229,46 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     });
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('2');
     await act(async () => {
-      await result.current.openHistorical({
-        id: 'v1',
-        timestamp: '2026-01-01T00:00:00Z',
-        author: actor,
-      });
+      await result.current.openVersion(version);
     });
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.viewedVersion).toBeNull();
     expect(result.current.notice).toBe('Save failed');
   });
   it('saves a pending formula before opening history even when the workbook was clean', async () => {
     const { session, store, held } = await openSession([['1']], { hold: true });
-    const onOpen = vi.fn();
-    const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
+    const versions = versionStore();
     const { result } = renderHook(() =>
-      useSpreadsheetEditor({ session, history: { entries: [entry], onOpen } }),
+      useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
     act(() => result.current.setDraftValue('=1-1E-25'));
     expect(result.current.savePhase).toBe('saved');
-    let opening!: Promise<void>;
+    let opening!: Promise<unknown>;
     act(() => {
-      opening = result.current.openHistorical(entry);
+      opening = result.current.openVersion(version);
     });
     await waitFor(() => expect(store.save).toHaveBeenCalledTimes(1));
     expect(store.save.mock.calls[0][1].content.worksheets[0].data[0][0]).toBe('=1-1E-25');
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.viewedVersion).toBeNull();
     await act(async () => {
       held[0]();
       await opening;
     });
-    expect(onOpen).toHaveBeenCalledWith(entry);
+    expect(result.current.viewedVersion).toEqual(version);
     expect(result.current.draftDirty).toBe(false);
   });
   it('keeps history closed when a pending formula cannot commit or its save fails', async () => {
-    const onOpen = vi.fn();
+    const versions = versionStore();
     const { session, store } = await openSession([['1']]);
     store.save.mockResolvedValue({
       ok: false,
       error: { kind: 'unavailable', message: 'Save failed' },
     });
-    const entry = { id: 'v1', timestamp: '2026-01-01T00:00:00Z', author: actor };
     const { result, rerender } = renderHook(
       (props: SpreadsheetEditorProps) => useSpreadsheetEditor(props),
       {
         initialProps: {
           session,
-          history: { entries: [entry], onOpen },
+          versions,
           workbookId: 'book',
           presence: peerLock('peer', 'A1'),
         } as SpreadsheetEditorProps,
@@ -259,17 +276,17 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     );
     act(() => result.current.setDraftValue('1E-25'));
     await act(async () => {
-      await result.current.openHistorical(entry);
+      await result.current.openVersion(version);
     });
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.viewedVersion).toBeNull();
     expect(store.save).not.toHaveBeenCalled();
     expect(result.current.draftValue).toBe('1E-25');
-    rerender({ session, history: { entries: [entry], onOpen } });
+    rerender({ session, versions, workbookId: 'book' });
     await act(async () => {
-      await result.current.openHistorical(entry);
+      await result.current.openVersion(version);
     });
     expect(store.save).toHaveBeenCalledTimes(1);
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(result.current.viewedVersion).toBeNull();
     expect(result.current.sheet.data[0][0]).toBe('1E-25');
     expect(result.current.notice).toBe('Save failed');
   });

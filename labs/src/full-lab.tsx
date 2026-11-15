@@ -16,7 +16,6 @@ import {
   formatCellValue,
 } from '../../src/calculation/index.js';
 import { createDocumentInsertion, type DocumentInsertion } from '../../src/document/index.js';
-import type { SpreadsheetHistoryEntry } from '../../src/editor/contracts.js';
 import type { Workbook } from '../../src/model/index.js';
 
 import { useExcelLab } from './excel-lab.js';
@@ -48,12 +47,6 @@ const LAB_WORKBOOK = 'lab-workbook';
 export function FullLab() {
   const excel = useExcelLab();
   const [workbook, setWorkbook] = useState(sample);
-  const [snapshots, setSnapshots] = useState<(SpreadsheetHistoryEntry & { workbook: Workbook })[]>(
-    [],
-  );
-  const [historical, setHistorical] = useState<
-    (SpreadsheetHistoryEntry & { workbook: Workbook }) | null
-  >(null);
   const [reviewerOnly, setReviewerOnly] = useState(false);
   const [presence, setPresence] = useState(false);
   const [autosave, setAutosave] = useState(false);
@@ -85,27 +78,6 @@ export function FullLab() {
     workbookId: LAB_WORKBOOK,
     autosaveDelay: autosave ? 1000 : Infinity,
   });
-  useEffect(
-    () =>
-      store.workbooks.subscribe?.(LAB_WORKBOOK, (state) => {
-        void store.workbooks.load(LAB_WORKBOOK).then((result) => {
-          if (!result.ok) return;
-          setSnapshots((entries) => [
-            ...entries,
-            {
-              id: state.revision,
-              timestamp: new Date().toISOString(),
-              author: actorId === 'alex' ? alex : morgan,
-              message: 'Saved workbook version',
-              state: 'Draft',
-              revision: String(state.sequence),
-              workbook: result.value.content,
-            },
-          ]);
-        });
-      }),
-    [store, actorId],
-  );
   /** Replaces the editor's workbook with `next` as an unsaved change, as an import would. */
   function replaceWorkbook(next: Workbook) {
     if (!session?.workbook()) return;
@@ -157,19 +129,8 @@ export function FullLab() {
         <SpreadsheetEditor
           onImportXlsx={excel.requestImport}
           onExportXlsx={excel.exportWorkbook}
-          sessionKey={historical?.id ?? 'current'}
-          value={historical?.workbook}
           session={session}
-          historical={
-            historical
-              ? { timestamp: historical.timestamp, onReturnCurrent: () => setHistorical(null) }
-              : undefined
-          }
-          history={{
-            entries: snapshots,
-            onOpen: (entry) =>
-              setHistorical(snapshots.find((snapshot) => snapshot.id === entry.id) ?? null),
-          }}
+          versions={store.versions}
           capabilities={
             readOnly
               ? READ_ONLY_CAPABILITIES

@@ -517,6 +517,17 @@
 .se-history ol {
   padding-left: 20px;
 }
+.se-history__save,
+.se-history__rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-block: 8px;
+}
+.se-history li[data-current] > .ui-button {
+  font-weight: 600;
+}
 .se-history li > .ui-button {
   display: flex;
   flex-wrap: wrap;

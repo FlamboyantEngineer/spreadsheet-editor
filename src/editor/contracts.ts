@@ -17,10 +17,10 @@ import type {
   FormulaHost,
 } from '../calculation/evaluator.js';
 import type { Workbook } from '../model/workbook.js';
-import type { ReviewActor, CellFormat } from '../model/review.js';
+import type { CellFormat } from '../model/review.js';
 import type { DocumentInsertion } from '../document/insertion.js';
 import type { CellSelection } from '../model/editing.js';
-import type { IdentityAdapter } from '../host/adapters.js';
+import type { IdentityAdapter, VersionStoreAdapter } from '../host/adapters.js';
 import type { PresenceAdapter } from '../host/presence-adapters.js';
 import type { WorkbookSession } from '../host/workbook-session.js';
 import type { EditorCapabilities, SpreadsheetMode } from '../host/capabilities.js';
@@ -40,21 +40,6 @@ export interface SpreadsheetHostPanel {
   label: string;
   content: ReactNode;
 }
-export interface SpreadsheetHistoryEntry {
-  id: string;
-  timestamp: string;
-  author: ReviewActor;
-  message?: string;
-  state?: string;
-  revision?: string;
-}
-export interface SpreadsheetHistory {
-  entries: readonly SpreadsheetHistoryEntry[];
-  loading?: boolean;
-  error?: string;
-  onRefresh?(target?: { sheetId: string; range: string }): void | Promise<void>;
-  onOpen(entry: SpreadsheetHistoryEntry): void | Promise<void>;
-}
 export interface SpreadsheetFeatures {
   newWorkbook?: boolean;
   import?: boolean;
@@ -63,10 +48,6 @@ export interface SpreadsheetFeatures {
   search?: boolean;
   panels?: boolean;
   modeControl?: boolean;
-}
-export interface SpreadsheetHistoricalView {
-  timestamp: string;
-  onReturnCurrent(): void | Promise<void>;
 }
 export interface SpreadsheetEditorProps {
   editorRef?: Ref<SpreadsheetEditorHandle>;
@@ -90,7 +71,6 @@ export interface SpreadsheetEditorProps {
   getCommentLink?(threadId: string): string;
   events?: { subscribeWindowBlur(callback: () => void): () => void };
   features?: SpreadsheetFeatures;
-  history?: SpreadsheetHistory;
   /**
    * The workbook's id in the host. It addresses the workbook in the host's adapters, and a new id
    * starts a new editor session, as a new `sessionKey` does.
@@ -104,7 +84,13 @@ export interface SpreadsheetEditorProps {
   session?: WorkbookSession | null;
   /** Shares the reader's place with the other people in the workbook, given a `workbookId`. */
   presence?: PresenceAdapter;
-  historical?: SpreadsheetHistoricalView;
+  /**
+   * The workbook's saved versions, given a `workbookId`. The history pane lists them; the editor
+   * opens one read-only in place of the workbook and returns to the current workbook itself, and
+   * saves, renames and restores versions where the store and the reader's capabilities allow
+   * (SE-ADAPTERS-5.1).
+   */
+  versions?: VersionStoreAdapter;
   value?: Workbook;
   defaultValue?: Workbook;
   onChange?(workbook: Workbook, context: WorkbookChangeContext): void;
