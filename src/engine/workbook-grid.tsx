@@ -56,7 +56,6 @@ import {
   type JSpreadsheetCellCoords,
 } from './jspreadsheet-host.js';
 import {
-  collaboratorSheet,
   collaboratorColorIndex,
   selectionLock,
   type SpreadsheetCollaborator,
@@ -280,15 +279,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       );
     }
     for (const person of current.collaborators ?? []) {
-      const target = collaboratorSheet(
-        { schemaVersion: 1, worksheets: [current.worksheet] },
-        person,
-      );
-      if (
-        !target &&
-        (person.sheetId || person.sheetName || person.sheetIndex !== current.worksheetIndex)
-      )
-        continue;
+      if (person.sheetId !== current.worksheet.id) continue;
       for (const kind of ['selection', 'lock'] as const) {
         const range = kind === 'selection' ? person.selection : person.editLock;
         if (!range) continue;
