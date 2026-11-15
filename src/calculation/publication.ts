@@ -30,21 +30,42 @@ export function orderedJson(value: unknown): string {
     .map((key) => `${JSON.stringify(key)}:${orderedJson((value as Record<string, unknown>)[key])}`)
     .join(',')}}`;
 }
-/** A deterministic freshness token. This is deliberately not an authorization signature. */
+/** Two seeded 53-bit string hashes (cyrb53), as 28 hex digits. Not a cryptographic digest. */
+function digest(text: string): string {
+  const half = (seed: number) => {
+    let h1 = 0xdeadbeef ^ seed,
+      h2 = 0x41c6ce57 ^ seed;
+    for (let index = 0; index < text.length; index++) {
+      const code = text.charCodeAt(index);
+      h1 = Math.imul(h1 ^ code, 2654435761);
+      h2 = Math.imul(h2 ^ code, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+  };
+  return half(0) + half(0x9e3779b9);
+}
+/**
+ * A deterministic freshness token: a short digest of the canonical calculation inputs, so equal
+ * inputs share a key across transports. This is deliberately not an authorization signature.
+ */
 export function workbookCalculationKey(workbook: Workbook): string {
   assertWorkbook(workbook);
-  return orderedJson(
-    workbook.worksheets.map((sheet) => ({
-      id: sheet.id,
-      name: sheet.name,
-      data: sheet.data,
-      inputValues: sheet.inputValues,
-      extent: worksheetCalculationExtent(sheet),
-      rowIds: sheet.rowIds,
-      columnIds: sheet.columnIds,
-      formats: calculationFormats(sheet),
-    })),
-  );
+  return `wck1-${digest(
+    orderedJson(
+      workbook.worksheets.map((sheet) => ({
+        id: sheet.id,
+        name: sheet.name,
+        data: sheet.data,
+        inputValues: sheet.inputValues,
+        extent: worksheetCalculationExtent(sheet),
+        rowIds: sheet.rowIds,
+        columnIds: sheet.columnIds,
+        formats: calculationFormats(sheet),
+      })),
+    ),
+  )}`;
 }
 const states = new Set(['pending', 'ready', 'unavailable']);
 function assertTransportTree(value: unknown, ancestors = new Set<object>(), depth = 0): void {
