@@ -160,7 +160,7 @@ export function assertExternalCalculationSnapshot(
 }
 
 interface DependencyIndex {
-  /** Cells pending whatever was edited: every cell without recorded dependencies. */
+  /** Cells pending whatever was edited: every cell whose dependencies are unknown. */
   unrecorded: string[];
   /** Cells that read the used extent of a worksheet, by worksheet id. */
   extentReaders: [string, string[]][];
@@ -175,13 +175,15 @@ function dependencyIndex(result: CalculationResult): DependencyIndex {
   const recorded = result.dependencies?.cells,
     unrecorded: string[] = [],
     dependents = new Map<string, string[]>();
-  for (const sheet of result.worksheets)
-    sheet.values.forEach((row, y) =>
-      row.forEach((_cell, x) => {
-        const key = calculationCellKey(sheet.id, x, y);
-        if (!recorded || !Object.hasOwn(recorded, key)) unrecorded.push(key);
-      }),
-    );
+  // With formula scope, a cell without an entry is a value cell, which reads nothing.
+  if (result.dependencies?.scope !== 'formulas')
+    for (const sheet of result.worksheets)
+      sheet.values.forEach((row, y) =>
+        row.forEach((_cell, x) => {
+          const key = calculationCellKey(sheet.id, x, y);
+          if (!recorded || !Object.hasOwn(recorded, key)) unrecorded.push(key);
+        }),
+      );
   for (const [key, dependencies] of Object.entries(recorded ?? {}))
     for (const dependency of dependencies) {
       const list = dependents.get(dependency);

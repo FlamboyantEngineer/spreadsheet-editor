@@ -115,7 +115,8 @@ export function assertCalculationResult(
       typeof dependencies !== 'object' ||
       !dependencies.cells ||
       typeof dependencies.cells !== 'object' ||
-      Array.isArray(dependencies.cells)
+      Array.isArray(dependencies.cells) ||
+      (dependencies.scope !== undefined && dependencies.scope !== 'formulas')
     )
       throw new TypeError('Invalid calculation dependencies.');
     const sheets = new Set(workbook.worksheets.map((sheet) => sheet.id));
