@@ -1,22 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook, copyWorkbook } from './workbook.js';
-import { writeCells, formatCells } from './editing.js';
+import { calculateWorkbook } from '../calculation/evaluator.js';
+import { formatCells, writeCells } from './editing.js';
+import { requireDefined } from './require-defined.js';
 import {
   addComment,
   addWorkbookComment,
+  decideSuggestion,
+  deleteCommentEntry,
+  editCommentEntry,
   findOpenComment,
   previewSuggestions,
-  replyToComment,
-  setCommentState,
-  editCommentEntry,
-  deleteCommentEntry,
-  toggleCommentReaction,
   proposeWorkbookChange,
-  decideSuggestion,
+  replyToComment,
   type ReviewStamp,
+  setCommentState,
+  toggleCommentReaction,
 } from './review.js';
 import { changeWorkbookStructure } from './structure.js';
-import { calculateWorkbook } from '../calculation/evaluator.js';
+import { copyWorkbook, createWorkbook } from './workbook.js';
 
 const alex = { id: 'alex', name: 'Alex' },
   morgan = { id: 'morgan', name: 'Morgan' };
@@ -78,10 +79,10 @@ describe('SE-REVIEW-1: persisted threaded comments', () => {
   it('validates imported comment authors, dates, identities and reaction lists', () => {
     const original = addComment(createWorkbook(), 'sheet-1', 'A1', 'Text', stamp('thread'));
     const duplicate = structuredClone(original);
-    duplicate.comments!.push(structuredClone(duplicate.comments![0]));
+    requireDefined(duplicate.comments).push(structuredClone(requireDefined(duplicate.comments)[0]));
     expect(() => copyWorkbook(duplicate)).toThrow('comment ids');
     const malformed = structuredClone(original);
-    malformed.comments![0].entries[0].createdAt = 'invalid';
+    requireDefined(malformed.comments)[0].entries[0].createdAt = 'invalid';
     expect(() => copyWorkbook(malformed)).toThrow('comment entry');
     const earlierShape = structuredClone(original) as unknown as {
       comments: Record<string, unknown>[];
@@ -189,8 +190,8 @@ describe('SE-CR-3.1/3.4/3.5: conversation and reviewer overlay contracts', () =>
     workbook = setCommentState(workbook, 'range', 'resolved', stamp('resolve'));
     workbook = addComment(workbook, 'sheet-1', 'B2', 'Another', stamp('next'));
     workbook = addWorkbookComment(workbook, 'Whole workbook', stamp('whole'));
-    expect(workbook.comments!.at(-1)).toMatchObject({ scope: 'workbook' });
-    expect(workbook.comments!.at(-1)!.range).toBeUndefined();
+    expect(requireDefined(workbook.comments).at(-1)).toMatchObject({ scope: 'workbook' });
+    expect(requireDefined(requireDefined(workbook.comments).at(-1)).range).toBeUndefined();
   });
   it('coalesces exact targets by author and shares a discussion without touching canonical calculations', () => {
     const original = createWorkbook([['1', '=A1*2']]);
@@ -208,7 +209,10 @@ describe('SE-CR-3.1/3.4/3.5: conversation and reviewer overlay contracts', () =>
     );
     expect(workbook.suggestions).toHaveLength(1);
     expect(workbook.comments).toHaveLength(1);
-    expect(workbook.suggestions![0].changes[0]).toMatchObject({ before: '1', after: '3' });
+    expect(requireDefined(workbook.suggestions)[0].changes[0]).toMatchObject({
+      before: '1',
+      after: '3',
+    });
     expect(previewSuggestions(workbook, alex.id)).toBe(workbook);
     const preview = previewSuggestions(workbook, morgan.id);
     expect(calculateWorkbook(preview).worksheets[0].values[0][1]).toMatchObject({ numerator: '6' });
@@ -217,7 +221,7 @@ describe('SE-CR-3.1/3.4/3.5: conversation and reviewer overlay contracts', () =>
     });
     expect(findOpenComment(workbook, 'sheet-1', 'A1')).toBeUndefined();
     const accepted = decideSuggestion(workbook, 'first', 'accepted', stamp('decision'));
-    expect(accepted.comments![0]).toMatchObject({
+    expect(requireDefined(accepted.comments)[0]).toMatchObject({
       suggestion: 'first',
       state: 'resolved',
       resolvedBy: 'alex',

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PointerEvent } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
 import { useHeaderResize } from './header-resize.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
@@ -18,7 +19,9 @@ function setup(zoom: number, axis: 'column' | 'row' = 'column') {
   root.append(table);
   document.body.append(root);
   const header =
-    axis === 'column' ? table.tHead!.rows[0].cells[0] : table.tBodies[0].rows[0].cells[0];
+    axis === 'column'
+      ? requireDefined(table.tHead).rows[0].cells[0]
+      : table.tBodies[0].rows[0].cells[0];
   vi.spyOn(header, 'getBoundingClientRect').mockReturnValue({
     left: 0,
     top: 0,
@@ -30,7 +33,7 @@ function setup(zoom: number, axis: 'column' | 'row' = 'column') {
   root.setPointerCapture = vi.fn();
   root.releasePointerCapture = vi.fn();
   root.hasPointerCapture = vi.fn(() => true);
-  const col = table.querySelector('col')!;
+  const col = requireDefined(table.querySelector('col'));
   col.style.width = `${(150.5 * zoom) / 100}px`;
   col.setAttribute('width', String((150.5 * zoom) / 100));
   const row = table.tBodies[0].rows[0];

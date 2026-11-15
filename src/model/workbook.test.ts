@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { assertWorkbook, createWorkbook } from './workbook.js';
-import { parseFormula } from './formula-parser.js';
 import { writeCells } from './editing.js';
+import { parseFormula } from './formula-parser.js';
+import { assertWorkbook, createWorkbook } from './workbook.js';
 
 describe('SE-MODEL-1: portable workbook and parser', () => {
   it('edits without mutating source input', () => {

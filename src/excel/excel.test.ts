@@ -1,17 +1,18 @@
-import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
-import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
-import { convertXlsx } from './convert.js';
-import { inspectXlsx } from './guard.js';
-import { exportXlsx, exportXlsxWithReport } from './write.js';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import { describe, expect, it } from 'vitest';
+import { calculateWorkbook } from '../calculation/evaluator.js';
+import { formatCells } from '../model/editing.js';
+import { requireDefined } from '../model/require-defined.js';
+import { createWorkbook } from '../model/workbook.js';
 import { validateFormulaCapabilities } from './capabilities.js';
 import { capturedText } from './captured-text.js';
-import { encodeImportRequest, decodeImportRequest } from './protocol.js';
-import { importNumberFormat, exportNumberFormat } from './styles.js';
 import type { ExcelFormulaCapabilities } from './contracts.js';
-import { calculateWorkbook } from '../calculation/evaluator.js';
-import { createWorkbook } from '../model/workbook.js';
-import { formatCells } from '../model/editing.js';
+import { convertXlsx } from './convert.js';
+import { inspectXlsx } from './guard.js';
+import { decodeImportRequest, encodeImportRequest } from './protocol.js';
+import { exportNumberFormat, importNumberFormat } from './styles.js';
+import { exportXlsx, exportXlsxWithReport } from './write.js';
 
 describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
   it('keeps formulas and geometry while discarding caches and reporting unsupported content', async () => {
@@ -38,12 +39,12 @@ describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
       numerator: '2',
     });
     expect(converted.data[1][0]).toBe('Rich text');
-    expect(converted.formats!.B2).toMatchObject({ kind: 'percent', decimals: 2 });
-    expect(converted.style!.B2).toContain('font-weight: bold');
-    expect(converted.style!.B2).toContain('#175cd3');
-    expect(converted.columns![0].width).toBe(145);
-    expect(converted.rows!['1'].height).toBe(32);
-    expect(converted.mergeCells!.A4).toEqual([2, 1]);
+    expect(requireDefined(converted.formats).B2).toMatchObject({ kind: 'percent', decimals: 2 });
+    expect(requireDefined(converted.style).B2).toContain('font-weight: bold');
+    expect(requireDefined(converted.style).B2).toContain('#175cd3');
+    expect(requireDefined(converted.columns)[0].width).toBe(145);
+    expect(requireDefined(converted.rows)['1'].height).toBe(32);
+    expect(requireDefined(converted.mergeCells).A4).toEqual([2, 1]);
     expect(converted.freezeColumns).toBe(1);
     expect(result.report.warnings.map((warning) => warning.code)).toEqual(
       expect.arrayContaining([
@@ -54,7 +55,7 @@ describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
         'export-control-legend',
       ]),
     );
-    expect(converted.cellProvenance!.B2.actor.id).toBe('system');
+    expect(requireDefined(converted.cellProvenance).B2.actor.id).toBe('system');
   });
   it('reads authored decimal XML directly instead of accepting rounded JavaScript numbers', async () => {
     const document = new ExcelJS.Workbook();
@@ -155,8 +156,8 @@ it('SE-XL-1.2: resolves theme tints and indexed colors to authored hex styles', 
   sheet.getCell('A2').value = 2;
   sheet.getCell('A2').font = { color: { indexed: 10 } as Partial<ExcelJS.Color> };
   const converted = await convertXlsx(new Uint8Array(await document.xlsx.writeBuffer()));
-  expect(converted.workbook.worksheets[0].style!.A1).toMatch(/color: #[0-9a-f]{6}/);
-  expect(converted.workbook.worksheets[0].style!.A2).toContain('color: #ff0000');
+  expect(requireDefined(converted.workbook.worksheets[0].style).A1).toMatch(/color: #[0-9a-f]{6}/);
+  expect(requireDefined(converted.workbook.worksheets[0].style).A2).toContain('color: #ff0000');
 });
 
 const exampleCapabilities: ExcelFormulaCapabilities = {
@@ -284,8 +285,10 @@ describe('SE-XLSX-3: explicit serializable host capabilities', () => {
     expect(
       undeclared.report.warnings.find((warning) => warning.code === 'unsupported-formula')?.count,
     ).toBe(3);
-    const operands = Object.values(result.context!.operands);
-    delete result.context!.operands[Object.keys(result.context!.operands)[0]];
+    const operands = Object.values(requireDefined(result.context).operands);
+    delete requireDefined(result.context).operands[
+      Object.keys(requireDefined(result.context).operands)[0]
+    ];
     operands[1].formula = '=different';
     const captured = await exportXlsxWithReport(workbook, result, {
       formulaCapabilities: { hostFunctions: [{ name: 'FOO' }] },
@@ -459,7 +462,7 @@ it('SE-XLSX-4: rejects malformed quantity and provenance result metadata at the 
     { dimension: [1, 2] },
   ]) {
     const result = calculateWorkbook(workbook);
-    Object.assign(result.worksheets[0].values[0][0]!, metadata);
+    Object.assign(requireDefined(result.worksheets[0].values[0][0]), metadata);
     await expect(exportXlsx(workbook, result)).rejects.toThrow();
   }
 });
@@ -470,7 +473,7 @@ it('SE-CHROME-1: an imported style and the same style applied in the editor stor
   sheet.getCell('A1').value = 'Label';
   sheet.getCell('A1').font = { bold: true };
   const imported = (await convertXlsx(new Uint8Array(await document.xlsx.writeBuffer()))).workbook;
-  const style = imported.worksheets[0].style!.A1;
+  const style = requireDefined(imported.worksheets[0].style).A1;
   expect(style).toBe('font-weight: bold; text-align: left');
   const cell = { x1: 0, y1: 0, x2: 0, y2: 0 };
   const plain = { ...imported, worksheets: [{ ...imported.worksheets[0], style: {} }] };
@@ -478,10 +481,12 @@ it('SE-CHROME-1: an imported style and the same style applied in the editor stor
     'font-weight': 'bold',
     'text-align': 'left',
   });
-  expect(edited.worksheets[0].style!.A1).toBe(style);
+  expect(requireDefined(edited.worksheets[0].style).A1).toBe(style);
   // Re-applying the imported properties leaves the stored text unchanged.
   expect(
-    formatCells(imported, imported.worksheets[0].id, cell, { 'font-weight': 'bold' }).worksheets[0]
-      .style!.A1,
+    requireDefined(
+      formatCells(imported, imported.worksheets[0].id, cell, { 'font-weight': 'bold' })
+        .worksheets[0].style,
+    ).A1,
   ).toBe(style);
 });

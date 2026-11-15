@@ -1,42 +1,25 @@
 'use client';
 
-import { placePeers, collaboratorSheet, lockedChange, selectionLock } from '../model/presence.js';
-import { attributeCellChanges } from '../model/provenance.js';
-
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { formatWorksheetCell } from '../calculation/cell-format.js';
+import { formatCellValue } from '../calculation/format.js';
 import { calculationCellKey } from '../calculation/publication.js';
-import { commandOperations } from './command-operations.js';
-import { historyEntry, redoStep, undoStep, type EditorHistory } from './history.js';
+import { summarizeCellValues } from '../calculation/summary.js';
+import { createDocumentInsertion } from '../document/insertion.js';
+import type { WorkbookVersion } from '../host/adapters.js';
 import {
-  changeWorkbookStructureWithOperations,
-  collectCellOperations,
-  type WorkbookOperation,
-  type WorkbookCommandResult,
-  type WorkbookChangeContext,
-} from '../model/operations.js';
-import { createWorkbookEntityId } from '../model/extent.js';
-import type { SpreadsheetEditorHandle, SpreadsheetEditorState } from './public-host.js';
+  FULL_CAPABILITIES,
+  READ_ONLY_CAPABILITIES,
+  resolveSpreadsheetMode,
+} from '../host/capabilities.js';
 import {
   createSpreadsheetCopy,
   pasteSpreadsheetCopy,
   type SpreadsheetCopy,
 } from '../model/clipboard.js';
-import { formatWorksheetCell } from '../calculation/cell-format.js';
-import {
-  parseSpreadsheetRange,
-  formatSpreadsheetAddress,
-} from '../model/spreadsheet-addressing.js';
-import { formatCellValue } from '../calculation/format.js';
-import { summarizeCellValues } from '../calculation/summary.js';
-import {
-  assertWorkbook,
-  copyWorkbook,
-  createWorkbook,
-  type Workbook,
-  type Worksheet,
-} from '../model/workbook.js';
 import {
   borderCells,
+  type CellSelection,
   clearSelection,
   formatCells,
   INITIAL_SELECTION,
@@ -48,37 +31,55 @@ import {
   selectionCells,
   serializeDelimited,
   writeCells,
-  type CellSelection,
 } from '../model/editing.js';
+import { createWorkbookEntityId } from '../model/extent.js';
+import {
+  changeWorkbookStructureWithOperations,
+  collectCellOperations,
+  type WorkbookChangeContext,
+  type WorkbookCommandResult,
+  type WorkbookOperation,
+} from '../model/operations.js';
+import { collaboratorSheet, lockedChange, placePeers, selectionLock } from '../model/presence.js';
+import { attributeCellChanges } from '../model/provenance.js';
+import { requireDefined } from '../model/require-defined.js';
+import { type CellFormat, proposeWorkbookChange, type ReviewStamp } from '../model/review.js';
+import {
+  formatSpreadsheetAddress,
+  parseSpreadsheetRange,
+} from '../model/spreadsheet-addressing.js';
 import {
   renameWorksheet,
-  validateWorksheetName,
   type StructureChange,
+  validateWorksheetName,
 } from '../model/structure.js';
-import { proposeWorkbookChange, type CellFormat, type ReviewStamp } from '../model/review.js';
-import { createDocumentInsertion } from '../document/insertion.js';
-import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
 import {
-  FULL_CAPABILITIES,
-  READ_ONLY_CAPABILITIES,
-  resolveSpreadsheetMode,
-} from '../host/capabilities.js';
-import type { WorkbookVersion } from '../host/adapters.js';
-import { useWorkbookVersions } from './use-workbook-versions.js';
-import { usePersonNames } from './use-person-names.js';
-import { useWorkbookPresence } from './use-workbook-presence.js';
-import { sessionErrorMessage, sessionSavePhase, useSessionState } from './use-session-state.js';
-import { useSessionActions } from './use-session-actions.js';
-import { useNotice } from './use-notice.js';
-import { useComments } from './use-comments.js';
-import { useCellDisplay } from './use-cell-display.js';
-import { applySheetCommand, resizeSelection, type SheetCommand } from './sheet-commands.js';
-import { useVersionActions } from './use-version-actions.js';
-import { matchTargets, replaceMatches, useFind } from './use-find.js';
+  assertWorkbook,
+  type CellInput,
+  copyWorkbook,
+  createWorkbook,
+  type Workbook,
+  type Worksheet,
+} from '../model/workbook.js';
+import { commandOperations } from './command-operations.js';
+import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
+import { blockTargets, type CellTargets, immutableBaseline, mergeTargets } from './edit-targets.js';
 import { createEditorHandle, type EditorLifecycle } from './editor-handle.js';
-import { blockTargets, immutableBaseline, mergeTargets, type CellTargets } from './edit-targets.js';
+import { type EditorHistory, historyEntry, redoStep, undoStep } from './history.js';
+import type { SpreadsheetEditorHandle, SpreadsheetEditorState } from './public-host.js';
+import { applySheetCommand, resizeSelection, type SheetCommand } from './sheet-commands.js';
+import { useCellDisplay } from './use-cell-display.js';
+import { useComments } from './use-comments.js';
+import { matchTargets, replaceMatches, useFind } from './use-find.js';
+import { useNotice } from './use-notice.js';
+import { usePersonNames } from './use-person-names.js';
+import { useSessionActions } from './use-session-actions.js';
+import { sessionErrorMessage, sessionSavePhase, useSessionState } from './use-session-state.js';
+import { useVersionActions } from './use-version-actions.js';
+import { useWorkbookPresence } from './use-workbook-presence.js';
+import { useWorkbookVersions } from './use-workbook-versions.js';
 
-export type EditorDialog =
+type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
 export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const [local, setLocal] = useState(() => copyWorkbook(props.defaultValue ?? createWorkbook()));
@@ -144,6 +145,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     );
   }
   const grid = useRef<GridController | null>(null);
+  function attachGrid(controller: GridController | null) {
+    grid.current = controller;
+  }
   const copied = useRef<SpreadsheetCopy | null>(null);
   const [panel, setPanel] = useState<string | null>(null),
     [panelOpen, setPanelOpen] = useState(false);
@@ -184,9 +188,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
+    const subscribed = listeners.current;
     return () => {
       alive.current = false;
-      listeners.current.clear();
+      subscribed.clear();
     };
   }, []);
   const latestWorkbook = useRef(workbook);
@@ -526,8 +531,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   function undo() {
     if (!canWrite) return;
-    if (props.undo) {
-      attempt(() => props.undo!.undo());
+    const host = props.undo;
+    if (host) {
+      attempt(() => host.undo());
       return;
     }
     const step = undoStep(currentHistory, workbook);
@@ -538,8 +544,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   function redo() {
     if (!canWrite) return;
-    if (props.undo) {
-      attempt(() => props.undo!.redo());
+    const host = props.undo;
+    if (host) {
+      attempt(() => host.redo());
       return;
     }
     const step = redoStep(currentHistory, workbook);
@@ -561,11 +568,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   function setDraftValue(value: string) {
     setDraft({ key: draftKey, value });
   }
-  function proposeCells(
-    values: import('../model/workbook.js').CellInput[][],
-    x: number,
-    y: number,
-  ) {
+  function proposeCells(values: CellInput[][], x: number, y: number) {
     const changed = mutate(
       writeCells(workbook, sheet.id, x, y, values, props.idFactory),
       'Edit cells',
@@ -610,7 +613,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       );
     const crossesMerge = Object.entries(sheet.mergeCells ?? {}).some(
       ([address, [columns, rows]]) => {
-        const range = parseSpreadsheetRange(address)!;
+        const range = requireDefined(parseSpreadsheetRange(address));
         const start = axis === 'row' ? range.start.y : range.start.x;
         const end = start + (axis === 'row' ? rows : columns) - 1;
         return kind === 'insert'
@@ -751,7 +754,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     copied.current = createSpreadsheetCopy(source, sheet.id, selection, text, cut);
   }
   function pasteCells(
-    values: import('../model/workbook.js').CellInput[][],
+    values: CellInput[][],
     x = selection.x1,
     y = selection.y1,
     originalText?: string,
@@ -992,7 +995,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
         errorNotice,
         listeners,
       }),
-    [],
+    [errorNotice],
   );
   useImperativeHandle(props.editorRef, () => handle, [handle]);
   const stateIdentity = JSON.stringify(lifecycleState);
@@ -1058,6 +1061,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     cellFormat,
     summary,
     grid,
+    attachGrid,
     updateSheet,
     proposeCells,
     commit,

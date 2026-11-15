@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { createRef, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createRef, useState } from 'react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import {
   EditorFormulaBar,
   type EditorFormulaBarHandle,
@@ -143,7 +144,7 @@ describe('SE-CHROME-4: public formula bar editing surface', () => {
       formula().focus();
       formula().setSelectionRange(5, 7);
     });
-    act(() => ref.current!.insertReference('B2:C3'));
+    act(() => requireDefined(ref.current).insertReference('B2:C3'));
     expect(props.onDraftChange).toHaveBeenCalledExactlyOnceWith('=SUM(B2:C3)+1');
     expect(formula().value).toBe('=SUM(B2:C3)+1');
     expect(formula().selectionStart).toBe(10);
@@ -159,7 +160,7 @@ describe('SE-CHROME-4: public formula bar editing surface', () => {
     act(() => {
       formula().focus();
       formula().setSelectionRange(1, 3);
-      ref.current!.insertReference('C4:D5');
+      requireDefined(ref.current).insertReference('C4:D5');
     });
     expect(formula().value).toBe('=A2+B3');
     expect(props.onDraftChange).toHaveBeenCalledExactlyOnceWith('=C4:D5+B3');
@@ -220,7 +221,7 @@ describe('SE-CHROME-4: public formula bar editing surface', () => {
     act(() => {
       formula().focus();
       formula().setSelectionRange(1, 3);
-      ref.current!.insertReference('C5');
+      requireDefined(ref.current).insertReference('C5');
     });
     expect(formula().selectionStart).toBe(1);
     expect(formula().selectionEnd).toBe(3);

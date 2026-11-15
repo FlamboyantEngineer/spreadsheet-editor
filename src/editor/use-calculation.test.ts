@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
 import { calculateWorkbook, type CalculationResult } from '../calculation/evaluator.js';
 import type { CalculationProvider } from '../calculation/provider.js';
+import { createWorkbook } from '../model/workbook.js';
 import { useCalculation } from './use-calculation.js';
 
 describe('SE-UI-6: calculation lifecycle', () => {

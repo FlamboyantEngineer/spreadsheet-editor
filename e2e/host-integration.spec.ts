@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Locator } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 
 const editor = (page: Page) => page.getByRole('region', { name: 'Host spreadsheet', exact: true });
 const cell = (root: Locator, x: number, y = 0) =>

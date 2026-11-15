@@ -1,21 +1,22 @@
 'use client';
 
-import {
-  useId,
-  useRef,
-  useState,
-  useLayoutEffect,
-  type CSSProperties,
-  type RefObject,
-  type KeyboardEvent,
-  type FormEvent,
-} from 'react';
 import { CompletionList } from '@flamboyantengineer/ui-components/completion-list';
 import {
-  parseFormulaReferenceHighlights,
-  buildFormulaReferenceTokenSegments,
-} from '../model/formula-reference-parser.js';
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+  type RefObject,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { formulaFunctionCatalog, type FormulaFunctionDescriptor } from '../editor/public-host.js';
+import {
+  buildFormulaReferenceTokenSegments,
+  parseFormulaReferenceHighlights,
+} from '../model/formula-reference-parser.js';
+import { requireDefined } from '../model/require-defined.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 import { fitNativeCellEditor } from './native-cell-editor.js';
 
@@ -97,7 +98,7 @@ export function useNativeFormula(
       const control = edition?.[0]?.firstElementChild;
       if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
         releaseEditor.current?.();
-        releaseEditor.current = fitNativeCellEditor(edition![0], control);
+        releaseEditor.current = fitNativeCellEditor(requireDefined(edition)[0], control);
         input.current = control;
         track();
       }

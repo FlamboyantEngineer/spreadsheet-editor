@@ -1,16 +1,22 @@
 import type { NumericValue } from '../calculation/values.js';
-import type { CellInput, CellProvenance, Workbook, Worksheet } from './workbook.js';
-import { copyWorkbook } from './workbook.js';
+import { writeCells } from './editing.js';
+import {
+  createWorkbookEntityId,
+  materializeWorksheetExtent,
+  type WorkbookIdFactory,
+  worksheetExtent,
+} from './extent.js';
+import { requireDefined } from './require-defined.js';
 import type { CellFormat } from './review.js';
 import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 import { changeWorkbookStructure, type StructureChange } from './structure.js';
 import {
-  materializeWorksheetExtent,
-  worksheetExtent,
-  createWorkbookEntityId,
-  type WorkbookIdFactory,
-} from './extent.js';
-import { writeCells } from './editing.js';
+  type CellInput,
+  type CellProvenance,
+  copyWorkbook,
+  type Workbook,
+  type Worksheet,
+} from './workbook.js';
 
 export interface AuthoredCellState {
   value: CellInput;
@@ -204,7 +210,7 @@ export function collectCellOperations(
       const previous = authoredCellState(sheet, address),
         current = authoredCellState(next, address);
       if (equal(previous, current)) continue;
-      const cell = parseSpreadsheetAddress(address)!;
+      const cell = requireDefined(parseSpreadsheetAddress(address));
       changes.push({
         address,
         rowId: sheet.rowIds?.[cell.y] ?? next.rowIds?.[cell.y],
@@ -233,8 +239,8 @@ export function writeCellsWithOperations(
     workbook: next,
     operations: [
       ...collectLineGrowthOperations(
-        workbook.worksheets.find((sheet) => sheet.id === sheetId)!,
-        next.worksheets.find((sheet) => sheet.id === sheetId)!,
+        requireDefined(workbook.worksheets.find((sheet) => sheet.id === sheetId)),
+        requireDefined(next.worksheets.find((sheet) => sheet.id === sheetId)),
       ),
       ...collectCellOperations(workbook, next, new Map([[sheetId, addresses]])),
     ],
@@ -249,7 +255,7 @@ export function changeWorkbookStructureWithOperations(
   idFactory: WorkbookIdFactory = createWorkbookEntityId,
 ): WorkbookCommandResult {
   const materialized = materializeWorksheetExtent(workbook, sheetId),
-    sheet = materialized.worksheets.find((sheet) => sheet.id === sheetId)!;
+    sheet = requireDefined(materialized.worksheets.find((sheet) => sheet.id === sheetId));
   const extent = worksheetExtent(sheet, materialized);
   if (sheet.rowIds) while (sheet.rowIds.length < extent.rows) sheet.rowIds.push(idFactory('row'));
   if (sheet.columnIds)
@@ -270,7 +276,7 @@ export function changeWorkbookStructureWithOperations(
   }
   const actual = { ...change, count, ...(change.kind === 'insert' ? { ids } : {}) };
   const next = changeWorkbookStructure(materialized, sheetId, actual);
-  const nextSheet = next.worksheets.find((candidate) => candidate.id === sheetId)!;
+  const nextSheet = requireDefined(next.worksheets.find((candidate) => candidate.id === sheetId));
   const geometry = geometryOperation(sheet, nextSheet) as Extract<
     WorkbookOperation,
     { kind: 'geometry' }
@@ -292,7 +298,7 @@ export function changeWorkbookStructureWithOperations(
     ...(change.kind === 'delete'
       ? {
           deletedCells: [...authoredAddresses(sheet)].flatMap((address) => {
-            const cell = parseSpreadsheetAddress(address)!,
+            const cell = requireDefined(parseSpreadsheetAddress(address)),
               coordinate = change.axis === 'row' ? cell.y : cell.x;
             return coordinate >= change.index && coordinate < change.index + count
               ? [
@@ -312,10 +318,12 @@ export function changeWorkbookStructureWithOperations(
   // Compare surviving cells by their structural mapping, so moving a cell is not emitted as a second write.
   const operations: WorkbookOperation[] = [operation];
   for (const previousSheet of workbook.worksheets) {
-    const currentSheet = next.worksheets.find((candidate) => candidate.id === previousSheet.id)!;
+    const currentSheet = requireDefined(
+      next.worksheets.find((candidate) => candidate.id === previousSheet.id),
+    );
     const changes: WorkbookCellChange[] = [];
     for (const address of authoredAddresses(previousSheet)) {
-      const position = parseSpreadsheetAddress(address)!;
+      const position = requireDefined(parseSpreadsheetAddress(address));
       let coordinate = change.axis === 'row' ? position.y : position.x;
       if (previousSheet.id === sheetId) {
         if (

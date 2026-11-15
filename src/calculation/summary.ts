@@ -1,6 +1,6 @@
 import type { NumericOptions } from './rational.js';
 import { createQuantityArithmetic } from './units.js';
-import { CalculationError, isNumeric, type CellValue, type NumericValue } from './values.js';
+import { CalculationError, type CellValue, isNumeric, type NumericValue } from './values.js';
 
 /** Selection statistics use the same physical-kind and exact-value rules as formulas. */
 export function summarizeCellValues(

@@ -1,6 +1,5 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import {
   ArrowLeftGlyph,
@@ -12,11 +11,12 @@ import {
 } from '@flamboyantengineer/ui-components/core';
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
 import { Tab, TabList } from '@flamboyantengineer/ui-components/tabs';
+import type { ReactNode } from 'react';
 import type { Worksheet } from '../model/workbook.js';
 
-export type WorksheetCommand = 'add' | 'insert' | 'duplicate' | 'delete' | 'left' | 'right';
+type WorksheetCommand = 'add' | 'insert' | 'duplicate' | 'delete' | 'left' | 'right';
 
-export interface WorksheetStripProps {
+interface SheetBarProps {
   sheets: readonly Pick<Worksheet, 'id' | 'name'>[];
   selectedId: string;
   canEdit: boolean;
@@ -33,7 +33,7 @@ export interface WorksheetStripProps {
  * The worksheet list within its owner's controlled Tabs root. The same root pairs worksheet ids
  * with TabPanels around the grid; selection and pending grid drafts stay with that owner.
  */
-export function WorksheetStrip({
+export function SheetBar({
   sheets,
   selectedId,
   canEdit,
@@ -42,7 +42,7 @@ export function WorksheetStrip({
   onCommand,
   scrollButtons = true,
   children,
-}: WorksheetStripProps) {
+}: SheetBarProps) {
   const menuItems = (key: string | number, standard: readonly MenuEntry[]): MenuEntry[] => {
     const id = String(key);
     const command = (

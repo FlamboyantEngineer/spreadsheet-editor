@@ -1,11 +1,12 @@
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
-import type { SpreadsheetEditorController } from './use-editor.js';
-import { changeWorkbookStructureWithOperations } from '../model/operations.js';
-import { materializeWorksheetExtent, worksheetExtent } from '../model/extent.js';
-import { findOpenComment } from '../model/review.js';
 import { selectionAddress } from '../model/editing.js';
+import { materializeWorksheetExtent, worksheetExtent } from '../model/extent.js';
+import { changeWorkbookStructureWithOperations } from '../model/operations.js';
+import { requireDefined } from '../model/require-defined.js';
+import { findOpenComment } from '../model/review.js';
 import { copyWorkbook, createWorkbook } from '../model/workbook.js';
 import { alignmentGlyphs, editorCommandMetadata } from './editor-commands.js';
+import type { SpreadsheetEditorController } from './use-editor.js';
 
 export function editorMenus(editor: SpreadsheetEditorController) {
   const e = editor,
@@ -172,7 +173,7 @@ export function editorMenus(editor: SpreadsheetEditorController) {
       () =>
         e.mutateWithDraft((base) => {
           const next = copyWorkbook(base);
-          next.worksheets.find((sheet) => sheet.id === e.sheet.id)!.freezeColumns =
+          requireDefined(next.worksheets.find((sheet) => sheet.id === e.sheet.id)).freezeColumns =
             e.selection.x1 + 1;
           return next;
         }, 'Freeze columns'),
@@ -184,7 +185,8 @@ export function editorMenus(editor: SpreadsheetEditorController) {
       () =>
         e.mutateWithDraft((base) => {
           const next = copyWorkbook(base);
-          next.worksheets.find((sheet) => sheet.id === e.sheet.id)!.freezeColumns = 0;
+          requireDefined(next.worksheets.find((sheet) => sheet.id === e.sheet.id)).freezeColumns =
+            0;
           return next;
         }, 'Unfreeze columns'),
       structureBlocked || !e.sheet.freezeColumns,
@@ -299,9 +301,11 @@ export function editorMenus(editor: SpreadsheetEditorController) {
         axis: 'row',
         kind: 'insert',
         index: worksheetExtent(
-          materializeWorksheetExtent(e.workbook, e.sheet.id).worksheets.find(
-            (sheet) => sheet.id === e.sheet.id,
-          )!,
+          requireDefined(
+            materializeWorksheetExtent(e.workbook, e.sheet.id).worksheets.find(
+              (sheet) => sheet.id === e.sheet.id,
+            ),
+          ),
         ).rows,
         count: 1,
       } as const;
@@ -320,9 +324,11 @@ export function editorMenus(editor: SpreadsheetEditorController) {
         axis: 'column',
         kind: 'insert',
         index: worksheetExtent(
-          materializeWorksheetExtent(e.workbook, e.sheet.id).worksheets.find(
-            (sheet) => sheet.id === e.sheet.id,
-          )!,
+          requireDefined(
+            materializeWorksheetExtent(e.workbook, e.sheet.id).worksheets.find(
+              (sheet) => sheet.id === e.sheet.id,
+            ),
+          ),
         ).columns,
         count: 1,
       } as const;

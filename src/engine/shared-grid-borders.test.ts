@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
 import { waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 import {
   observeGridBorderCopies,
   restoreSharedGridBorders,
   syncSharedGridBorders,
 } from './shared-grid-borders.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 function fixture(merged?: 'left' | 'right') {
   const table = document.createElement('table');

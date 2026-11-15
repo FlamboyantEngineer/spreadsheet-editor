@@ -1,10 +1,11 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
+import { requireDefined } from '../src/model/require-defined.js';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
 const ROWS = 2_000;
 
-async function openLarge(page: import('@playwright/test').Page) {
+async function openLarge(page: Page) {
   await page.goto(`/large.html?rows=${ROWS}`);
   const editor = page.locator('.se-editor').first();
   await expect(editor.locator('td[data-x="24"][data-y="3"]')).toHaveText('24', {
@@ -36,7 +37,7 @@ test('SE-PERF-1: a 50,000-cell worksheet attaches only the rows near the viewpor
   // The scrollbar spans every row at its own height.
   const heights = await viewport.evaluate((content) => ({
     scroll: content.scrollHeight,
-    header: content.querySelector('thead')!.getBoundingClientRect().height,
+    header: content.querySelector('thead')?.getBoundingClientRect().height ?? Number.NaN,
   }));
   expect(heights.scroll - heights.header).toBeCloseTo(ROWS * 24, -1);
   await viewport.evaluate((content) => {
@@ -47,7 +48,7 @@ test('SE-PERF-1: a 50,000-cell worksheet attaches only the rows near the viewpor
   // Halfway down, the row under the viewport's top is the one its offset names.
   const expected = await viewport.evaluate((content) => {
     content.scrollTop = 24 * 1_000;
-    const header = content.querySelector('thead')!.getBoundingClientRect().height;
+    const header = content.querySelector('thead')?.getBoundingClientRect().height ?? Number.NaN;
     return Math.floor((content.scrollTop + 40 - header) / 24);
   });
   await expect.poll(() => cellAt(editor, 'top')).toBe(`${expected}:Item ${expected + 1}.4`);
@@ -136,6 +137,12 @@ test('SE-PERF-1: a selection reaching detached rows keeps its outline on the att
   await expect(outline).toHaveCount(1);
   const [box, cell] = await Promise.all([outline.boundingBox(), last.boundingBox()]);
   // The outline ends at the last row and runs off the top of the viewport.
-  expect(Math.abs(box!.y + box!.height - (cell!.y + cell!.height))).toBeLessThan(2);
+  expect(
+    Math.abs(
+      requireDefined(box).y +
+        requireDefined(box).height -
+        (requireDefined(cell).y + requireDefined(cell).height),
+    ),
+  ).toBeLessThan(2);
   expect(await outline.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
 });

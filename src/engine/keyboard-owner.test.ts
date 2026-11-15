@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from 'vitest';
 import { jspreadsheet } from '@jspreadsheet-ce/react';
+import { afterEach, expect, it } from 'vitest';
 import {
-  releaseJSpreadsheetKeyboardOwner,
   type JSpreadsheetWorksheetInstance,
+  releaseJSpreadsheetKeyboardOwner,
 } from './jspreadsheet-host.js';
 
 const vendor = jspreadsheet as unknown as { current: JSpreadsheetWorksheetInstance | null };

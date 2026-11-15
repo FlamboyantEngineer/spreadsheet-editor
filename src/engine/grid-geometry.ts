@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { CellSelection } from '../model/editing.js';
-import type { Worksheet } from '../model/workbook.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
+import type { Worksheet } from '../model/workbook.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 import { gridRowWindow, revealGridRows } from './row-window.js';
 
@@ -244,7 +244,8 @@ export function measureGridSelection(
   function cellRect(x: number, y: number) {
     const cell = engine.getCellFromCoords?.(x, y);
     if (!cell || cell.style.display === 'none') return null;
-    if (measured.has(cell)) return measured.get(cell)!;
+    // A hidden cell is measured as null, so presence is read with has().
+    if (measured.has(cell)) return measured.get(cell) as DOMRect | null;
     const rect = cell.getBoundingClientRect(),
       visible = rect.width > 0 && rect.height > 0 ? rect : null;
     measured.set(cell, visible);

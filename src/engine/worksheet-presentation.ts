@@ -1,16 +1,14 @@
-import type { Worksheet } from '../model/workbook.js';
-import type { WorksheetExtent } from '../model/extent.js';
 import { parseCellStyle } from '../model/editing.js';
-import { gridWorksheetExtent } from './worksheet-data.js';
-import { restoreSharedGridBorders, syncSharedGridBorders } from './shared-grid-borders.js';
+import type { WorksheetExtent } from '../model/extent.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetAddress,
 } from '../model/spreadsheet-addressing.js';
+import type { Worksheet } from '../model/workbook.js';
 import {
   DEFAULT_COLUMN_WIDTH,
-  DEFAULT_ROW_HEIGHT,
   DEFAULT_ROW_HEADER_WIDTH,
+  DEFAULT_ROW_HEIGHT,
   gridZoomScale,
   syncFrozenColumns,
 } from './grid-geometry.js';
@@ -19,6 +17,8 @@ import {
   applyJSpreadsheetRowMeasure,
   type JSpreadsheetWorksheetInstance,
 } from './jspreadsheet-host.js';
+import { restoreSharedGridBorders, syncSharedGridBorders } from './shared-grid-borders.js';
+import { gridWorksheetExtent } from './worksheet-data.js';
 
 const visualProperties = new Set([
   'font-family',

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@flamboyantengineer/ui-components/button';
 import { ColorField } from '@flamboyantengineer/ui-components/color-field';
 import {
@@ -11,6 +10,7 @@ import {
 import type { GlyphComponent } from '@flamboyantengineer/ui-components/core';
 import { NumberField } from '@flamboyantengineer/ui-components/number-field';
 import { Popover, PopoverTrigger } from '@flamboyantengineer/ui-components/popover';
+import { useState } from 'react';
 import { editorGlyphs } from './editor-commands.js';
 
 const fontSizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72, 96];

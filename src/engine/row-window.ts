@@ -1,5 +1,6 @@
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import { requireDefined } from '../model/require-defined.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 /**
  * The engine builds a row element for every worksheet row; only the rows near the viewport are
@@ -23,7 +24,7 @@ const OVERSCAN_ROWS = 20;
 /** The window moves only once the viewport comes within this many rows of its edge. */
 const MARGIN_ROWS = 5;
 /** Rows the engine attaches when it builds or rebuilds its table body. */
-export const INITIAL_ROWS = 100;
+const INITIAL_ROWS = 100;
 /** Attached rows below this count are all attached; windowing would save nothing. */
 const MIN_WINDOWED_ROWS = 2 * INITIAL_ROWS;
 
@@ -34,7 +35,7 @@ function rowElement(engine: JSpreadsheetWorksheetInstance, y: number) {
 }
 
 function spacer(engine: JSpreadsheetWorksheetInstance): HTMLTableRowElement {
-  const document = engine.tbody!.ownerDocument;
+  const document = requireDefined(engine.tbody).ownerDocument;
   const row = document.createElement('tr');
   row.className = GRID_SPACER_CLASS;
   row.setAttribute('aria-hidden', 'true');
@@ -93,7 +94,7 @@ export function gridRowWindow(
 
 /** Give the spacers the height of the detached rows above and below the window. */
 function sizeSpacers(engine: JSpreadsheetWorksheetInstance, state: RowWindowState): void {
-  const tbody = engine.tbody!;
+  const tbody = requireDefined(engine.tbody);
   const count = engine.rows?.length ?? 0;
   const heights = rowHeights(engine);
   let above = 0,
@@ -126,7 +127,7 @@ function place(
   start: number,
   end: number,
 ): void {
-  const tbody = engine.tbody!;
+  const tbody = requireDefined(engine.tbody);
   const count = engine.rows?.length ?? 0;
   [start, end] = widenForMerges(engine, Math.max(0, start), Math.min(count, end));
   if (start === state.start && end === state.end) return;
@@ -228,7 +229,7 @@ export function windowGridRows(
  * Take over the rows the engine attached after it built or rebuilt its table body: the first
  * INITIAL_ROWS rows when it built with `lazyLoading`, or all of them otherwise.
  */
-export function resetGridRowWindow(engine: JSpreadsheetWorksheetInstance): void {
+function resetGridRowWindow(engine: JSpreadsheetWorksheetInstance): void {
   const state = windows.get(engine);
   if (!state || !engine.tbody) return;
   const count = engine.rows?.length ?? 0;

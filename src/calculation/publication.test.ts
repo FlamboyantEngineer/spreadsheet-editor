@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook, type Workbook } from '../model/workbook.js';
 import { calculateWorkbook, type CalculationResult } from './evaluator.js';
 import {
   assertExternalCalculationSnapshot,
   calculationCellKey,
+  type ExternalCalculationSnapshot,
   orderedJson,
   pendingCalculationCells,
   workbookCalculationKey,
-  type ExternalCalculationSnapshot,
 } from './publication.js';
 import type { NumericValue } from './values.js';
 
@@ -109,8 +110,8 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
     expect(
       workbookCalculationKey(
         mutate(next, (value) => {
-          value.comments![0].entries[0].text = 'Edited comment';
-          value.suggestions![0].changes[0].after = '4';
+          requireDefined(value.comments)[0].entries[0].text = 'Edited comment';
+          requireDefined(value.suggestions)[0].changes[0].after = '4';
         }),
       ),
     ).toBe(key);
@@ -122,8 +123,8 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
       A1: { kind: 'unit', unit: 'm', inputUnit: 'mm', expectedDimension: 'Length' },
     };
     const changedDisplay = mutate(workbook, (value) => {
-      value.worksheets[0].formats!.A1 = {
-        ...value.worksheets[0].formats!.A1,
+      requireDefined(value.worksheets[0].formats).A1 = {
+        ...requireDefined(value.worksheets[0].formats).A1,
         decimals: 6,
         locale: 'de-DE',
         currency: 'EUR',
@@ -137,7 +138,10 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
       ['quantityKind', 'torque'],
     ] as const) {
       const changed = mutate(workbook, (value) => {
-        value.worksheets[0].formats!.A1 = { ...value.worksheets[0].formats!.A1, [field]: input };
+        requireDefined(value.worksheets[0].formats).A1 = {
+          ...requireDefined(value.worksheets[0].formats).A1,
+          [field]: input,
+        };
       });
       expect(workbookCalculationKey(changed)).not.toBe(workbookCalculationKey(workbook));
     }
@@ -241,15 +245,15 @@ describe('SE-HOST-CALC-1: deterministic authored calculation identity', () => {
       { provenance: { constants: 'rev2' } },
     ]) {
       const next = mutate(workbook, (value) => {
-        value.worksheets[0].inputValues!.A1 = {
-          ...value.worksheets[0].inputValues!.A1,
+        requireDefined(value.worksheets[0].inputValues).A1 = {
+          ...requireDefined(value.worksheets[0].inputValues).A1,
           ...metadata,
         };
       });
       expect(workbookCalculationKey(next)).not.toBe(key);
     }
     const invalid = mutate(workbook, (value) => {
-      value.worksheets[0].inputValues!.B1 = exact();
+      requireDefined(value.worksheets[0].inputValues).B1 = exact();
     });
     expect(() => workbookCalculationKey(invalid)).toThrow('nonformula');
   });
@@ -264,7 +268,7 @@ describe('SE-HOST-CALC-2: external snapshot ingress', () => {
       historical: true,
       records: [null, 'captured', { revision: 'a' }],
     };
-    snapshot.result!.worksheets[0].values[0][0] = {
+    requireDefined(snapshot.result).worksheets[0].values[0][0] = {
       ...exact('5'),
       dimension: [0, 0, 0, 0, 1, 0, 0],
       temperature: 'difference',
@@ -274,7 +278,7 @@ describe('SE-HOST-CALC-2: external snapshot ingress', () => {
     expect(() =>
       assertExternalCalculationSnapshot(JSON.parse(JSON.stringify(snapshot)), workbook),
     ).not.toThrow();
-    expect(snapshot.result!.worksheets[0].values[0][0]).toMatchObject({
+    expect(requireDefined(snapshot.result).worksheets[0].values[0][0]).toMatchObject({
       temperature: 'difference',
       provenance: { catalog: 'revision' },
     });
@@ -353,7 +357,7 @@ describe('SE-HOST-CALC-2: external snapshot ingress', () => {
       },
     ]) {
       const snapshot = publication(workbook);
-      change(snapshot.result!);
+      change(requireDefined(snapshot.result));
       expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).toThrow();
     }
     const blank = createWorkbook([['', null]]);
@@ -366,7 +370,7 @@ describe('SE-HOST-CALC-2: external snapshot ingress', () => {
     const key = calculationCellKey('inputs', 1, 0);
     snapshot.cellStates = { [key]: 'pending' };
     expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).toThrow('cached values');
-    snapshot.result!.worksheets[0].values[0][1] = null;
+    requireDefined(snapshot.result).worksheets[0].values[0][1] = null;
     expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).not.toThrow();
     snapshot.cellStates[key] = 'unavailable';
     expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).not.toThrow();
@@ -386,8 +390,10 @@ describe('SE-HOST-CALC-2: external snapshot ingress', () => {
       };
       expect(() => assertExternalCalculationSnapshot(empty, workbook)).not.toThrow();
       const mixed: ExternalCalculationSnapshot = { ...empty, result: calculateWorkbook(workbook) };
-      mixed.result!.worksheets.forEach((sheet) => sheet.values.forEach((row) => row.fill(null)));
-      mixed.result!.worksheets[0].values[0][0] = exact();
+      requireDefined(mixed.result).worksheets.forEach((sheet) =>
+        sheet.values.forEach((row) => row.fill(null)),
+      );
+      requireDefined(mixed.result).worksheets[0].values[0][0] = exact();
       mixed.cellStates = { [calculationCellKey('inputs', 0, 0)]: 'ready' };
       expect(() => assertExternalCalculationSnapshot(mixed, workbook)).not.toThrow();
       delete mixed.cellStates;
@@ -481,7 +487,10 @@ describe('SE-HOST-CALC-2: external snapshot ingress', () => {
       },
     ]) {
       const snapshot = publication(workbook);
-      snapshot.result!.worksheets[0].values[0][0] = { ...exact(), ...metadata } as NumericValue;
+      requireDefined(snapshot.result).worksheets[0].values[0][0] = {
+        ...exact(),
+        ...metadata,
+      } as NumericValue;
       expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).toThrow();
     }
   });
@@ -520,9 +529,9 @@ describe('SE-HOST-CALC-3: bounded draft invalidation', () => {
       result = calculateWorkbook(workbook);
     const key = (x: number, y = 0) => calculationCellKey('sheet-1', x, y);
     // A result without formula scope (for example from an older host) may omit entries.
-    delete result.dependencies!.cells[key(2)];
-    delete result.dependencies!.scope;
-    result.dependencies!.cells[key(0)] = [];
+    delete requireDefined(result.dependencies).cells[key(2)];
+    delete requireDefined(result.dependencies).scope;
+    requireDefined(result.dependencies).cells[key(0)] = [];
     expect(pendingCalculationCells(result, [key(0)])).toEqual(new Set([key(0), key(1), key(2)]));
     expect(pendingCalculationCells(result, [key(0, 10)], ['sheet-1'])).toEqual(
       new Set([key(0, 10), key(1), key(2)]),

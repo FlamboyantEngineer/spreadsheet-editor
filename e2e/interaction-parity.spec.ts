@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import ExcelJS from 'exceljs';
+import { requireDefined } from '../src/model/require-defined.js';
 const source = (page: Page) =>
   page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
 async function open(page: Page) {
@@ -16,34 +17,44 @@ test('SE-CR-2.2/2.18: resize previews, cancel, zoom and undo preserve the engine
   const cell = editor.locator('td[data-x="0"][data-y="0"]').first();
   await cell.click();
   await editor.getByRole('button', { name: 'Bold selection', exact: true }).click();
-  expect(await root!.evaluate((element) => element.isConnected)).toBe(true);
+  expect(await requireDefined(root).evaluate((element) => element.isConnected)).toBe(true);
   const header = editor.locator('thead td[data-x="0"]').first();
   const before = await header.boundingBox();
-  await page.mouse.move(before!.x + before!.width - 1, before!.y + 10);
+  await page.mouse.move(
+    requireDefined(before).x + requireDefined(before).width - 1,
+    requireDefined(before).y + 10,
+  );
   await page.mouse.down();
-  await page.mouse.move(before!.x + before!.width + 39, before!.y + 10);
+  await page.mouse.move(
+    requireDefined(before).x + requireDefined(before).width + 39,
+    requireDefined(before).y + 10,
+  );
   await expect
-    .poll(async () => (await header.boundingBox())!.width)
-    .toBeGreaterThan(before!.width + 30);
+    .poll(async () => requireDefined(await header.boundingBox()).width)
+    .toBeGreaterThan(requireDefined(before).width + 30);
   await page.keyboard.press('Escape');
   await page.mouse.up();
-  await expect.poll(async () => (await header.boundingBox())!.width).toBeCloseTo(before!.width, 0);
+  await expect
+    .poll(async () => requireDefined(await header.boundingBox()).width)
+    .toBeCloseTo(requireDefined(before).width, 0);
   await editor
     .getByRole('group', { name: 'Spreadsheet zoom', exact: true })
     .getByRole('button', { name: 'Zoom in', exact: true })
     .click();
   await header.scrollIntoViewIfNeeded();
-  const zoomed = (await header.boundingBox())!;
+  const zoomed = requireDefined(await header.boundingBox());
   await page.mouse.move(zoomed.x + zoomed.width - 1, zoomed.y + 10);
   await page.mouse.down();
   await page.mouse.move(zoomed.x + zoomed.width + 49, zoomed.y + 10);
   await page.mouse.up();
   await expect
-    .poll(async () => (await header.boundingBox())!.width)
+    .poll(async () => requireDefined(await header.boundingBox()).width)
     .toBeCloseTo(zoomed.width + 50, 0);
-  expect(await root!.evaluate((element) => element.isConnected)).toBe(true);
+  expect(await requireDefined(root).evaluate((element) => element.isConnected)).toBe(true);
   await editor.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect.poll(async () => (await header.boundingBox())!.width).toBeCloseTo(zoomed.width, 0);
+  await expect
+    .poll(async () => requireDefined(await header.boundingBox()).width)
+    .toBeCloseTo(zoomed.width, 0);
 });
 
 test('SE-CR-2.7: native formula completion and reference picking', async ({ page }) => {
@@ -155,7 +166,9 @@ test('SE-CR-2.11/2.13/2.19: border grid and header dialogs retain selection and 
   await expect(dialog.getByRole('alert')).toContainText('positive');
   await size.fill('34.5');
   await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
-  await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(34.5, 0);
+  await expect
+    .poll(async () => requireDefined(await row.boundingBox()).height)
+    .toBeCloseTo(34.5, 0);
   await expect(cell).toHaveText('1e-25');
   await row.click();
   await page.keyboard.press('Delete');

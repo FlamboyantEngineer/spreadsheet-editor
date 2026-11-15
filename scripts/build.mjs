@@ -1,5 +1,5 @@
-import { rm, copyFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { copyFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));

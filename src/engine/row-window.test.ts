@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 import {
   GRID_SPACER_CLASS,
   gridRowWindow,
@@ -7,7 +9,6 @@ import {
   windowGridRows,
   withLazyRebuild,
 } from './row-window.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 /** An engine of `count` rows with every row attached, as it builds without lazy loading. */
 function engineRows(count: number, mergeCells: Record<string, [number, number]> = {}) {
@@ -44,7 +45,7 @@ function engineRows(count: number, mergeCells: Record<string, [number, number]> 
 
 /** The attached rows by index, and the spacer heights above and below them. */
 function layout(engine: JSpreadsheetWorksheetInstance) {
-  const children = [...engine.tbody!.children] as HTMLElement[];
+  const children = [...requireDefined(engine.tbody).children] as HTMLElement[];
   const spacer = (row: HTMLElement | undefined) =>
     row?.classList.contains(GRID_SPACER_CLASS) ? (row.firstElementChild as HTMLElement) : null;
   const top = spacer(children[0]),
@@ -115,7 +116,7 @@ describe('SE-PERF-1: the grid attaches only the rows near the viewport', () => {
 
   it('gives hidden rows no height', () => {
     const { engine } = engineRows(300);
-    (engine.rows![299].element as HTMLElement).style.display = 'none';
+    (requireDefined(engine.rows)[299].element as HTMLElement).style.display = 'none';
     windowGridRows(engine, () => {});
     expect(layout(engine).below).toBe(279 * 24);
   });

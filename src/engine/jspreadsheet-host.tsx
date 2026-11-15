@@ -12,9 +12,20 @@
  * available; otherwise a key change remounts the wrapper with the new dataset.
  */
 
-import { GRID_SPACER_CLASS } from './row-window.js';
+// The vendor-provided React wrapper for jspreadsheet-ce. `<Spreadsheet>` owns
+// the engine root <div> and mounts `jspreadsheet(div, options)` into it,
+// exposing the live instance on the `ref` it receives. The package also
+// re-exports the raw `jspreadsheet` namespace, which we use only for engine
+// teardown (`jspreadsheet.destroy`) — the host never constructs the engine
+// itself, so it does NOT import `jspreadsheet-ce` directly.
+import { jspreadsheet, Spreadsheet } from '@jspreadsheet-ce/react';
+import type JSpreadsheetCore from 'jspreadsheet-ce';
 import {
+  type ComponentType,
   createElement,
+  type CSSProperties,
+  type ReactElement,
+  type Ref,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -23,15 +34,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { ComponentType, CSSProperties, ReactElement, Ref } from 'react';
-// The vendor-provided React wrapper for jspreadsheet-ce. `<Spreadsheet>` owns
-// the engine root <div> and mounts `jspreadsheet(div, options)` into it,
-// exposing the live instance on the `ref` it receives. The package also
-// re-exports the raw `jspreadsheet` namespace, which we use only for engine
-// teardown (`jspreadsheet.destroy`) — the host never constructs the engine
-// itself, so it does NOT import `jspreadsheet-ce` directly.
-import { Spreadsheet, jspreadsheet } from '@jspreadsheet-ce/react';
-import type JSpreadsheetCore from 'jspreadsheet-ce';
+import { GRID_SPACER_CLASS } from './row-window.js';
 import {
   resolveSpreadsheetRowSpillWidths,
   type SpreadsheetSpillCell,
@@ -78,7 +81,7 @@ export interface JSpreadsheetAnchorRect {
  * Generic value a single cell may hold. The grid is text-first; numbers and
  * booleans surface as their stringified form in most code paths.
  */
-export type JSpreadsheetCellValue = JSpreadsheetCore.CellValue | null;
+type JSpreadsheetCellValue = JSpreadsheetCore.CellValue | null;
 
 /**
  * Vendor callback shape. jspreadsheet-ce callback arity and argument
@@ -106,7 +109,7 @@ type JSpreadsheetStyleMap = Record<string, string | string[]>;
  * The strongly typed surface here is limited to the callback names this host
  * intercepts; everything else stays a pass-through engine/plugin option.
  */
-export type JSpreadsheetConfig = Record<string, unknown> & {
+type JSpreadsheetConfig = Record<string, unknown> & {
   contextMenu?: JSpreadsheetVendorCallback;
   data?: ReadonlyArray<ReadonlyArray<JSpreadsheetCellValue>>;
   onchange?: JSpreadsheetVendorCallback;
@@ -237,7 +240,7 @@ export type JSpreadsheetWorksheetInstance = Partial<
  * on build/test shape, so consumers use `resolveSpreadsheetWorksheets` before
  * making worksheet-level calls.
  */
-export type JSpreadsheetSpreadsheetInstance = Partial<
+type JSpreadsheetSpreadsheetInstance = Partial<
   Omit<JSpreadsheetCore.SpreadsheetInstance, 'contextMenu' | 'worksheets'>
 > & {
   contextMenu?: JSpreadsheetContextMenuHost | null;
@@ -247,7 +250,7 @@ export type JSpreadsheetSpreadsheetInstance = Partial<
   root?: HTMLElement;
   worksheets?: JSpreadsheetWorksheetInstance[];
 };
-export type JSpreadsheetInstance =
+type JSpreadsheetInstance =
   JSpreadsheetSpreadsheetInstance | JSpreadsheetWorksheetInstance | JSpreadsheetWorksheetInstance[];
 
 /**
@@ -279,10 +282,7 @@ export interface JSpreadsheetColumnMeasureSnapshot {
   readonly cssWidth: string;
 }
 
-export type JSpreadsheetWorksheetMeasureSource = Pick<
-  JSpreadsheetWorksheetInstance,
-  'cols' | 'rows'
->;
+type JSpreadsheetWorksheetMeasureSource = Pick<JSpreadsheetWorksheetInstance, 'cols' | 'rows'>;
 
 /**
  * Read the two column-width channels from jspreadsheet's own `<col>` element.
@@ -356,46 +356,6 @@ export function applyJSpreadsheetRowMeasure(
   return true;
 }
 
-/** Axis, index, and pointer origin of jspreadsheet's in-progress header-border drag. */
-export interface JSpreadsheetResizeDescriptor {
-  readonly axis: 'column' | 'row';
-  readonly index: number;
-  readonly pointerOrigin: number;
-  /** On-screen size of the dragged header when the drag began. */
-  readonly renderedSize: number;
-}
-
-// jspreadsheet keeps its header-drag state on the worksheet object it tracks as
-// `jspreadsheet.current`; these fields are vendor internals read only here.
-type JSpreadsheetResizeSource = {
-  headers?: ArrayLike<Element | undefined>;
-  records?: ArrayLike<ArrayLike<{ element?: unknown } | undefined> | undefined>;
-  resizing?: {
-    column?: unknown;
-    element?: unknown;
-    height?: unknown;
-    mousePosition?: unknown;
-    row?: unknown;
-    width?: unknown;
-  } | null;
-  rows?: ArrayLike<{ element?: unknown } | undefined>;
-};
-
-/** Reads jspreadsheet's header-border drag state, or null when no drag is active. */
-export function readJSpreadsheetResizeDescriptor(
-  worksheet: object,
-): JSpreadsheetResizeDescriptor | null {
-  const resizing = (worksheet as JSpreadsheetResizeSource).resizing;
-  const pointerOrigin = Number(resizing?.mousePosition);
-  if (!resizing || !Number.isFinite(pointerOrigin)) return null;
-  const axis = resizing.column != null ? 'column' : 'row';
-  const index = Number(axis === 'column' ? resizing.column : resizing.row);
-  const renderedSize = Number(axis === 'column' ? resizing.width : resizing.height);
-  return Number.isInteger(index) && index >= 0
-    ? { axis, index, pointerOrigin, renderedSize: Number.isFinite(renderedSize) ? renderedSize : 0 }
-    : null;
-}
-
 /**
  * Detaches the worksheet jspreadsheet tracks as `jspreadsheet.current`. The
  * vendor's document keydown and paste listeners act on that worksheet whatever
@@ -432,7 +392,7 @@ export function focusJSpreadsheetWorksheet(worksheet: JSpreadsheetWorksheetInsta
  * Prop contract of `JSpreadsheetHost`. Every prop below is optional except
  * `config`.
  */
-export interface JSpreadsheetHostProps {
+interface JSpreadsheetHostProps {
   /**
    * jspreadsheet configuration object (data, columns, worksheets, options).
    * Passed directly to `jspreadsheet(root, config)`. The host clones nothing;
@@ -495,7 +455,7 @@ export interface JSpreadsheetHostProps {
  * callbacks (`onchange`, `onselection`, `oneditionstart`, `oneditionend`,
  * `contextMenu`, `oncomments`) to the host's typed dispatchers.
  */
-export interface JspreadsheetBridgeOptions {
+interface JspreadsheetBridgeOptions {
   readonly config: JSpreadsheetConfig;
   readonly dispatchSelectionChange: (range: JSpreadsheetSelectionRange) => void;
   readonly dispatchEditStart: (row: number, col: number) => void;
@@ -599,7 +559,7 @@ function reportVendorCallbackError(callbackName: string, error: unknown): void {
  * to the vendor `<Spreadsheet>` wrapper as props — it is the host's single
  * engine-config builder.
  */
-export function createBridgedConfig(options: JspreadsheetBridgeOptions): Record<string, unknown> {
+function createBridgedConfig(options: JspreadsheetBridgeOptions): Record<string, unknown> {
   const { config } = options;
 
   const userOnChange = config.onchange;
@@ -1264,4 +1224,3 @@ export function JSpreadsheetHost(
  * JSpreadsheetHost — the engine boundary React component for the spreadsheet
  * editor. See the file header for why only this module mounts the engine.
  */
-export default JSpreadsheetHost;

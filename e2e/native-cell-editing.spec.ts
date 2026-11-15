@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { requireDefined } from '../src/model/require-defined.js';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
@@ -34,7 +35,7 @@ test('SE-UI-3: finishing unchanged native entries preserves logical types and ca
   }
   await expect(cell(0)).toHaveText('TRUE');
   await expect(cell(1)).toHaveText('TRUE');
-  await expect(cell(3)).toHaveText(canonicalResult!);
+  await expect(cell(3)).toHaveText(requireDefined(canonicalResult));
 });
 
 test('SE-HOST-1: native completion includes host function documentation', async ({ page }) => {
@@ -75,7 +76,9 @@ for (const theme of ['light', 'dark'])
       const geometry = async () =>
         editor.evaluate((root) =>
           ['td[data-x="0"][data-y="0"]', 'td[data-x="2"][data-y="2"]'].map((selector) => {
-            const { x, y, width, height } = root.querySelector(selector)!.getBoundingClientRect();
+            const element = root.querySelector(selector);
+            if (!element) throw new Error(`No ${selector}`);
+            const { x, y, width, height } = element.getBoundingClientRect();
             return { x, y, width, height };
           }),
         );
@@ -89,7 +92,7 @@ for (const theme of ['light', 'dark'])
       expect(await geometry()).toEqual(before);
       await expect(input).toHaveCSS('color', color);
       await expect(input).toHaveCSS('text-align', 'left');
-      const inputBox = (await input.boundingBox())!;
+      const inputBox = requireDefined(await input.boundingBox());
       expect(inputBox.width).toBeLessThanOrEqual(before[0].width);
       expect(inputBox.height).toBeLessThanOrEqual(before[0].height);
       await input.press('Enter');

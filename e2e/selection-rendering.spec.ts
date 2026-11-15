@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { requireDefined } from '../src/model/require-defined.js';
 
 test('SE-CHROME-5: drag highlight and border reach the same range in one paint frame', async ({
   page,
@@ -13,8 +14,8 @@ test('SE-CHROME-5: drag highlight and border reach the same range in one paint f
     () =>
       new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))),
   );
-  const start = (await first.boundingBox())!,
-    end = (await last.boundingBox())!;
+  const start = requireDefined(await first.boundingBox()),
+    end = requireDefined(await last.boundingBox());
   await page.evaluate(() => {
     const queue = new Map<number, FrameRequestCallback>();
     let id = 0;
@@ -39,7 +40,9 @@ test('SE-CHROME-5: drag highlight and border reach the same range in one paint f
       (window as unknown as { paintSelectionFrame(): void }).paintSelectionFrame();
       const cells = [...root.querySelectorAll<HTMLElement>('tbody td.highlight:not(.jss_row)')];
       const rectangles = cells.map((cell) => cell.getBoundingClientRect());
-      const border = root.querySelector('.se-editor__selection-outline')!.getBoundingClientRect();
+      const outline = root.querySelector('.se-editor__selection-outline');
+      if (!outline) throw new Error('No selection outline');
+      const border = outline.getBoundingClientRect();
       return {
         border: { left: border.left, top: border.top, right: border.right, bottom: border.bottom },
         highlight: {
@@ -77,9 +80,10 @@ for (const theme of ['light', 'dark'])
         editor.evaluate((root) => {
           const frame = root.querySelector('.se-editor__reference-frame')?.getBoundingClientRect();
           if (!frame) return false;
-          const corner = root.querySelector('thead td:first-child')!.getBoundingClientRect();
-          const column = root.querySelector('thead td[data-x="0"]')!.getBoundingClientRect();
-          const row = root.querySelector('tbody td.jss_row')!.getBoundingClientRect();
+          const corner = root.querySelector('thead td:first-child')?.getBoundingClientRect();
+          const column = root.querySelector('thead td[data-x="0"]')?.getBoundingClientRect();
+          const row = root.querySelector('tbody td.jss_row')?.getBoundingClientRect();
+          if (!corner || !column || !row) return false;
           return (
             frame.left >= Math.max(corner.right, row.right) - 0.1 &&
             frame.top >= Math.max(corner.bottom, column.bottom) - 0.1
@@ -156,7 +160,8 @@ test('SE-CHROME-5: frozen selection fragments remain inside the cell body at 150
   await expect
     .poll(() =>
       editor.evaluate((root) => {
-        const frozen = root.querySelector('thead td[data-x="0"]')!.getBoundingClientRect();
+        const frozen = root.querySelector('thead td[data-x="0"]')?.getBoundingClientRect();
+        if (!frozen) return false;
         const pieces = [...root.querySelectorAll('.se-editor__selection-outline')].map((node) =>
           node.getBoundingClientRect(),
         );
@@ -176,8 +181,12 @@ test('SE-CHROME-5: ending a drag preserves grid scroll instead of revealing its 
   await page.goto('/full.html');
   const editor = page.getByRole('region', { name: 'Spreadsheet editor', exact: true });
   await editor.getByRole('button', { name: 'Add worksheet', exact: true }).click();
-  const first = (await editor.locator('td[data-x="0"][data-y="0"]').first().boundingBox())!;
-  const last = (await editor.locator('td[data-x="4"][data-y="7"]').first().boundingBox())!;
+  const first = requireDefined(
+    await editor.locator('td[data-x="0"][data-y="0"]').first().boundingBox(),
+  );
+  const last = requireDefined(
+    await editor.locator('td[data-x="4"][data-y="7"]').first().boundingBox(),
+  );
   await page.mouse.move(first.x + 20, first.y + 10);
   await page.mouse.down();
   await page.mouse.move(last.x + 20, last.y + 10);

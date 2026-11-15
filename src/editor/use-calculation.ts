@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Workbook } from '../model/workbook.js';
-import { assertCalculationResult } from '../calculation/http.js';
 import type { CalculationOptions, CalculationResult } from '../calculation/evaluator.js';
+import { assertCalculationResult } from '../calculation/http.js';
 import type { CalculationProvider } from '../calculation/provider.js';
 import { workbookCalculationKey } from '../calculation/publication.js';
+import type { Workbook } from '../model/workbook.js';
 
 const acceptedKeys = new WeakMap<Workbook, string>();
 /**
@@ -29,6 +29,9 @@ export function useCalculation(
   const inputKey = useMemo(() => acceptedCalculationKey(workbook), [workbook]);
   const request = useMemo(
     () => ({ workbook, provider, options, enabled, trusted }),
+    // A request follows the workbook's content key: a copy with the same content keeps the
+    // running calculation (SE-3).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by inputKey, not by identity
     [inputKey, provider, options, enabled, trusted],
   );
   const [settled, setSettled] = useState<{
@@ -37,7 +40,7 @@ export function useCalculation(
     error: string | null;
   } | null>(null);
   useEffect(() => {
-    if (!enabled) return;
+    if (!request.enabled) return;
     const controller = new AbortController();
     Promise.resolve()
       .then(() => request.provider.calculate(request.workbook, request.options, controller.signal))

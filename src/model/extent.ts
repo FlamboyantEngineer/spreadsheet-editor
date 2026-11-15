@@ -1,5 +1,6 @@
-import { DEFAULT_WORKBOOK_LIMITS, type Workbook, type Worksheet } from './workbook.js';
+import { DEFAULT_WORKBOOK_LIMITS } from './limits.js';
 import { parseSpreadsheetAddress, parseSpreadsheetRange } from './spreadsheet-addressing.js';
+import type { Workbook, Worksheet } from './workbook.js';
 
 export interface WorksheetExtent {
   columns: number;

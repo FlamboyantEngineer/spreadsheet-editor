@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
+import { UiProvider } from '@flamboyantengineer/ui-components/core';
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { UiProvider } from '@flamboyantengineer/ui-components/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
 import { invertWorkbookOperations } from '../model/operations.js';
+import { requireDefined } from '../model/require-defined.js';
+import { createWorkbook } from '../model/workbook.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { HistoryPanel, PropertiesPanel } from './review-panels.js';
 import { useSpreadsheetEditor } from './use-editor.js';
@@ -57,7 +58,9 @@ describe('SE-HOST-1: panel commands use accepted host capabilities', () => {
     workbook.worksheets[0].columnIds = ['column-original'];
     const onChange = vi.fn();
     const { result } = renderHook(() => useSpreadsheetEditor({ defaultValue: workbook, onChange }));
-    act(() => result.current.proposeCells([['new']], 1, 1));
+    act(() => {
+      result.current.proposeCells([['new']], 1, 1);
+    });
     const [next, context] = onChange.mock.calls[0];
     const rowId = next.worksheets[0].rowIds[1];
     const columnId = next.worksheets[0].columnIds[1];
@@ -66,7 +69,9 @@ describe('SE-HOST-1: panel commands use accepted host capabilities', () => {
       { kind: 'lines', axis: 'column', action: 'insert', index: 1, count: 1, ids: [columnId] },
       { kind: 'cells', changes: [{ address: 'B2', rowId, columnId }] },
     ]);
-    act(() => result.current.undo());
+    act(() => {
+      result.current.undo();
+    });
     expect(onChange.mock.calls[1][1].operations).toMatchObject([
       { kind: 'lines', axis: 'row', action: 'delete', ids: [rowId] },
       { kind: 'lines', axis: 'column', action: 'delete', ids: [columnId] },
@@ -87,7 +92,12 @@ describe('SE-HOST-1: panel commands use accepted host capabilities', () => {
     rerender(<Panels {...props} value={createWorkbook([['peer']])} />);
     await user.click(screen.getByRole('button', { name: 'Redo last change' }));
     expect(redo).toHaveBeenCalledOnce();
-    rerender(<Panels {...props} undo={{ ...props.undo!, canUndo: false, canRedo: false }} />);
+    rerender(
+      <Panels
+        {...props}
+        undo={{ ...requireDefined(props.undo), canUndo: false, canRedo: false }}
+      />,
+    );
     expect(screen.getByRole('button', { name: 'Undo last change' }).hasAttribute('disabled')).toBe(
       true,
     );

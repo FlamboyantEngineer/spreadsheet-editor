@@ -1,6 +1,7 @@
 import { invertWorkbookOperations, type WorkbookOperation } from '../model/operations.js';
-import { copyWorkbook, type Workbook, type Worksheet } from '../model/workbook.js';
+import { requireDefined } from '../model/require-defined.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
+import { copyWorkbook, type Workbook, type Worksheet } from '../model/workbook.js';
 
 const CELL_MAPS = [
   ['style', 'style'],
@@ -25,7 +26,7 @@ type WorkbookShape = Map<string, SheetShape>;
  * workbook from them. Any other step (lines, sheets, replacement) keeps a snapshot of the side
  * it returns to.
  */
-export type HistoryEntry = { label: string; operations: WorkbookOperation[] } & (
+type HistoryEntry = { label: string; operations: WorkbookOperation[] } & (
   { shapes: { before: WorkbookShape; after: WorkbookShape } } | { snapshot: Workbook }
 );
 
@@ -44,7 +45,9 @@ function shapeOf(workbook: Workbook, operations: readonly WorkbookOperation[]): 
   for (const operation of operations) {
     if (operation.kind !== 'cells' && operation.kind !== 'geometry' && operation.kind !== 'merges')
       continue;
-    const sheet = workbook.worksheets.find((value) => value.id === operation.sheetId)!;
+    const sheet = requireDefined(
+      workbook.worksheets.find((value) => value.id === operation.sheetId),
+    );
     let shape = shapes.get(sheet.id);
     if (!shape) {
       shape = {
@@ -56,7 +59,7 @@ function shapeOf(workbook: Workbook, operations: readonly WorkbookOperation[]): 
     }
     if (operation.kind !== 'cells') continue;
     for (const change of operation.changes) {
-      const { y } = parseSpreadsheetAddress(change.address)!;
+      const { y } = requireDefined(parseSpreadsheetAddress(change.address));
       shape.rowLengths.set(y, sheet.data[y]?.length ?? 0);
     }
   }
@@ -94,20 +97,20 @@ function restoreShape(sheet: Worksheet, shape: SheetShape) {
 }
 
 /** Rebuild one side of a rebuilt entry from `current`, the workbook on the other side. */
-export function rebuildWorkbook(
+function rebuildWorkbook(
   current: Workbook,
   entry: Extract<HistoryEntry, { shapes: unknown }>,
   side: 'before' | 'after',
 ): Workbook {
   const next = copyWorkbook(current),
-    sheetOf = (id: string) => next.worksheets.find((sheet) => sheet.id === id)!;
+    sheetOf = (id: string) => requireDefined(next.worksheets.find((sheet) => sheet.id === id));
   for (const operation of entry.operations)
     switch (operation.kind) {
       case 'cells': {
         const sheet = sheetOf(operation.sheetId);
         for (const change of operation.changes) {
           const state = change[side],
-            { x, y } = parseSpreadsheetAddress(change.address)!;
+            { x, y } = requireDefined(parseSpreadsheetAddress(change.address));
           while (sheet.data.length <= y) sheet.data.push([]);
           while (sheet.data[y].length <= x) sheet.data[y].push(null);
           sheet.data[y][x] = structuredClone(state.value);
@@ -152,6 +155,12 @@ export function rebuildWorkbook(
       case 'sheet-reorder':
         next.worksheets = operation[side].map(sheetOf);
         break;
+      case 'lines':
+      case 'sheet-add':
+      case 'sheet-delete':
+      case 'replace':
+        // An entry holding any of these keeps a whole snapshot instead (REBUILT).
+        throw new Error(`A ${operation.kind} step is restored from its snapshot.`);
     }
   for (const [id, shape] of entry.shapes[side]) restoreShape(sheetOf(id), shape);
   return next;

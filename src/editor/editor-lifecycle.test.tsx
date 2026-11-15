@@ -1,12 +1,7 @@
 // @vitest-environment jsdom
-import { createRef } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
-import { useSpreadsheetEditor } from './use-editor.js';
-import type { SpreadsheetEditorHandle } from './contracts.js';
-import { createMemoryHost } from '../host/memory-host.js';
-import { createWorkbookSession } from '../host/workbook-session.js';
 import type {
   HostResult,
   SavedState,
@@ -14,6 +9,12 @@ import type {
   WorkbookStoreAdapter,
   WorkbookVersion,
 } from '../host/adapters.js';
+import { createMemoryHost } from '../host/memory-host.js';
+import { createWorkbookSession } from '../host/workbook-session.js';
+import { requireDefined } from '../model/require-defined.js';
+import { createWorkbook } from '../model/workbook.js';
+import type { SpreadsheetEditorHandle } from './contracts.js';
+import { useSpreadsheetEditor } from './use-editor.js';
 
 const version: WorkbookVersion = {
   revision: 'r0',
@@ -59,21 +60,27 @@ describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => 
     const editorRef = createRef<SpreadsheetEditorHandle>();
     const { session, save, answers } = await heldSession([['before']]);
     const { result } = renderHook(() => useSpreadsheetEditor({ session, editorRef }));
-    act(() => result.current.setDraftValue('first'));
+    act(() => {
+      result.current.setDraftValue('first');
+    });
     let first!: Promise<void>;
     act(() => {
-      first = editorRef.current!.flush();
+      first = requireDefined(editorRef.current).flush();
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    act(() => result.current.setDraftValue('second'));
+    act(() => {
+      result.current.setDraftValue('second');
+    });
     let second!: Promise<void>;
     let secondSettled = false;
     act(() => {
-      second = editorRef.current!.flush().then(() => {
-        secondSettled = true;
-      });
+      second = requireDefined(editorRef.current)
+        .flush()
+        .then(() => {
+          secondSettled = true;
+        });
     });
-    expect(editorRef.current!.getSnapshot().worksheets[0].data[0][0]).toBe('second');
+    expect(requireDefined(editorRef.current).getSnapshot().worksheets[0].data[0][0]).toBe('second');
     await act(async () => {
       answers[0]();
       await first;
@@ -85,7 +92,7 @@ describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => 
       answers[1]();
       await second;
     });
-    expect(editorRef.current!.getState().dirty).toBe(false);
+    expect(requireDefined(editorRef.current).getState().dirty).toBe(false);
   });
 
   it('commits native input and saves it before history navigation', async () => {
@@ -126,7 +133,9 @@ describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
-    act(() => result.current.proposeCells([['b']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['b']], 0, 0);
+    });
     let refused!: Promise<unknown>;
     act(() => {
       refused = result.current.openVersion(version);
@@ -143,7 +152,9 @@ describe('SE-HOST-2 and SE-SESSION-4: flushes cover each requested edit', () => 
       opening = result.current.openVersion(version);
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-    act(() => result.current.proposeCells([['later']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['later']], 0, 0);
+    });
     await act(async () => {
       answers[1]();
       await opening;

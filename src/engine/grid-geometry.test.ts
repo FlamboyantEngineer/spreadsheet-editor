@@ -1,19 +1,20 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
-import { syncWorksheetPresentation } from './worksheet-presentation.js';
 import {
-  expandMergedSelection,
-  gridZoomScale,
-  gridBodyBounds,
   clipGridSelectionHandle,
+  expandMergedSelection,
+  gridBodyBounds,
+  gridZoomScale,
   measureGridSelection,
   restoreGridScroll,
   scrollGridCellIntoView,
-  syncFrozenColumns,
   syncFrozenColumnOffsets,
+  syncFrozenColumns,
 } from './grid-geometry.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import { syncWorksheetPresentation } from './worksheet-presentation.js';
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
   return {
@@ -50,8 +51,8 @@ function grid() {
       .slice(1)
       .map((element) => ({ element })),
   );
-  const headers = Array.from(table.tHead!.rows[0].cells).slice(1);
-  vi.spyOn(table.tHead!.rows[0].cells[0], 'getBoundingClientRect').mockReturnValue(
+  const headers = Array.from(requireDefined(table.tHead).rows[0].cells).slice(1);
+  vi.spyOn(requireDefined(table.tHead).rows[0].cells[0], 'getBoundingClientRect').mockReturnValue(
     rect(10, 20, 50, 24),
   );
   headers.forEach((header, x) =>
@@ -101,7 +102,9 @@ describe('SE-CR-2.18: grid-only zoom keeps authored geometry and pixel strokes',
       expect(engine.rows?.[1].element.style.height).toBe(`${(24 * zoom) / 100}px`);
       expect(engine.options?.columns?.[25].width).toBe(zoom);
       expect(engine.options?.rows?.[99].height).toBe((24 * zoom) / 100);
-      expect(table.querySelector<HTMLElement>('col')!.style.width).toBe(`${(50 * zoom) / 100}px`);
+      expect(requireDefined(table.querySelector<HTMLElement>('col')).style.width).toBe(
+        `${(50 * zoom) / 100}px`,
+      );
       // At 100% the stylesheet's own metrics apply; no inline copy is written.
       expect(getComputedStyle(records[0][0].element).fontSize).toBe(`${(16 * zoom) / 100}px`);
       expect(getComputedStyle(records[0][1].element).fontSize).toBe(`${(12 * zoom) / 100}px`);
@@ -125,28 +128,28 @@ describe('SE-CR-2.18: grid-only zoom keeps authored geometry and pixel strokes',
 
   it('uses fractional frozen offsets instead of truncating widths', () => {
     const { engine, cols, records } = grid();
-    engine.options!.freezeColumns = 2;
+    requireDefined(engine.options).freezeColumns = 2;
     cols[0].colElement.style.width = '150.75px';
     syncFrozenColumns(engine);
     expect(engine.headers?.[0].style.left).toBe('50px');
     expect(engine.headers?.[1].style.left).toBe('200.75px');
     expect(records[0][1].element.style.left).toBe('200.75px');
     expect(records[0][1].element.style.position).toBe('sticky');
-    engine.options!.freezeColumns = 0;
+    requireDefined(engine.options).freezeColumns = 0;
     syncFrozenColumns(engine);
     expect(records[0][1].element.style.left).toBe('');
     expect(records[0][1].element.classList.contains('jss_freezed')).toBe(false);
   });
   it('restores frozen scroll offsets without changing unfrozen cells or their classes', () => {
     const { engine, cols, records } = grid();
-    engine.options!.freezeColumns = 1;
+    requireDefined(engine.options).freezeColumns = 1;
     cols[0].colElement.style.width = '150.75px';
     syncFrozenColumns(engine);
-    engine.headers![0].style.left = '0px';
+    requireDefined(engine.headers)[0].style.left = '0px';
     records[0][0].element.style.left = '149px';
     const plain = records[0][1].element.getAttribute('style');
     syncFrozenColumnOffsets(engine);
-    expect(engine.headers![0].style.left).toBe('50px');
+    expect(requireDefined(engine.headers)[0].style.left).toBe('50px');
     expect(records[0][0].element.style.left).toBe('50px');
     expect(records[0][1].element.getAttribute('style')).toBe(plain);
   });
@@ -170,7 +173,7 @@ describe('SE-UI-1: local selection geometry', () => {
   });
   it('clips to live row and column headers when the corner has scrolled away', () => {
     const { engine, sheet, viewport, table } = grid();
-    vi.mocked(table.tHead!.rows[0].cells[0].getBoundingClientRect).mockReturnValue(
+    vi.mocked(requireDefined(table.tHead).rows[0].cells[0].getBoundingClientRect).mockReturnValue(
       rect(-190, -80, 50, 24),
     );
     vi.spyOn(table.tBodies[0].rows[0].cells[0], 'getBoundingClientRect').mockReturnValue(

@@ -1,18 +1,18 @@
-import { parseDelimited } from './editing.js';
 import { describe, expect, it } from 'vitest';
-import { assertWorkbook, createWorkbook } from './workbook.js';
+import type { NumericValue } from '../calculation/values.js';
+import { createSpreadsheetCopy, pasteSpreadsheetCopy } from './clipboard.js';
+import { clearSelection, formatCells, parseDelimited, writeCells } from './editing.js';
 import { worksheetExtent } from './extent.js';
-import { changeWorkbookStructure } from './structure.js';
 import {
   changeWorkbookStructureWithOperations,
   collectCellOperations,
-  writeCellsWithOperations,
   invertWorkbookOperations,
+  writeCellsWithOperations,
 } from './operations.js';
-import { createSpreadsheetCopy, pasteSpreadsheetCopy } from './clipboard.js';
-import { clearSelection, formatCells, writeCells } from './editing.js';
+import { requireDefined } from './require-defined.js';
 import { decideSuggestion, previewSuggestions, proposeWorkbookChange } from './review.js';
-import type { NumericValue } from '../calculation/values.js';
+import { changeWorkbookStructure } from './structure.js';
+import { assertWorkbook, createWorkbook } from './workbook.js';
 
 const rational: NumericValue = {
   kind: 'number',
@@ -37,7 +37,7 @@ describe('SE-HOST-MODEL-1: canonical authored quantities and stable extent', () 
       expect(() => assertWorkbook(bad)).toThrow('corresponding nonformula');
     }
     const bad = structuredClone(workbook);
-    bad.worksheets[0].inputValues!.A1 = { ...rational, denominator: '0' };
+    requireDefined(bad.worksheets[0].inputValues).A1 = { ...rational, denominator: '0' };
     expect(() => assertWorkbook(bad)).toThrow('numeric');
     expect(() => assertWorkbook(workbook, { maxCells: 1 })).not.toThrow();
   });
@@ -391,7 +391,7 @@ describe('SE-HOST-MODEL-3: authored clipboard and canonical review baselines', (
         .inputValues?.A1,
     ).toBeUndefined();
     const conflicted = structuredClone(proposal);
-    conflicted.worksheets[0].inputValues!.A1 = { ...rational, numerator: '2' };
+    requireDefined(conflicted.worksheets[0].inputValues).A1 = { ...rational, numerator: '2' };
     expect(() =>
       decideSuggestion(conflicted, 'proposal', 'accepted', { ...stamp, id: 'decision' }),
     ).toThrow('changed since');

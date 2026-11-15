@@ -1,20 +1,20 @@
 import {
+  type CellSelection,
+  normalizeSelection,
+  readSelection,
+  selectionCells,
+} from './editing.js';
+import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
+import { type AuthoredCellState, authoredCellState } from './operations.js';
+import { formatSpreadsheetAddress } from './spreadsheet-addressing.js';
+import { translateFormulaReferences } from './structure.js';
+import {
   assertWorkbook,
+  type CellInput,
   copyWorkbook,
   DEFAULT_WORKBOOK_LIMITS,
-  type CellInput,
   type Workbook,
 } from './workbook.js';
-import {
-  readSelection,
-  normalizeSelection,
-  selectionCells,
-  type CellSelection,
-} from './editing.js';
-import { translateFormulaReferences } from './structure.js';
-import { authoredCellState, type AuthoredCellState } from './operations.js';
-import { formatSpreadsheetAddress } from './spreadsheet-addressing.js';
-import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
 
 export interface SpreadsheetCopy {
   text: string;

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook, copyWorkbook } from './workbook.js';
-import { materializeWorksheetExtent } from './extent.js';
+import { commandOperations } from '../editor/command-operations.js';
 import {
   applyWorkbookOperations,
-  WorkbookOperationConflict,
   applyWorkbookTransaction,
   createWorkbookOperationBinding,
   initializeWorkbookIdentities,
+  WorkbookOperationConflict,
 } from './apply-operations.js';
+import { materializeWorksheetExtent } from './extent.js';
 import {
   annotationOperation,
   changeWorkbookStructureWithOperations,
@@ -16,9 +16,10 @@ import {
   sheetOperation,
   writeCellsWithOperations,
 } from './operations.js';
-import { renameWorksheet } from './structure.js';
-import { commandOperations } from '../editor/command-operations.js';
+import { requireDefined } from './require-defined.js';
 import { addComment, replyToComment, updateComment } from './review.js';
+import { renameWorksheet } from './structure.js';
+import { copyWorkbook, createWorkbook } from './workbook.js';
 
 const base = () => {
   const workbook = materializeWorksheetExtent(
@@ -75,10 +76,10 @@ describe('SE-HOST-1: atomic serialized operation application', () => {
     );
     shared = applyWorkbookOperations(shared, cell.operations);
     expect(shared.worksheets[0].rowIds?.slice(0, 4)).toEqual([
-      initial.worksheets[0].rowIds![0],
+      requireDefined(initial.worksheets[0].rowIds)[0],
       'a',
       'b',
-      initial.worksheets[0].rowIds![1],
+      requireDefined(initial.worksheets[0].rowIds)[1],
     ]);
     expect(shared.worksheets[0].data[3][1]).toBe('survives');
     const deletion = changeWorkbookStructureWithOperations(initial, 'sheet-1', {
@@ -115,26 +116,33 @@ describe('SE-HOST-1: atomic serialized operation application', () => {
     const opA = annotationOperation(initial, reactionA),
       opB = annotationOperation(initial, reactionB);
     const shared = applyWorkbookOperations(applyWorkbookOperations(initial, [opA]), [opB]);
-    expect(shared.comments![0].entries.map((entry) => entry.id)).toEqual(['thread', 'a', 'b']);
-    expect(shared.comments![0].entries[0].reactions).toEqual({ '+1': ['a', 'b'] });
+    expect(requireDefined(shared.comments)[0].entries.map((entry) => entry.id)).toEqual([
+      'thread',
+      'a',
+      'b',
+    ]);
+    expect(requireDefined(shared.comments)[0].entries[0].reactions).toEqual({ '+1': ['a', 'b'] });
     const undone = applyWorkbookOperations(shared, invertWorkbookOperations([opA]));
-    expect(undone.comments![0].entries.map((entry) => entry.id)).toEqual(['thread', 'b']);
-    expect(undone.comments![0].entries[0].reactions).toEqual({ '+1': ['b'] });
+    expect(requireDefined(undone.comments)[0].entries.map((entry) => entry.id)).toEqual([
+      'thread',
+      'b',
+    ]);
+    expect(requireDefined(undone.comments)[0].entries[0].reactions).toEqual({ '+1': ['b'] });
   });
   it('merges independent geometry fields and rejects competing fields/order without partial application', () => {
     const initial = base();
     initial.worksheets[0].columns = [{ width: 80 }, { width: 90 }];
     const a = copyWorkbook(initial),
       b = copyWorkbook(initial);
-    a.worksheets[0].columns![0].width = 100;
-    b.worksheets[0].columns![1].width = 120;
+    requireDefined(a.worksheets[0].columns)[0].width = 100;
+    requireDefined(b.worksheets[0].columns)[1].width = 120;
     const shared = applyWorkbookOperations(
       applyWorkbookOperations(initial, [geometryOperation(initial.worksheets[0], a.worksheets[0])]),
       [geometryOperation(initial.worksheets[0], b.worksheets[0])],
     );
     expect(shared.worksheets[0].columns).toEqual([{ width: 100 }, { width: 120 }]);
     const stale = copyWorkbook(initial);
-    stale.worksheets[0].columns![0].width = 150;
+    requireDefined(stale.worksheets[0].columns)[0].width = 150;
     const cell = writeCellsWithOperations(initial, 'sheet-1', 0, 0, [['must rollback']]);
     expect(() =>
       applyWorkbookOperations(shared, [
@@ -168,14 +176,14 @@ describe('SE-HOST-1: atomic serialized operation application', () => {
     const a = copyWorkbook(initial),
       b = copyWorkbook(initial),
       competing = copyWorkbook(initial);
-    a.suggestions![0].status = 'accepted';
-    b.suggestions![1].status = 'rejected';
-    competing.suggestions![0].status = 'rejected';
+    requireDefined(a.suggestions)[0].status = 'accepted';
+    requireDefined(b.suggestions)[1].status = 'rejected';
+    requireDefined(competing.suggestions)[0].status = 'rejected';
     const shared = applyWorkbookOperations(
       applyWorkbookOperations(initial, [annotationOperation(initial, a)]),
       [annotationOperation(initial, b)],
     );
-    expect(shared.suggestions!.map((suggestion) => suggestion.status)).toEqual([
+    expect(requireDefined(shared.suggestions).map((suggestion) => suggestion.status)).toEqual([
       'accepted',
       'rejected',
     ]);

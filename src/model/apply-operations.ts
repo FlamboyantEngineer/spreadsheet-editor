@@ -1,15 +1,16 @@
 import { orderedJson } from '../calculation/publication.js';
-import { assertWorkbook, copyWorkbook, type Workbook, type Worksheet } from './workbook.js';
+import { createWorkbookEntityId, type WorkbookIdFactory, worksheetExtent } from './extent.js';
 import {
-  authoredCellState,
   type AuthoredCellState,
+  authoredCellState,
   type WorkbookChangeContext,
-  type WorksheetGeometry,
   type WorkbookOperation,
+  type WorksheetGeometry,
 } from './operations.js';
-import { worksheetExtent, createWorkbookEntityId, type WorkbookIdFactory } from './extent.js';
-import { changeWorkbookStructure } from './structure.js';
+import { requireDefined } from './require-defined.js';
 import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
+import { changeWorkbookStructure } from './structure.js';
+import { assertWorkbook, copyWorkbook, type Workbook, type Worksheet } from './workbook.js';
 
 export class WorkbookOperationConflict extends Error {
   constructor(public readonly path: string) {
@@ -105,7 +106,7 @@ function sheetOf(workbook: Workbook, id: string): Worksheet {
   return sheet;
 }
 function writeState(sheet: Worksheet, address: string, state: AuthoredCellState): void {
-  const cell = parseSpreadsheetAddress(address)!;
+  const cell = requireDefined(parseSpreadsheetAddress(address));
   while (sheet.data.length <= cell.y) sheet.data.push([]);
   while (sheet.data[cell.y].length <= cell.x) sheet.data[cell.y].push(null);
   sheet.data[cell.y][cell.x] = state.value;
@@ -149,7 +150,7 @@ export function applyWorkbookOperations(
       case 'cells': {
         const sheet = sheetOf(next, operation.sheetId);
         for (const change of operation.changes) {
-          const position = parseSpreadsheetAddress(change.address)!;
+          const position = requireDefined(parseSpreadsheetAddress(change.address));
           const y = change.rowId ? (sheet.rowIds?.indexOf(change.rowId) ?? -1) : position.y;
           const x = change.columnId
             ? (sheet.columnIds?.indexOf(change.columnId) ?? -1)
@@ -261,8 +262,8 @@ export function applyWorkbookOperations(
           sheet.mergeCells = delta(
             sheet.mergeCells ?? {},
             lineLayouts.has(sheet.id) &&
-              equal(operation.before, lineLayouts.get(sheet.id)!.beforeMerges)
-              ? (lineLayouts.get(sheet.id)!.merges ?? {})
+              equal(operation.before, requireDefined(lineLayouts.get(sheet.id)).beforeMerges)
+              ? (requireDefined(lineLayouts.get(sheet.id)).merges ?? {})
               : operation.before,
             operation.after,
             `merges/${sheet.id}`,
@@ -279,8 +280,8 @@ export function applyWorkbookOperations(
             delta(
               geometry,
               lineLayouts.has(sheet.id) &&
-                equal(operation.before, lineLayouts.get(sheet.id)!.beforeGeometry)
-                ? lineLayouts.get(sheet.id)!.geometry
+                equal(operation.before, requireDefined(lineLayouts.get(sheet.id)).beforeGeometry)
+                ? requireDefined(lineLayouts.get(sheet.id)).geometry
                 : operation.before,
               operation.after,
               `geometry/${sheet.id}`,
@@ -339,7 +340,7 @@ export function applyWorkbookOperations(
           .filter((id) => known.includes(id))
           .map((id) => sheetOf(next, id));
         next.worksheets = next.worksheets.map((sheet) =>
-          known.includes(sheet.id) ? reordered.shift()! : sheet,
+          known.includes(sheet.id) ? requireDefined(reordered.shift()) : sheet,
         );
         break;
       }
@@ -364,7 +365,7 @@ function lineContent(sheet: Worksheet, axis: 'row' | 'column', id: string): unkn
     for (const address of Object.keys(metadata ?? {})) addresses.add(address);
   const cells: Record<string, AuthoredCellState> = {};
   for (const address of addresses) {
-    const point = parseSpreadsheetAddress(address)!;
+    const point = requireDefined(parseSpreadsheetAddress(address));
     if ((axis === 'row' ? point.y : point.x) !== index) continue;
     const state = authoredCellState(sheet, address);
     if ((state.value === null || state.value === '') && Object.keys(state).length === 1) continue;
@@ -505,7 +506,7 @@ export function createWorkbookOperationBinding(
       });
       host.commit(next, transaction);
       accepted.add(transaction.transactionId);
-      if (accepted.size > capacity) accepted.delete(accepted.values().next().value!);
+      if (accepted.size > capacity) accepted.delete(requireDefined(accepted.values().next().value));
     },
   };
 }

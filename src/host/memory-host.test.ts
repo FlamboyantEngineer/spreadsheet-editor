@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
 import type { SpreadsheetHost } from './adapters.js';
 import { READ_ONLY_CAPABILITIES } from './capabilities.js';
@@ -33,7 +34,7 @@ describe('SE-ADAPTERS-1: host contract', () => {
     if (!loaded.ok) throw new Error('not loaded');
     expect(loaded.value).toMatchObject({ id: 'a', revision: 'r1', sequence: 1 });
     const saved: unknown[] = [];
-    host.workbooks.subscribe!('a', (state) => saved.push(state));
+    requireDefined(host.workbooks.subscribe)('a', (state) => saved.push(state));
     const first = await host.workbooks.save('a', {
       content: createWorkbook([['2']]),
       baseRevision: loaded.value.revision,
@@ -48,7 +49,7 @@ describe('SE-ADAPTERS-1: host contract', () => {
     if (stale.ok) return;
     expect(stale.error.kind).toBe('conflict');
     expect(stale.error.current?.revision).toBe('r2');
-    expect(stale.error.current?.content.worksheets[0]!.data).toEqual([['2']]);
+    expect(requireDefined(stale.error.current?.content.worksheets[0]).data).toEqual([['2']]);
   });
 });
 
@@ -57,7 +58,7 @@ describe('SE-ADAPTERS-2: capabilities', () => {
     const host = createMemoryHost();
     expect((await host.permissions.capabilities('a')).edit).toBe(true);
     const seen: boolean[] = [];
-    const stop = host.permissions.subscribe!('a', (next) => seen.push(next.edit));
+    const stop = requireDefined(host.permissions.subscribe)('a', (next) => seen.push(next.edit));
     host.memory.setCapabilities(READ_ONLY_CAPABILITIES);
     stop();
     host.memory.setCapabilities({ ...READ_ONLY_CAPABILITIES, edit: true });
@@ -83,12 +84,12 @@ describe('SE-ADAPTERS-3: in-memory host', () => {
   it('SE-ADAPTERS-3.2: returns copies and shares nothing between hosts', async () => {
     const workbook = createWorkbook([['1']]);
     const host = createMemoryHost({ workbooks: { a: workbook } });
-    workbook.worksheets[0]!.data[0]![0] = 'changed';
+    requireDefined(requireDefined(workbook.worksheets[0]).data[0])[0] = 'changed';
     const loaded = await host.workbooks.load('a');
     if (!loaded.ok) throw new Error('not loaded');
-    loaded.value.content.worksheets[0]!.data[0]![0] = 'mutated';
+    requireDefined(requireDefined(loaded.value.content.worksheets[0]).data[0])[0] = 'mutated';
     const again = await host.workbooks.load('a');
-    expect(again.ok && again.value.content.worksheets[0]!.data).toEqual([['1']]);
+    expect(again.ok && requireDefined(again.value.content.worksheets[0]).data).toEqual([['1']]);
     expect((await createMemoryHost().workbooks.load('a')).ok).toBe(false);
   });
 
@@ -116,8 +117,8 @@ describe('SE-ADAPTERS-3: in-memory host', () => {
     const host = createMemoryHost({ workbooks: { a: createWorkbook([['1']]) }, now: () => at });
     await host.workbooks.save('a', { content: createWorkbook([['2']]), baseRevision: 'r1' });
     const changes: string[] = [];
-    host.versions.subscribe!('a', () => changes.push('changed'));
-    const named = await host.versions.create!('a', {
+    requireDefined(host.versions.subscribe)('a', () => changes.push('changed'));
+    const named = await requireDefined(host.versions.create)('a', {
       content: createWorkbook([['3']]),
       label: 'Named',
     });
@@ -125,17 +126,17 @@ describe('SE-ADAPTERS-3: in-memory host', () => {
       ok: true,
       value: { revision: 'r3', sequence: 3, savedAt: at, author: 'reader', label: 'Named' },
     });
-    await host.versions.rename!('a', 'r1', 'First');
+    await requireDefined(host.versions.rename)('a', 'r1', 'First');
     const list = await host.versions.list('a');
     expect(list.ok && list.value.map((version) => [version.revision, version.label])).toEqual([
       ['r3', 'Named'],
       ['r2', null],
       ['r1', 'First'],
     ]);
-    const restored = await host.versions.restore!('a', 'r1');
+    const restored = await requireDefined(host.versions.restore)('a', 'r1');
     expect(restored).toEqual({ ok: true, value: { revision: 'r4', sequence: 4 } });
     const current = await host.workbooks.load('a');
-    expect(current.ok && current.value.content.worksheets[0]!.data).toEqual([['1']]);
+    expect(current.ok && requireDefined(current.value.content.worksheets[0]).data).toEqual([['1']]);
     expect(await host.versions.load('a', 'r9')).toMatchObject({ ok: false });
     expect(changes).toEqual(['changed', 'changed', 'changed']);
   });
@@ -145,9 +146,9 @@ describe('SE-ADAPTERS-3: in-memory host', () => {
     const draft = { content: createWorkbook([['x']]), baseRevision: 'r1', savedAt: at };
     expect(await host.drafts.get('a')).toEqual({ ok: true, value: null });
     await host.drafts.put('a', draft);
-    draft.content.worksheets[0]!.data[0]![0] = 'changed';
+    requireDefined(requireDefined(draft.content.worksheets[0]).data[0])[0] = 'changed';
     const kept = await host.drafts.get('a');
-    expect(kept.ok && kept.value?.content.worksheets[0]!.data).toEqual([['x']]);
+    expect(kept.ok && requireDefined(kept.value?.content.worksheets[0]).data).toEqual([['x']]);
     await host.drafts.clear('a');
     expect(await host.drafts.get('a')).toEqual({ ok: true, value: null });
   });
@@ -172,15 +173,18 @@ describe('SE-ADAPTERS-4: presence', () => {
       presence: room,
     });
     const seen: (readonly SpreadsheetPeer[])[] = [];
-    const stop = robin.presence!.subscribe('book', (peers) => seen.push(peers));
-    robin.presence!.publish('book', { at: { sheetId: 's', range: 'A1' }, status: 'active' });
-    alex.presence!.publish('book', {
+    const stop = requireDefined(robin.presence).subscribe('book', (peers) => seen.push(peers));
+    requireDefined(robin.presence).publish('book', {
+      at: { sheetId: 's', range: 'A1' },
+      status: 'active',
+    });
+    requireDefined(alex.presence).publish('book', {
       at: { sheetId: 's', range: 'B2:C3' },
       editLock: { sheetId: 's', range: 'B2' },
       status: 'idle',
     });
-    alex.presence!.publish('other', { at: null, status: 'active' });
-    alex.presence!.publish('book', null);
+    requireDefined(alex.presence).publish('other', { at: null, status: 'active' });
+    requireDefined(alex.presence).publish('book', null);
     stop();
     expect(seen).toEqual([
       [],

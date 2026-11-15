@@ -108,19 +108,20 @@ for (const width of [1440, 768, 390]) {
     const editor = page.locator('.se-editor').first();
     await expect(editor.locator('td[data-x="0"][data-y="0"]').first()).toBeVisible();
     const measurements = await editor.evaluate((root) => {
-      const bar = root.querySelector('.se-editor__formula-bar')!.getBoundingClientRect();
-      const toolbar = root.querySelector('.se-editor__toolbar')!.getBoundingClientRect();
-      const input = root
-        .querySelector<HTMLTextAreaElement>('.se-editor__formula-input textarea')!
-        .getBoundingClientRect();
-      const output = root
-        .querySelector('output[aria-label="Calculated cell value"]')!
-        .getBoundingClientRect();
+      const rect = (selector: string) => {
+        const element = root.querySelector(selector);
+        if (!element) throw new Error(`No ${selector}`);
+        return element.getBoundingClientRect();
+      };
+      const bar = rect('.se-editor__formula-bar');
+      const toolbar = rect('.se-editor__toolbar');
+      const input = rect('.se-editor__formula-input textarea');
+      const output = rect('output[aria-label="Calculated cell value"]');
       return {
         bar: bar.height,
         toolbar: toolbar.height,
         input: input.width,
-        inputSpace: root.querySelector('.se-editor__formula-input')!.getBoundingClientRect().width,
+        inputSpace: rect('.se-editor__formula-input').width,
         overlap:
           input.right > output.left && input.bottom > output.top && input.top < output.bottom,
         overflow: document.documentElement.scrollWidth > innerWidth,

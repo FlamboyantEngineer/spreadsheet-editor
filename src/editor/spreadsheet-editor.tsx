@@ -1,62 +1,66 @@
 'use client';
 
+import { Banner } from '@flamboyantengineer/ui-components/banner';
+import { Button } from '@flamboyantengineer/ui-components/button';
+import { ContextMenu, useMenuController } from '@flamboyantengineer/ui-components/context-menu';
 import {
+  ClockGlyph,
+  EditGlyph,
+  InfoGlyph,
+  ReplyGlyph,
+} from '@flamboyantengineer/ui-components/core';
+import { DockPanel, DockPanelPane } from '@flamboyantengineer/ui-components/dock-panel';
+import { FindBar } from '@flamboyantengineer/ui-components/find-bar';
+import { InlineError } from '@flamboyantengineer/ui-components/inline-error';
+import { Modal } from '@flamboyantengineer/ui-components/modal';
+import { Popover } from '@flamboyantengineer/ui-components/popover';
+import { TabPanel, Tabs } from '@flamboyantengineer/ui-components/tabs';
+import { TextField } from '@flamboyantengineer/ui-components/text-field';
+import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
+import { ZoomControl } from '@flamboyantengineer/ui-components/zoom-control';
+import {
+  type KeyboardEvent,
   lazy,
   Suspense,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent,
 } from 'react';
-import { Button } from '@flamboyantengineer/ui-components/button';
-import { TextField } from '@flamboyantengineer/ui-components/text-field';
-import { ContextMenu, useMenuController } from '@flamboyantengineer/ui-components/context-menu';
-import { DockPanel, DockPanelPane } from '@flamboyantengineer/ui-components/dock-panel';
-import { FindBar } from '@flamboyantengineer/ui-components/find-bar';
-import { Banner } from '@flamboyantengineer/ui-components/banner';
-import { InlineError } from '@flamboyantengineer/ui-components/inline-error';
-import { ZoomControl } from '@flamboyantengineer/ui-components/zoom-control';
-import { Popover } from '@flamboyantengineer/ui-components/popover';
-import { findOpenComment } from '../model/review.js';
-import { Modal } from '@flamboyantengineer/ui-components/modal';
-import {
-  InfoGlyph,
-  ClockGlyph,
-  ReplyGlyph,
-  EditGlyph,
-} from '@flamboyantengineer/ui-components/core';
-import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
-import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
-import { worksheetExtent } from '../model/extent.js';
-import { parseFormulaReferenceHighlights } from '../model/formula-reference-parser.js';
 import type {
   JSpreadsheetAnchorRect,
   JSpreadsheetCellCoords,
 } from '../engine/jspreadsheet-host.js';
+import { worksheetExtent } from '../model/extent.js';
+import { parseFormulaReferenceHighlights } from '../model/formula-reference-parser.js';
+import { requireDefined } from '../model/require-defined.js';
+import { findOpenComment } from '../model/review.js';
+import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
+import { EditorFormulaBar, type EditorFormulaBarHandle } from './editor-formula-bar.js';
+import { editorMenus } from './editor-menus.js';
+import { EditorToolbar } from './editor-toolbar.js';
+import { CommentsPanel, HistoryPanel, PropertiesPanel, SuggestionsPanel } from './review-panels.js';
+import { SheetBar } from './sheet-bar.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 import { useSessionState } from './use-session-state.js';
-import { Tabs, TabPanel } from '@flamboyantengineer/ui-components/tabs';
-import { EditorFormulaBar, type EditorFormulaBarHandle } from './editor-formula-bar.js';
-import { WorksheetStrip } from './worksheet-strip.js';
-import { EditorToolbar } from './editor-toolbar.js';
-import { editorMenus } from './editor-menus.js';
-import { CommentsPanel, SuggestionsPanel, HistoryPanel, PropertiesPanel } from './review-panels.js';
 
 export type {
-  SpreadsheetEditorProps,
-  SpreadsheetChrome,
-  SpreadsheetFeatures,
   CalculationMode,
-  SpreadsheetMode,
+  SpreadsheetChrome,
   SpreadsheetClipboard,
+  SpreadsheetEditorProps,
+  SpreadsheetFeatures,
   SpreadsheetHostPanel,
+  SpreadsheetMode,
 } from './contracts.js';
 export * from './public-host.js';
 export { useWorkbookSession } from './use-workbook-session.js';
-const WorkbookGrid = lazy(() => import('../engine/workbook-grid.js'));
+const WorkbookGrid = lazy(() =>
+  import('../engine/workbook-grid.js').then((module) => ({ default: module.WorkbookGrid })),
+);
 
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   const session = useSessionState(props.session ?? undefined);
@@ -88,11 +92,13 @@ export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   );
 }
 function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
+  const { panelRef } = props;
   const e = useSpreadsheetEditor(props);
   const chrome = props.chrome ?? 'full';
   const context = useMenuController(),
     root = useRef<HTMLElement | null>(null);
-  const hasMountedGrid = useRef(false);
+  // Grids mounted after the first one may take focus (SE-UI-3).
+  const [gridMounted, setGridMounted] = useState(false);
   const [contextKind, setContextKind] = useState<'cell' | 'row' | 'column'>('cell');
   const contextItems = () => {
     const menus = editorMenus(e);
@@ -118,8 +124,10 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
           : { left: rect.right, top: rect.top },
       );
   }
+  const positionCommentOnChange = useEffectEvent(positionComment);
   useLayoutEffect(() => {
-    positionComment();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the bubble is placed from the grid's committed cell geometry
+    positionCommentOnChange();
   }, [e.activeCommentId, e.selection, e.workbook]);
   const references =
     (formulaActive || gridEditing) && e.draftValue.startsWith('=')
@@ -168,14 +176,16 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
     e.grid.current?.releaseKeyboard();
     setContextPoint({ x: rect.left + 10, y: rect.bottom });
   }
+  const currentContextItems = useEffectEvent(contextItems);
   useEffect(() => {
-    if (contextPoint) {
-      context.open(contextPoint, { items: contextItems() });
-      setContextPoint(null);
-    }
+    if (!contextPoint) return;
+    // The menu opens after the render that selected the cell, so its items read that selection.
+    context.open(contextPoint, { items: currentContextItems() });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the point is consumed once the menu has opened
+    setContextPoint(null);
   }, [contextPoint, context, contextKind]);
   useEffect(() => {
-    context.setItems(contextItems());
+    context.setItems(currentContextItems());
   }, [e.workbook, e.selection, e.mode, e.capabilities, context, contextKind]);
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.nativeEvent.isComposing || event.repeat) return;
@@ -279,7 +289,10 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
           actions={
             <>
               {e.canRestoreVersion && (
-                <Button size="sm" onPress={() => void e.restoreVersion(e.viewedVersion!)}>
+                <Button
+                  size="sm"
+                  onPress={() => void e.restoreVersion(requireDefined(e.viewedVersion))}
+                >
                   Restore this version
                 </Button>
               )}
@@ -384,7 +397,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                   idFactory={props.idFactory}
                   includeBuiltinFormulaFunctions={props.includeBuiltinFormulaFunctions}
                   initialViewport={e.initialViewport}
-                  focusOnMount={hasMountedGrid.current}
+                  focusOnMount={gridMounted}
                   onNativeDraft={e.setNativeDraft}
                   onError={(error) =>
                     e.attempt(() => {
@@ -419,8 +432,8 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                   suggestions={e.workbook.suggestions}
                   selection={e.selection}
                   onController={(controller) => {
-                    e.grid.current = controller;
-                    if (controller) hasMountedGrid.current = true;
+                    e.attachGrid(controller);
+                    if (controller) setGridMounted(true);
                     if (e.dialog) controller?.releaseKeyboard();
                   }}
                   unavailableText={e.calculation.error ? 'Unavailable' : '…'}
@@ -452,7 +465,7 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
               </Suspense>
             </div>
           </TabPanel>
-          <WorksheetStrip
+          <SheetBar
             sheets={e.workbook.worksheets}
             selectedId={e.sheet.id}
             canEdit={e.canEdit}
@@ -466,14 +479,14 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
               levels={[50, 75, 100, 125, 150]}
               aria-label="Spreadsheet zoom"
             />
-          </WorksheetStrip>
+          </SheetBar>
         </Tabs>
         {props.features?.panels !== false && (chrome !== 'minimal' || e.panelOpen) && (
           <div
             className="se-editor__sidebar"
             {...props.panelData}
             id={props.panelId}
-            ref={props.panelRef}
+            ref={panelRef}
             onFocusCapture={() => e.grid.current?.releaseKeyboard()}
           >
             <DockPanel

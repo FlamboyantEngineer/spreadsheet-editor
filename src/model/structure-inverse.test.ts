@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { commandOperations } from '../editor/command-operations.js';
 import { applyWorkbookOperations, applyWorkbookTransaction } from './apply-operations.js';
 import { materializeWorksheetExtent } from './extent.js';
 import {
@@ -6,10 +7,10 @@ import {
   invertWorkbookOperations,
   type WorkbookOperation,
 } from './operations.js';
+import { requireDefined } from './require-defined.js';
 import { addComment } from './review.js';
 import { deleteWorksheet, renameWorksheet, type StructureChange } from './structure.js';
 import { appendWorksheet, copyWorkbook, createWorkbook, type Workbook } from './workbook.js';
-import { commandOperations } from '../editor/command-operations.js';
 
 const stamp = { id: 'thread-1', time: '2026-01-01T00:00:00Z', actor: { id: 'ana', name: 'Ana' } };
 
@@ -74,7 +75,7 @@ const cases: [
     'add a worksheet',
     (w) => {
       const next = appendWorksheet(w);
-      next.worksheets.at(-1)!.id = 'sheet-3';
+      requireDefined(next.worksheets.at(-1)).id = 'sheet-3';
       return sheetChange(w, next);
     },
   ],

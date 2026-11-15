@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 import {
   captureWorksheetCellChanges,
   gridWorksheetExtent,
   syncWorksheetData,
 } from './worksheet-data.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
 describe('SE-UI-1: logical vendor worksheet dimensions', () => {
   it('rejects an oversized vendor batch or far-away write before extending authored data', () => {
@@ -38,7 +39,7 @@ describe('SE-UI-1: logical vendor worksheet dimensions', () => {
       { x: 25, y: 99, value: '' },
     ]);
     expect(next.data).toEqual([['', '', '3']]);
-    expect(next.inputValues).toEqual({ C1: original.inputValues!.C1 });
+    expect(next.inputValues).toEqual({ C1: requireDefined(original.inputValues).C1 });
     expect(sheet).toEqual(original);
   });
 

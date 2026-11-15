@@ -1,6 +1,6 @@
 import { Decimal } from 'decimal.js';
 import { dimensionLabel } from './units.js';
-import { isError, isNumeric, type CellValue } from './values.js';
+import { type CellValue, isError, isNumeric } from './values.js';
 
 export interface DisplayOptions {
   significantDigits?: number;

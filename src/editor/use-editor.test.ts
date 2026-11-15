@@ -1,13 +1,8 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createWorkbook, type Workbook } from '../model/workbook.js';
-import type { PresenceAdapter } from '../host/presence-adapters.js';
 import { calculateWorkbook, type CalculationResult } from '../calculation/evaluator.js';
 import { calculationCellKey } from '../calculation/publication.js';
-import { writeCells } from '../model/editing.js';
-import type { SpreadsheetEditorProps } from './contracts.js';
-import { createWorkbookSession } from '../host/workbook-session.js';
 import type {
   HostResult,
   SavedState,
@@ -15,9 +10,15 @@ import type {
   WorkbookStoreAdapter,
   WorkbookVersion,
 } from '../host/adapters.js';
-import { useSpreadsheetEditor } from './use-editor.js';
-import { createMemoryHost } from '../host/memory-host.js';
 import { FULL_CAPABILITIES } from '../host/capabilities.js';
+import { createMemoryHost } from '../host/memory-host.js';
+import type { PresenceAdapter } from '../host/presence-adapters.js';
+import { createWorkbookSession } from '../host/workbook-session.js';
+import { writeCells } from '../model/editing.js';
+import { requireDefined } from '../model/require-defined.js';
+import { createWorkbook, type Workbook } from '../model/workbook.js';
+import type { SpreadsheetEditorProps } from './contracts.js';
+import { useSpreadsheetEditor } from './use-editor.js';
 
 const actor = { id: 'alex', name: 'Alex' };
 const identity = createMemoryHost({ reader: actor }).identity;
@@ -104,10 +105,12 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
       },
     );
     expect(result.current.mode).toBe('review');
-    act(() => result.current.proposeCells([['2E-25']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['2E-25']], 0, 0);
+    });
     expect(result.current.workbook.worksheets[0].data[0][0]).toBe('1E-25');
     expect(result.current.previewSheet.data[0][0]).toBe('2E-25');
-    const proposal = result.current.workbook.suggestions![0];
+    const proposal = requireDefined(result.current.workbook.suggestions)[0];
     act(() => {
       result.current.structure('row', 'insert');
       result.current.sheetCommand('add');
@@ -120,8 +123,10 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
     const workbook = result.current.workbook;
     rerender({ value: workbook, identity, session, capabilities: FULL_CAPABILITIES });
     expect(result.current.previewSheet.data[0][0]).toBe('1E-25');
-    act(() => result.current.decide(proposal.id, 'accepted'));
-    expect(result.current.workbook.suggestions![0].status).toBe('pending'); // controlled host must publish the result
+    act(() => {
+      result.current.decide(proposal.id, 'accepted');
+    });
+    expect(requireDefined(result.current.workbook.suggestions)[0].status).toBe('pending'); // controlled host must publish the result
   });
   it('records provenance for authored changes and refuses writes to an advisory peer lock', () => {
     const { result } = renderHook(() =>
@@ -132,13 +137,15 @@ describe('SE-CR-2.12/3.4/3.6: capability and preview boundaries', () => {
         presence: peerLock('morgan', 'B1'),
       }),
     );
-    act(() =>
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit'),
+    act(() => {
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit');
+    });
+    expect(requireDefined(result.current.workbook.worksheets[0].cellProvenance).A1.actor).toEqual(
+      actor,
     );
-    expect(result.current.workbook.worksheets[0].cellProvenance!.A1.actor).toEqual(actor);
-    act(() =>
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 1, 0, [['4']]), 'Edit'),
-    );
+    act(() => {
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 1, 0, [['4']]), 'Edit');
+    });
     expect(result.current.workbook.worksheets[0].data[0][1]).toBe('2');
     expect(result.current.notice).toContain('Morgan');
   });
@@ -155,7 +162,9 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     const { result } = renderHook(() => useSpreadsheetEditor({ session }));
     const listener = vi.fn();
     const stop = result.current.handle.subscribe(listener);
-    act(() => result.current.proposeCells([['first']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['first']], 0, 0);
+    });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });
@@ -166,7 +175,9 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
       error: 'Save refused',
     });
     expect(listener).toHaveBeenCalled();
-    act(() => result.current.proposeCells([['later']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['later']], 0, 0);
+    });
     expect(result.current.savePhase).toBe('error');
     expect(result.current.handle.getState().error).toBe('Save refused');
     await act(() => result.current.save());
@@ -181,23 +192,35 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     const props: SpreadsheetEditorProps = {
       session,
       onChange,
-      value: session.workbook()!,
+      value: requireDefined(session.workbook()),
       calculation: { mode: 'external', snapshot: null },
     };
     const { result, rerender } = renderHook(
       (value: SpreadsheetEditorProps) => useSpreadsheetEditor(value),
       { initialProps: props },
     );
-    act(() => result.current.proposeCells([['first']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['first']], 0, 0);
+    });
     rerender({ ...props, value: onChange.mock.calls[0][0] });
-    act(() => result.current.proposeCells([['later']], 0, 0));
+    act(() => {
+      result.current.proposeCells([['later']], 0, 0);
+    });
     rerender({ ...props, value: onChange.mock.calls[1][0] });
-    act(() => session.acknowledge(onChange.mock.calls[0][1].transactionId));
+    act(() => {
+      session.acknowledge(onChange.mock.calls[0][1].transactionId);
+    });
     expect(result.current.handle.getState().dirty).toBe(true);
-    act(() => session.acknowledge(onChange.mock.calls[1][1].transactionId));
+    act(() => {
+      session.acknowledge(onChange.mock.calls[1][1].transactionId);
+    });
     expect(result.current.handle.getState().dirty).toBe(false);
-    act(() => result.current.setDraftValue('uncommitted'));
-    act(() => session.acknowledge(onChange.mock.calls[1][1].transactionId));
+    act(() => {
+      result.current.setDraftValue('uncommitted');
+    });
+    act(() => {
+      session.acknowledge(onChange.mock.calls[1][1].transactionId);
+    });
     expect(result.current.handle.getState()).toMatchObject({ dirty: true, draftDirty: true });
     expect(store.save).not.toHaveBeenCalled();
     session.close();
@@ -206,9 +229,9 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
   it('joins a save in flight and keeps changes made during it dirty', async () => {
     const { session, store, held } = await openSession([['1']], { hold: true });
     const { result } = renderHook(() => useSpreadsheetEditor({ session }));
-    act(() =>
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit'),
-    );
+    act(() => {
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit');
+    });
     let first!: Promise<void>;
     act(() => {
       first = result.current.save();
@@ -219,9 +242,9 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     });
     expect(store.save).toHaveBeenCalledTimes(1);
     expect(result.current.savePhase).toBe('saving');
-    act(() =>
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit'),
-    );
+    act(() => {
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit');
+    });
     await act(async () => {
       held[0]();
       await first;
@@ -237,18 +260,18 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
-    act(() =>
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit'),
-    );
+    act(() => {
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit');
+    });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     expect(store.save).toHaveBeenCalledTimes(1);
     expect(result.current.savePhase).toBe('saved');
     expect(result.current.saveAutomatic).toBe(true);
-    act(() =>
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit'),
-    );
+    act(() => {
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit');
+    });
     await act(async () => {
       await result.current.openVersion(version);
     });
@@ -278,9 +301,9 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     act(() => {
       importing = result.current.importExcel();
     });
-    act(() =>
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit'),
-    );
+    act(() => {
+      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit');
+    });
     await act(async () => {
       resolveImport(createWorkbook([['99']]));
       await expect(importing).rejects.toThrow('workbook changed');
@@ -298,7 +321,9 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
-    act(() => result.current.setDraftValue('=1-1E-25'));
+    act(() => {
+      result.current.setDraftValue('=1-1E-25');
+    });
     expect(result.current.savePhase).toBe('saved');
     let opening!: Promise<unknown>;
     act(() => {
@@ -332,7 +357,9 @@ describe('SE-SESSION-4 and SE-VH-1: saving through the session', () => {
         } as SpreadsheetEditorProps,
       },
     );
-    act(() => result.current.setDraftValue('1E-25'));
+    act(() => {
+      result.current.setDraftValue('1E-25');
+    });
     await act(async () => {
       await result.current.openVersion(version);
     });
@@ -355,11 +382,15 @@ it('SE-CR-2.5: preserves a protected draft across a controlled update until appl
   const { result, rerender } = renderHook(({ value }) => useSpreadsheetEditor({ value }), {
     initialProps: { value: first },
   });
-  act(() => result.current.setDraftValue('=1-1E-25'));
+  act(() => {
+    result.current.setDraftValue('=1-1E-25');
+  });
   rerender({ value: writeCells(first, 'sheet-1', 0, 0, [['9']]) });
   expect(result.current.draftValue).toBe('=1-1E-25');
   expect(result.current.draftDirty).toBe(true);
-  act(() => result.current.cancelFormula());
+  act(() => {
+    result.current.cancelFormula();
+  });
   expect(result.current.draftValue).toBe('9');
 });
 
@@ -369,14 +400,24 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), onChange }),
     );
-    act(() => result.current.proposeCells([['2']], 0, 0));
-    act(() => result.current.setDraftValue('pending undo draft'));
-    act(() => result.current.undo());
+    act(() => {
+      result.current.proposeCells([['2']], 0, 0);
+    });
+    act(() => {
+      result.current.setDraftValue('pending undo draft');
+    });
+    act(() => {
+      result.current.undo();
+    });
     expect(result.current.sheet.data[0][0]).toBe('1');
     expect(result.current.draftValue).toBe('1');
     expect(result.current.draftDirty).toBe(false);
-    act(() => result.current.setDraftValue('pending redo draft'));
-    act(() => result.current.redo());
+    act(() => {
+      result.current.setDraftValue('pending redo draft');
+    });
+    act(() => {
+      result.current.redo();
+    });
     expect(result.current.sheet.data[0][0]).toBe('2');
     expect(result.current.draftValue).toBe('2');
     expect(result.current.draftDirty).toBe(false);
@@ -388,14 +429,20 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), identity, onChange }),
     );
-    act(() => result.current.setDraftValue('=1-1E-25'));
-    act(() => result.current.format({ 'font-weight': 'bold' }));
+    act(() => {
+      result.current.setDraftValue('=1-1E-25');
+    });
+    act(() => {
+      result.current.format({ 'font-weight': 'bold' });
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(result.current.sheet.data[0][0]).toBe('=1-1E-25');
     expect(result.current.sheet.style?.A1).toContain('font-weight: bold');
     expect(result.current.draftDirty).toBe(false);
     expect(result.current.history.past).toHaveLength(1);
-    act(() => result.current.undo());
+    act(() => {
+      result.current.undo();
+    });
     expect(result.current.sheet.data[0][0]).toBe('1');
     expect(result.current.sheet.style?.A1).toBeUndefined();
   });
@@ -408,8 +455,12 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
         onChange,
       }),
     );
-    act(() => result.current.setDraftValue('1E-25'));
-    act(() => result.current.structure('row', 'insert'));
+    act(() => {
+      result.current.setDraftValue('1E-25');
+    });
+    act(() => {
+      result.current.structure('row', 'insert');
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(result.current.sheet.data[1][0]).toBe('1E-25');
     expect(result.current.sheet.data[2][0]).toBe('=A2');
@@ -421,8 +472,12 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['2']] });
     const onChange = vi.fn();
     const { result } = renderHook(() => useSpreadsheetEditor({ defaultValue: workbook, onChange }));
-    act(() => result.current.setDraftValue('=Inputs!A1+1E-25'));
-    act(() => result.current.renameSheet('inputs', '  Input\n Data  '));
+    act(() => {
+      result.current.setDraftValue('=Inputs!A1+1E-25');
+    });
+    act(() => {
+      result.current.renameSheet('inputs', '  Input\n Data  ');
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(result.current.sheet.id).toBe('sheet-1');
     expect(result.current.sheet.data[0][0]).toBe("='Input Data'!A1+1E-25");
@@ -430,7 +485,9 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     expect(result.current.validateSheetName('inputs', ' Sheet1 ')).toBeTruthy();
     expect(result.current.validateSheetName('inputs', 'x'.repeat(257))).toBeTruthy();
     expect(result.current.validateSheetName('inputs', ' input  data ')).toBeNull();
-    act(() => expect(result.current.renameSheet('missing', 'New')).toBe(false));
+    act(() => {
+      expect(result.current.renameSheet('missing', 'New')).toBe(false);
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
   });
   it('moves an inactive target with wraparound and activates a duplicate only after success', () => {
@@ -440,15 +497,21 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
       { id: 'other', name: 'Other', data: [['3']] },
     );
     const { result } = renderHook(() => useSpreadsheetEditor({ defaultValue: workbook }));
-    act(() => result.current.sheetCommand('left', 'sheet-1'));
+    act(() => {
+      result.current.sheetCommand('left', 'sheet-1');
+    });
     expect(result.current.workbook.worksheets.map((sheet) => sheet.id)).toEqual([
       'other',
       'inputs',
       'sheet-1',
     ]);
-    act(() => result.current.sheetCommand('right', 'inputs'));
+    act(() => {
+      result.current.sheetCommand('right', 'inputs');
+    });
     expect(result.current.sheet.id).toBe('sheet-1');
-    act(() => result.current.sheetCommand('duplicate', 'inputs'));
+    act(() => {
+      result.current.sheetCommand('duplicate', 'inputs');
+    });
     expect(result.current.sheet.data).toEqual([['2']]);
     expect(result.current.sheet.id).not.toBe('inputs');
   });
@@ -462,7 +525,9 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
         presence: peerLock('peer', 'A1'),
       }),
     );
-    act(() => result.current.setDraftValue('1E-25'));
+    act(() => {
+      result.current.setDraftValue('1E-25');
+    });
     act(() => {
       expect(result.current.applyFormula()).toBe(false);
       expect(result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 })).toBe(false);
@@ -479,14 +544,18 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['1', '2']]), onChange }),
     );
-    act(() => result.current.setDraftValue('1E-25'));
+    act(() => {
+      result.current.setDraftValue('1E-25');
+    });
     act(() => {
       expect(result.current.applyFormula()).toBe(true);
       expect(result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 })).toBe(true);
     });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(result.current.selection.x1).toBe(1);
-    act(() => result.current.setDraftValue('native draft'));
+    act(() => {
+      result.current.setDraftValue('native draft');
+    });
     act(() => {
       result.current.updateSheet(
         writeCells(result.current.workbook, 'sheet-1', 1, 0, [['native']]).worksheets[0],
@@ -502,14 +571,24 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const onChange = vi.fn();
     const { session, store } = await openSession([['1']]);
     const { result } = renderHook(() => useSpreadsheetEditor({ session, onChange }));
-    act(() => result.current.setDraftValue('1E-25'));
-    act(() => result.current.openDialog('column-width'));
-    act(() => result.current.setDialogValue('140'));
-    act(() => result.current.applyDialog());
+    act(() => {
+      result.current.setDraftValue('1E-25');
+    });
+    act(() => {
+      result.current.openDialog('column-width');
+    });
+    act(() => {
+      result.current.setDialogValue('140');
+    });
+    act(() => {
+      result.current.applyDialog();
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(result.current.sheet.data[0][0]).toBe('1E-25');
     expect(result.current.sheet.columns?.[0].width).toBe(140);
-    act(() => result.current.setDraftValue('=1-1E-25'));
+    act(() => {
+      result.current.setDraftValue('=1-1E-25');
+    });
     await act(async () => {
       await result.current.save();
     });
@@ -520,8 +599,12 @@ describe('SE-CHROME-2/4: worksheet targets and protected formula transactions', 
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]), defaultMode: 'review' }),
     );
-    act(() => result.current.setDraftValue('1E-25'));
-    act(() => result.current.format({ 'font-weight': 'bold' }));
+    act(() => {
+      result.current.setDraftValue('1E-25');
+    });
+    act(() => {
+      result.current.format({ 'font-weight': 'bold' });
+    });
     expect(result.current.sheet.data[0][0]).toBe('1');
     expect(result.current.previewSheet.data[0][0]).toBe('1E-25');
     expect(result.current.previewSheet.style?.A1).toContain('font-weight: bold');
@@ -555,8 +638,12 @@ describe('SE-CHROME-3: asynchronous clipboard and protected drafts', () => {
     act(() => {
       paste = result.current.paste();
     });
-    act(() => result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 }));
-    act(() => result.current.setDraftValue('=1-1E-25'));
+    act(() => {
+      result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 });
+    });
+    act(() => {
+      result.current.setDraftValue('=1-1E-25');
+    });
     await act(async () => {
       resolveRead('7');
       await paste;
@@ -589,12 +676,16 @@ describe('SE-CHROME-3: asynchronous clipboard and protected drafts', () => {
         clipboard: { readText: async () => '2E-25', writeText },
       }),
     );
-    act(() => result.current.setDraftValue('2E-25'));
+    act(() => {
+      result.current.setDraftValue('2E-25');
+    });
     let cut!: Promise<void>;
     act(() => {
       cut = result.current.copy(true);
     });
-    act(() => result.current.setDraftValue('3E-25'));
+    act(() => {
+      result.current.setDraftValue('3E-25');
+    });
     await act(async () => {
       resolveWrite();
       await cut;
@@ -606,7 +697,9 @@ describe('SE-CHROME-3: asynchronous clipboard and protected drafts', () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(result.current.notice).toContain('Try Cut again');
     // The completed clipboard write remains a copy; it cannot later delete the newer source.
-    act(() => result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 }));
+    act(() => {
+      result.current.select({ x1: 1, x2: 1, y1: 0, y2: 0 });
+    });
     await act(async () => {
       await result.current.paste();
     });
@@ -619,11 +712,17 @@ describe('SE-CHROME-5: workbook replacement', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: createWorkbook([['1']]) }),
     );
-    act(() => result.current.setDraftValue('=1-1E-25'));
-    act(() => result.current.replaceWorkbook(createWorkbook([['Replacement']]), 'New workbook'));
+    act(() => {
+      result.current.setDraftValue('=1-1E-25');
+    });
+    act(() => {
+      result.current.replaceWorkbook(createWorkbook([['Replacement']]), 'New workbook');
+    });
     expect(result.current.draftValue).toBe('Replacement');
     expect(result.current.draftDirty).toBe(false);
-    act(() => result.current.applyFormula());
+    act(() => {
+      result.current.applyFormula();
+    });
     expect(result.current.sheet.data[0][0]).toBe('Replacement');
   });
 });
@@ -642,15 +741,19 @@ describe('SE-HOST-MODEL-2 and SE-PERF-1: change context', () => {
       }),
     );
     const before = result.current.workbook;
-    act(() => result.current.setDraftValue('5'));
-    act(() => void result.current.applyFormula());
+    act(() => {
+      result.current.setDraftValue('5');
+    });
+    act(() => {
+      void result.current.applyFormula();
+    });
     const [next, context] = onChange.mock.calls[0];
     expect(next.worksheets[0].data[0][0]).toBe('5');
-    expect(context!.baseline).toEqual(before);
-    expect(context!.baseline).not.toBe(before);
-    expect(context!.baseline).toBe(context!.baseline);
-    expect(Object.isFrozen(context!.baseline.worksheets[0].data[0])).toBe(true);
-    expect(context!.operations).toEqual([
+    expect(requireDefined(context).baseline).toEqual(before);
+    expect(requireDefined(context).baseline).not.toBe(before);
+    expect(requireDefined(context).baseline).toBe(requireDefined(context).baseline);
+    expect(Object.isFrozen(requireDefined(context).baseline.worksheets[0].data[0])).toBe(true);
+    expect(requireDefined(context).operations).toEqual([
       {
         kind: 'cells',
         sheetId: 'sheet-1',
@@ -683,8 +786,12 @@ describe('SE-PERF-1: recalculating after an edit', () => {
     await waitFor(() => expect(replies).toHaveLength(1));
     await act(async () => replies[0].finish(calculateWorkbook(replies[0].workbook)));
     expect(result.current.readyCells.has(key(3))).toBe(true);
-    act(() => result.current.setDraftValue('2'));
-    act(() => void result.current.applyFormula());
+    act(() => {
+      result.current.setDraftValue('2');
+    });
+    act(() => {
+      void result.current.applyFormula();
+    });
     await waitFor(() => expect(replies).toHaveLength(2));
     expect(result.current.calculation.status).toBe('pending');
     expect(result.current.calculation.result).toBeNull();

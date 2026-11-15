@@ -55,7 +55,7 @@
     "build": "node scripts/build.mjs",
     "prepack": "npm run build",
     "prepare": "node scripts/prepare.mjs",
-    "lint": "eslint . --max-warnings=0",
+    "lint": "node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
@@ -65,9 +65,12 @@
     "labs": "node scripts/labs.mjs",
     "test:labs": "playwright test",
     "check:package": "node scripts/check-package.mjs",
+    "check:references": "ui-components-tooling check-references",
+    "check:structure": "ui-components-tooling check-structure",
+    "check:exports": "ui-components-tooling check-exports",
     "check:consumer": "node scripts/check-consumer.mjs",
     "changeset": "changeset",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run build && npm run check:package && npm run check:consumer && npm run test:labs"
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm run check:references && npm run check:structure && npm run check:exports && npm test && npm run build && npm run check:package && npm run check:consumer && npm run test:labs"
   },
   "peerDependencies": {
     "@flamboyantengineer/ui-components": "~0.1.0",
@@ -126,6 +129,8 @@
     "@types/react-dom": "^19.3.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
     "exceljs": "4.4.0",
     "fflate": "0.8.3",
     "globals": "^17.14.0",

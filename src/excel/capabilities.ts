@@ -1,5 +1,5 @@
-import type { ExcelFormulaCapabilities, ExcelHostFunction } from './contracts.js';
 import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
+import type { ExcelFormulaCapabilities, ExcelHostFunction } from './contracts.js';
 
 const MAX_FUNCTIONS = 128;
 const MAX_ALIASES = 16;

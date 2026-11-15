@@ -1,8 +1,8 @@
 import type { RefObject } from 'react';
+import type { WorkbookSession } from '../host/workbook-session.js';
+import type { CellSelection } from '../model/editing.js';
 import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
-import type { CellSelection } from '../model/editing.js';
-import type { WorkbookSession } from '../host/workbook-session.js';
 import type { SpreadsheetEditorHandle, SpreadsheetEditorState } from './public-host.js';
 import { sessionErrorMessage } from './use-session-state.js';
 

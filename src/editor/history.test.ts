@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { createMemoryHost } from '../host/memory-host.js';
 import { createWorkbook, type Workbook } from '../model/workbook.js';
 import { useSpreadsheetEditor } from './use-editor.js';
-import { createMemoryHost } from '../host/memory-host.js';
 
 const identity = createMemoryHost({ reader: { id: 'alex', name: 'Alex' } }).identity;
 

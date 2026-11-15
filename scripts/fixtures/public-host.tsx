@@ -1,14 +1,13 @@
-import { createRef } from 'react';
 import {
-  SpreadsheetEditor,
   BUILTIN_FORMULA_FUNCTIONS,
-  formulaFunctionCatalog,
   type CellPresentation,
   type CellPresentationSnapshot,
   type CellRenderContext,
   type ExternalCalculationSnapshot,
+  formulaFunctionCatalog,
   type FormulaFunctionDescriptor,
   type NumericValue,
+  SpreadsheetEditor,
   type SpreadsheetEditorHandle,
   type SpreadsheetEditorProps,
   type SpreadsheetEditorState,
@@ -16,33 +15,34 @@ import {
   type WorkbookIdFactory,
 } from '@flamboyantengineer/spreadsheet-editor';
 import {
-  assertWorkbook,
-  changeWorkbookStructureWithOperations,
-  createWorkbook,
-  invertWorkbookOperations,
-  worksheetExtent,
-  type Workbook,
-  type WorkbookOperation,
-} from '@flamboyantengineer/spreadsheet-editor/model';
-import {
   assertExternalCalculationSnapshot,
   calculateWorkbook,
   calculationCellKey,
-  createClientCalculator,
-  workbookCalculationKey,
-  type CalculationProvider,
   type CalculationDependencies,
   type CalculationOptions,
-  type FormulaCellContext,
-  type JsonValue,
+  type CalculationProvider,
   type CalculationResult,
+  createClientCalculator,
+  type FormulaCellContext,
   type FormulaHost,
+  type JsonValue,
+  workbookCalculationKey,
 } from '@flamboyantengineer/spreadsheet-editor/calculation';
 import {
   createDocumentInsertion,
   type DocumentInsertion,
 } from '@flamboyantengineer/spreadsheet-editor/document';
 import type { ExcelFormulaCapabilities } from '@flamboyantengineer/spreadsheet-editor/excel';
+import {
+  assertWorkbook,
+  changeWorkbookStructureWithOperations,
+  createWorkbook,
+  invertWorkbookOperations,
+  type Workbook,
+  type WorkbookOperation,
+  worksheetExtent,
+} from '@flamboyantengineer/spreadsheet-editor/model';
+import { createRef } from 'react';
 
 // This file deliberately imports built public entrypoints, never src/ or internal types.
 export const canonical: NumericValue = {
@@ -213,13 +213,12 @@ export const legacyElement = <SpreadsheetEditor {...legacyProps} />;
 
 // Version-one granular application, causal receipt and linked-capture contracts.
 export {
+  createLinkedSpreadsheetInsertion,
+  type LinkedSpreadsheetInsertion,
+  updateLinkedSpreadsheetInsertion,
+} from '@flamboyantengineer/spreadsheet-editor/document';
+export { createTransactionReceiptTracker } from '@flamboyantengineer/spreadsheet-editor/host';
+export {
   createWorkbookOperationBinding,
   initializeWorkbookIdentities,
 } from '@flamboyantengineer/spreadsheet-editor/model';
-export {
-  createLinkedSpreadsheetInsertion,
-  updateLinkedSpreadsheetInsertion,
-  type LinkedSpreadsheetInsertion,
-} from '@flamboyantengineer/spreadsheet-editor/document';
-
-export { createTransactionReceiptTracker } from '@flamboyantengineer/spreadsheet-editor/host';

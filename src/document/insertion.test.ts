@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook } from '../model/workbook.js';
 import { calculateWorkbook } from '../calculation/evaluator.js';
+import { createWorkbook } from '../model/workbook.js';
 import { createDocumentInsertion } from './insertion.js';
 
 describe('SE-DOC-1: document insertion modes', () => {

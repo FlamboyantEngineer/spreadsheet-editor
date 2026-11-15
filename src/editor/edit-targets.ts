@@ -1,3 +1,4 @@
+import { requireDefined } from '../model/require-defined.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
 
@@ -28,7 +29,7 @@ export function immutableBaseline(workbook: Workbook): Workbook {
   const snapshot = copyWorkbook(workbook),
     pending: object[] = [snapshot];
   while (pending.length) {
-    const value = pending.pop()!;
+    const value = requireDefined(pending.pop());
     if (Object.isFrozen(value)) continue;
     for (const child of Object.values(value))
       if (child && typeof child === 'object') pending.push(child);

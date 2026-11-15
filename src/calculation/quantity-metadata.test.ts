@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkbook, assertWorkbook } from '../model/workbook.js';
+import { assertWorkbook, createWorkbook } from '../model/workbook.js';
+import { formatExactDecimal, formatWorksheetCell } from './cell-format.js';
 import { calculateWorkbook } from './evaluator.js';
-import { formatWorksheetCell, formatExactDecimal } from './cell-format.js';
+import { assertCalculationResult, createHttpCalculator, handleCalculationRequest } from './http.js';
+import { createArithmetic } from './rational.js';
 import {
+  BINARY_PREFIXES,
   createQuantityArithmetic,
   makeQuantity,
   quantityInUnit,
   resolveUnit,
-  UNIT_DEFINITIONS,
   SI_DECIMAL_PREFIXES,
-  BINARY_PREFIXES,
+  UNIT_DEFINITIONS,
   validateUnitDimension,
 } from './units.js';
-import { createArithmetic } from './rational.js';
-import { assertNumericValue, assertJsonValue, type NumericValue } from './values.js';
-import { assertCalculationResult, createHttpCalculator, handleCalculationRequest } from './http.js';
+import { assertJsonValue, assertNumericValue, type NumericValue } from './values.js';
 const numeric = createArithmetic(),
   math = createQuantityArithmetic();
 const evaluate = (formula: string) =>
@@ -122,11 +122,11 @@ describe('SE-CALC-4: complete quantity metadata and registry', () => {
   });
   it('unions pinned provenance and rejects conflicting revisions before arithmetic', () => {
     const a = { ...numeric.parse('2'), provenance: { constants: '2022' } },
-      b = { ...numeric.parse('3'), provenance: { artifact: 'v1' } };
+      b = { ...numeric.parse('3'), provenance: { catalog: 'v1' } };
     expect(math.multiply(a, b)).toMatchObject({
-      provenance: { constants: '2022', artifact: 'v1' },
+      provenance: { constants: '2022', catalog: 'v1' },
     });
-    expect(numeric.add(a, b)).toMatchObject({ provenance: { constants: '2022', artifact: 'v1' } });
+    expect(numeric.add(a, b)).toMatchObject({ provenance: { constants: '2022', catalog: 'v1' } });
     expect(() => math.multiply(a, { ...b, provenance: { constants: '2018' } })).toThrow('#VALUE!');
     expect(evaluate('=1E-25')).toMatchObject({ numerator: '1', approximate: false });
   });

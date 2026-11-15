@@ -1,5 +1,12 @@
 'use client';
 
+import { CodeEditor, type CodeTokenizer } from '@flamboyantengineer/ui-components/code-editor';
+import type { CompletionSource } from '@flamboyantengineer/ui-components/completion-list';
+import { FormulaGlyph } from '@flamboyantengineer/ui-components/core';
+import { Icon } from '@flamboyantengineer/ui-components/icon';
+import { Cluster, Stack } from '@flamboyantengineer/ui-components/layout';
+import { TextField } from '@flamboyantengineer/ui-components/text-field';
+import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
 import {
   type FocusEvent,
   type KeyboardEvent,
@@ -11,20 +18,13 @@ import {
   useRef,
   useState,
 } from 'react';
-import { FormulaGlyph } from '@flamboyantengineer/ui-components/core';
-import { Icon } from '@flamboyantengineer/ui-components/icon';
-import { Cluster, Stack } from '@flamboyantengineer/ui-components/layout';
-import { CodeEditor, type CodeTokenizer } from '@flamboyantengineer/ui-components/code-editor';
-import type { CompletionSource } from '@flamboyantengineer/ui-components/completion-list';
-import { TextField } from '@flamboyantengineer/ui-components/text-field';
-import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
-import { formulaFunctionCatalog, type FormulaFunctionDescriptor } from './public-host.js';
 import { type CellSelection, selectionAddress } from '../model/editing.js';
 import {
   buildFormulaReferenceTokenSegments,
   parseFormulaReferenceHighlights,
 } from '../model/formula-reference-parser.js';
 import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
+import { formulaFunctionCatalog, type FormulaFunctionDescriptor } from './public-host.js';
 
 /** Semantic tokens let the host use the same reference palette in the editor and grid. */
 const tokenize: CodeTokenizer = (source) =>

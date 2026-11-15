@@ -1,3 +1,14 @@
+import { createWorkbookEntityId, worksheetExtent } from './extent.js';
+import { requireDefined } from './require-defined.js';
+import {
+  formatSpreadsheetAddress,
+  formatSpreadsheetColumnName,
+  FORMULA_WORD_CHARACTER,
+  parseSpreadsheetAddress,
+  parseSpreadsheetColumnName,
+  parseSpreadsheetRange,
+  UNQUOTED_SHEET_NAME,
+} from './spreadsheet-addressing.js';
 import {
   assertWorkbook,
   copyWorkbook,
@@ -6,16 +17,6 @@ import {
   type Worksheet,
   worksheetNameKey,
 } from './workbook.js';
-import { worksheetExtent, createWorkbookEntityId } from './extent.js';
-import {
-  formatSpreadsheetAddress,
-  formatSpreadsheetColumnName,
-  parseSpreadsheetAddress,
-  parseSpreadsheetColumnName,
-  parseSpreadsheetRange,
-  FORMULA_WORD_CHARACTER,
-  UNQUOTED_SHEET_NAME,
-} from './spreadsheet-addressing.js';
 
 export interface StructureChange {
   axis: 'row' | 'column';
@@ -109,9 +110,13 @@ function rewriteReference(reference: string, change: StructureChange): string {
     lastCell = cellPattern.exec(last);
   if (firstCell && lastCell) {
     const from =
-      change.axis === 'row' ? Number(firstCell[4]) - 1 : parseSpreadsheetColumnName(firstCell[2])!;
+      change.axis === 'row'
+        ? Number(firstCell[4]) - 1
+        : requireDefined(parseSpreadsheetColumnName(firstCell[2]));
     const to =
-      change.axis === 'row' ? Number(lastCell[4]) - 1 : parseSpreadsheetColumnName(lastCell[2])!;
+      change.axis === 'row'
+        ? Number(lastCell[4]) - 1
+        : requireDefined(parseSpreadsheetColumnName(lastCell[2]));
     const transformed = interval(from, to, change);
     if (!transformed) return '#REF!';
     const format = (match: RegExpExecArray, value: number) =>
@@ -126,10 +131,10 @@ function rewriteReference(reference: string, change: StructureChange): string {
   if ((wholeColumns && change.axis !== 'column') || (!wholeColumns && change.axis !== 'row'))
     return reference;
   const from = wholeColumns
-    ? parseSpreadsheetColumnName(first.replace('$', ''))!
+    ? requireDefined(parseSpreadsheetColumnName(first.replace('$', '')))
     : Number(first.replace('$', '')) - 1;
   const to = wholeColumns
-    ? parseSpreadsheetColumnName(last.replace('$', ''))!
+    ? requireDefined(parseSpreadsheetColumnName(last.replace('$', '')))
     : Number(last.replace('$', '')) - 1;
   const transformed = interval(from, to, change);
   if (!transformed) return '#REF!';
@@ -280,7 +285,7 @@ export function changeWorkbookStructure(
   if (sheet.inputValues) sheet.inputValues = remap(sheet.inputValues);
   const merges: NonNullable<Worksheet['mergeCells']> = {};
   for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
-    const anchor = parseSpreadsheetAddress(address)!;
+    const anchor = requireDefined(parseSpreadsheetAddress(address));
     const moved = moveRange(
       `${address}:${formatSpreadsheetAddress(anchor.x + columns - 1, anchor.y + rows - 1)}`,
       change,
@@ -304,7 +309,7 @@ export function changeWorkbookStructure(
   next.comments?.forEach((thread) => {
     if (thread.sheetId === sheetId && !thread.orphaned) {
       const moved = moveRange(thread.range ?? '', change);
-      if (moved) thread.range = parseSpreadsheetRange(moved)!.address;
+      if (moved) thread.range = requireDefined(parseSpreadsheetRange(moved)).address;
       else thread.orphaned = true;
     }
   });
@@ -351,7 +356,7 @@ export function validateWorksheetName(workbook: Workbook, sheetId: string, name:
 export function renameWorksheet(workbook: Workbook, sheetId: string, name: string): Workbook {
   const normalized = validateWorksheetName(workbook, sheetId, name),
     next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
+    sheet = requireDefined(next.worksheets.find((sheet) => sheet.id === sheetId));
   const previous = worksheetNameKey(sheet.name);
   sheet.name = normalized;
   const rename = (formula: string) =>

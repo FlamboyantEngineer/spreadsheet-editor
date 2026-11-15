@@ -1,13 +1,14 @@
+import { formatWorksheetCell } from '../calculation/cell-format.js';
+import type { CalculationResult } from '../calculation/evaluator.js';
+import type { DisplayOptions } from '../calculation/format.js';
+import { assertCalculationResult } from '../calculation/http.js';
+import { requireDefined } from '../model/require-defined.js';
 import {
-  parseSpreadsheetRange,
   formatSpreadsheetAddress,
+  parseSpreadsheetRange,
   type SpreadsheetRange,
 } from '../model/spreadsheet-addressing.js';
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
-import { assertCalculationResult } from '../calculation/http.js';
-import type { CalculationResult } from '../calculation/evaluator.js';
-import type { DisplayOptions } from '../calculation/format.js';
-import { formatWorksheetCell } from '../calculation/cell-format.js';
 
 export interface DocumentTableCell {
   text: string;
@@ -40,10 +41,10 @@ export interface InsertionOptions {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!,
+  return value.replace(/[&<>"']/g, (character) =>
+    requireDefined(
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character],
+    ),
   );
 }
 
@@ -79,7 +80,7 @@ export function createDocumentInsertion(
     };
   if (!result) throw new Error('A document table needs current calculation results.');
   assertCalculationResult(result, snapshot);
-  const values = result.worksheets.find((output) => output.id === sheet.id)!.values;
+  const values = requireDefined(result.worksheets.find((output) => output.id === sheet.id)).values;
   const covered = new Set<string>(),
     spans = new Map<string, [number, number]>();
   for (const [address, [colspan, rowspan]] of Object.entries(sheet.mergeCells ?? {})) {

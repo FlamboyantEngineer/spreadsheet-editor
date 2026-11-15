@@ -1,14 +1,14 @@
 import { Decimal } from 'decimal.js';
-import { createQuantityArithmetic, makeQuantity, quantityInUnit } from './units.js';
-import { formatCellValue } from './format.js';
-import { formatTextMask, char1252, code1252 } from './text-format.js';
 import { calendarParts, calendarSerial } from './calendar.js';
+import { formatCellValue } from './format.js';
+import { char1252, code1252, formatTextMask } from './text-format.js';
+import { type createQuantityArithmetic, makeQuantity, quantityInUnit } from './units.js';
 import {
   CalculationError,
+  type CellValue,
   isError,
   isNumeric,
   mergeNumericProvenance,
-  type CellValue,
   type NumericValue,
 } from './values.js';
 
