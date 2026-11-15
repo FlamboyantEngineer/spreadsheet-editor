@@ -141,7 +141,11 @@ function readyValues<T>(
     row.map((value, x) => (ready.has(calculationCellKey(sheetId, x, y)) ? value : null)),
   );
 }
-/** Blank a draft's pending cells; rows without one keep their identity. */
+/**
+ * Blank a draft's pending cells; rows without one keep their identity. A row with a pending cell
+ * is always a new row, even when that cell is already blank: the grid does not paint a row whose
+ * identity is unchanged, so it would miss the cell's change of readiness (SE-PERF-1).
+ */
 function withoutPendingValues<T>(
   values: (T | null)[][] | undefined,
   pending: ReadonlySet<string>,
@@ -151,10 +155,10 @@ function withoutPendingValues<T>(
   let next: (T | null)[][] | undefined;
   for (const key of pending) {
     const [id, x, y] = JSON.parse(key) as [string, number, number];
-    if (id !== sheetId || values[y]?.[x] == null) continue;
+    if (id !== sheetId || !values[y]) continue;
     next ??= [...values];
     if (next[y] === values[y]) next[y] = [...values[y]];
-    next[y][x] = null;
+    if (x < next[y].length) next[y][x] = null;
   }
   return next ?? values;
 }
