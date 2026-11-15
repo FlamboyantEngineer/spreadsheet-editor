@@ -86,7 +86,12 @@ import type { HostResult, WorkbookVersion } from '../host/adapters.js';
 import { useWorkbookVersions } from './use-workbook-versions.js';
 import { usePersonNames } from './use-person-names.js';
 import { useWorkbookPresence } from './use-workbook-presence.js';
-import { saveFailure, sessionSavePhase, useSessionState } from './use-session-state.js';
+import {
+  saveFailure,
+  sessionErrorMessage,
+  sessionSavePhase,
+  useSessionState,
+} from './use-session-state.js';
 
 export type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
@@ -1435,7 +1440,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     draftDirty: draftDirty || !!nativeDraft,
     saving: savePhase === 'saving',
     flushing,
-    error: noticeTone === 'danger' ? notice : null,
+    error: sessionErrorMessage(session.status) ?? (noticeTone === 'danger' ? notice : null),
     calculation: {
       inputKey: visibleCalculation.inputKey,
       revision: visibleCalculation.revision,
@@ -1508,7 +1513,9 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
           draftDirty,
           saving: live.current.props.session?.status().phase === 'saving',
           flushing: current.flushing,
-          error: errorNotice.current,
+          error:
+            sessionErrorMessage(live.current.props.session?.status() ?? null) ??
+            errorNotice.current,
         });
       },
       select(target) {
