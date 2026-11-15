@@ -17,6 +17,7 @@ import {
   pasteSpreadsheetCopy,
   type SpreadsheetCopy,
 } from '../model/clipboard.js';
+import { parseDelimited, serializeDelimited } from '../model/delimited.js';
 import {
   borderCells,
   type CellSelection,
@@ -25,11 +26,9 @@ import {
   INITIAL_SELECTION,
   mergeSelection,
   normalizeSelection,
-  parseDelimited,
   readSelection,
   selectionAddress,
   selectionCells,
-  serializeDelimited,
   writeCells,
 } from '../model/editing.js';
 import { createWorkbookEntityId } from '../model/extent.js';
@@ -131,7 +130,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     () => placePeers(workbook, remotePeers, actor.id),
     [workbook, remotePeers, actor.id],
   );
-  const lockedSelection = selectionLock(workbook, sheet.id, selection, peers);
+  const lockedSelection = selectionLock(workbook, { sheetId: sheet.id, selection }, peers);
   const [draft, setDraftState] = useState<{ key: string; value: string } | null>(null);
   const draftRef = useRef(draft);
   function setDraft(next: typeof draft) {
@@ -357,14 +356,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     let base = workbook;
     if (pending?.key === draftKey && pending.value !== String(authored)) {
       draftTargets.set(sheet.id, [formatSpreadsheetAddress(selection.x1, selection.y1)]);
-      base = writeCells(
-        base,
-        sheet.id,
-        selection.x1,
-        selection.y1,
-        [[pending.value]],
-        props.idFactory,
-      );
+      base = writeCells(base, [[pending.value]], {
+        sheetId: sheet.id,
+        x: selection.x1,
+        y: selection.y1,
+        idFactory: props.idFactory,
+      });
       const locked = lockedChange(workbook, base, peers);
       if (locked) {
         warn(`${locked.name} is editing a cell in this selection. Try again after they finish.`);
@@ -570,7 +567,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   function proposeCells(values: CellInput[][], x: number, y: number) {
     const changed = mutate(
-      writeCells(workbook, sheet.id, x, y, values, props.idFactory),
+      writeCells(workbook, values, { sheetId: sheet.id, x, y, idFactory: props.idFactory }),
       'Edit cells',
       undefined,
       undefined,
@@ -585,7 +582,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (format?.decimals !== undefined && props.formatting?.decimalPlaces === false)
       throw new Error('The host does not support decimal-place overrides.');
     mutateWithDraft(
-      (base) => formatCells(base, sheet.id, selection, properties, format),
+      (base) => formatCells(base, { sheetId: sheet.id, range: selection }, { properties, format }),
       `Format ${selectionAddress(selection)}`,
       undefined,
       new Map([[sheet.id, selectionCells(selection).map((cell) => cell.address)]]),
@@ -595,7 +592,10 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     format({ [property]: style[property] === value ? null : value });
   }
   function border(kind: 'all' | 'outside' | 'none' | 'top' | 'right' | 'bottom' | 'left') {
-    mutateWithDraft((base) => borderCells(base, sheet.id, selection, kind), `Set ${kind} borders`);
+    mutateWithDraft(
+      (base) => borderCells(base, { sheetId: sheet.id, range: selection }, kind),
+      `Set ${kind} borders`,
+    );
   }
   function structure(axis: StructureChange['axis'], kind: StructureChange['kind'], after = false) {
     if (!canEdit) {
@@ -721,14 +721,12 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const pending = draftRef.current,
       hasDraft = pending?.key === draftKey && pending.value !== String(authored),
       source = hasDraft
-        ? writeCells(
-            previewWorkbook,
-            sheet.id,
-            selection.x1,
-            selection.y1,
-            [[pending.value]],
-            props.idFactory,
-          )
+        ? writeCells(previewWorkbook, [[pending.value]], {
+            sheetId: sheet.id,
+            x: selection.x1,
+            y: selection.y1,
+            idFactory: props.idFactory,
+          })
         : previewWorkbook;
     const cells = readSelection(source, sheet.id, selection);
     const displayed = cells.map((row, dy) =>
@@ -747,11 +745,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const text = serializeDelimited(displayed);
     await clipboard.writeText(text);
     if (cut && draftRef.current !== pending) {
-      copied.current = createSpreadsheetCopy(source, sheet.id, selection, text, false);
+      copied.current = createSpreadsheetCopy(
+        source,
+        { sheetId: sheet.id, range: selection },
+        { text, cut: false },
+      );
       warn('The cell edit changed while copying. Nothing was cut. Try Cut again.');
       return;
     }
-    copied.current = createSpreadsheetCopy(source, sheet.id, selection, text, cut);
+    copied.current = createSpreadsheetCopy(
+      source,
+      { sheetId: sheet.id, range: selection },
+      { text, cut },
+    );
   }
   function pasteCells(
     values: CellInput[][],
@@ -766,8 +772,14 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     const changed = mutateWithDraft(
       (base) =>
         matching
-          ? pasteSpreadsheetCopy(base, sheet.id, x, y, cached, selection, props.idFactory)
-          : writeCells(base, sheet.id, x, y, values, props.idFactory),
+          ? pasteSpreadsheetCopy(base, cached, {
+              sheetId: sheet.id,
+              x,
+              y,
+              destination: selection,
+              idFactory: props.idFactory,
+            })
+          : writeCells(base, values, { sheetId: sheet.id, x, y, idFactory: props.idFactory }),
       'Paste cells',
       undefined,
       matching ? undefined : blockTargets(sheet.id, x, y, values),
@@ -1153,13 +1165,13 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     insert,
     clear: (formatting = false) =>
       mutateWithDraft(
-        (base) => clearSelection(base, sheet.id, selection, formatting),
+        (base) => clearSelection(base, { sheetId: sheet.id, range: selection }, formatting),
         formatting ? 'Clear formatting' : 'Clear cells',
       ),
     merge: (unmerge = false) => {
       if (!canEdit) return;
       mutateWithDraft(
-        (base) => mergeSelection(base, sheet.id, selection, unmerge),
+        (base) => mergeSelection(base, { sheetId: sheet.id, range: selection }, unmerge),
         unmerge ? 'Unmerge cells' : 'Merge cells',
       );
     },

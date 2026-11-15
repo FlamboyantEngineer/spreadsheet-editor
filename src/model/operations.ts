@@ -231,7 +231,7 @@ export function writeCellsWithOperations(
   values: CellInput[][],
   idFactory?: WorkbookIdFactory,
 ): WorkbookCommandResult {
-  const next = writeCells(workbook, sheetId, x, y, values, idFactory),
+  const next = writeCells(workbook, values, { sheetId, x, y, idFactory }),
     addresses = values.flatMap((row, dy) =>
       row.map((_cell, dx) => formatSpreadsheetAddress(x + dx, y + dy)),
     );

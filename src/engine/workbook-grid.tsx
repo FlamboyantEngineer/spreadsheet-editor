@@ -10,12 +10,8 @@ import type {
   FormulaFunctionDescriptor,
   RenderCellContent,
 } from '../editor/public-host.js';
-import {
-  type CellSelection,
-  parseDelimited,
-  selectionAddress,
-  writeCells,
-} from '../model/editing.js';
+import { parseDelimited } from '../model/delimited.js';
+import { type CellSelection, selectionAddress, writeCells } from '../model/editing.js';
 import type { WorkbookIdFactory, WorksheetExtent } from '../model/extent.js';
 import {
   FORMULA_REFERENCE_HIGHLIGHT_COLORS,
@@ -471,8 +467,12 @@ export function WorkbookGrid(props: WorkbookGridProps) {
         workbook = createWorkbook();
       workbook.worksheets = [structuredClone(current)];
       latest.current.onChange(
-        writeCells(workbook, current.id, Number(x), Number(y), values, latest.current.idFactory)
-          .worksheets[0],
+        writeCells(workbook, values, {
+          sheetId: current.id,
+          x: Number(x),
+          y: Number(y),
+          idFactory: latest.current.idFactory,
+        }).worksheets[0],
       );
     }
     return {
@@ -493,8 +493,10 @@ export function WorkbookGrid(props: WorkbookGridProps) {
           return latest.current.worksheet.data[Number(y)]?.[Number(x)] ?? '';
         const locked = selectionLock(
           { schemaVersion: 1, worksheets: [latest.current.worksheet] },
-          latest.current.worksheet.id,
-          { x1: Number(x), x2: Number(x), y1: Number(y), y2: Number(y) },
+          {
+            sheetId: latest.current.worksheet.id,
+            selection: { x1: Number(x), x2: Number(x), y1: Number(y), y2: Number(y) },
+          },
           latest.current.collaborators ?? [],
         );
         if (locked && !suppress.current) {
@@ -742,8 +744,10 @@ export function WorkbookGrid(props: WorkbookGridProps) {
         if (!cell) return;
         const locked = selectionLock(
           { schemaVersion: 1, worksheets: [props.worksheet] },
-          props.worksheet.id,
-          { x1: cell.x, x2: cell.x, y1: cell.y, y2: cell.y },
+          {
+            sheetId: props.worksheet.id,
+            selection: { x1: cell.x, x2: cell.x, y1: cell.y, y2: cell.y },
+          },
           props.collaborators ?? [],
         );
         if (locked) {

@@ -138,13 +138,19 @@ describe('SE-CHROME-1.1: capability and preview boundaries', () => {
       }),
     );
     act(() => {
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit');
+      result.current.mutate(
+        writeCells(result.current.workbook, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        'Edit',
+      );
     });
     expect(requireDefined(result.current.workbook.worksheets[0].cellProvenance).A1.actor).toEqual(
       actor,
     );
     act(() => {
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 1, 0, [['4']]), 'Edit');
+      result.current.mutate(
+        writeCells(result.current.workbook, [['4']], { sheetId: 'sheet-1', x: 1, y: 0 }),
+        'Edit',
+      );
     });
     expect(result.current.workbook.worksheets[0].data[0][1]).toBe('2');
     expect(result.current.notice).toContain('Morgan');
@@ -230,7 +236,10 @@ describe('SE-SESSION-1.4: saving through the session', () => {
     const { session, store, held } = await openSession([['1']], { hold: true });
     const { result } = renderHook(() => useSpreadsheetEditor({ session }));
     act(() => {
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit');
+      result.current.mutate(
+        writeCells(result.current.workbook, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        'Edit',
+      );
     });
     let first!: Promise<void>;
     act(() => {
@@ -243,7 +252,10 @@ describe('SE-SESSION-1.4: saving through the session', () => {
     expect(store.save).toHaveBeenCalledTimes(1);
     expect(result.current.savePhase).toBe('saving');
     act(() => {
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit');
+      result.current.mutate(
+        writeCells(result.current.workbook, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        'Edit',
+      );
     });
     await act(async () => {
       held[0]();
@@ -261,7 +273,10 @@ describe('SE-SESSION-1.4: saving through the session', () => {
       useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
     );
     act(() => {
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit');
+      result.current.mutate(
+        writeCells(result.current.workbook, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        'Edit',
+      );
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
@@ -270,7 +285,10 @@ describe('SE-SESSION-1.4: saving through the session', () => {
     expect(result.current.savePhase).toBe('saved');
     expect(result.current.saveAutomatic).toBe(true);
     act(() => {
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['3']]), 'Edit');
+      result.current.mutate(
+        writeCells(result.current.workbook, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        'Edit',
+      );
     });
     await act(async () => {
       await result.current.openVersion(version);
@@ -302,7 +320,10 @@ describe('SE-SESSION-1.4: saving through the session', () => {
       importing = result.current.importExcel();
     });
     act(() => {
-      result.current.mutate(writeCells(result.current.workbook, 'sheet-1', 0, 0, [['2']]), 'Edit');
+      result.current.mutate(
+        writeCells(result.current.workbook, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        'Edit',
+      );
     });
     await act(async () => {
       resolveImport(createWorkbook([['99']]));
@@ -385,7 +406,7 @@ it('SE-CHROME-4.1: preserves a protected draft across a controlled update until 
   act(() => {
     result.current.setDraftValue('=1-1E-25');
   });
-  rerender({ value: writeCells(first, 'sheet-1', 0, 0, [['9']]) });
+  rerender({ value: writeCells(first, [['9']], { sheetId: 'sheet-1', x: 0, y: 0 }) });
   expect(result.current.draftValue).toBe('=1-1E-25');
   expect(result.current.draftDirty).toBe(true);
   act(() => {
@@ -558,7 +579,8 @@ describe('SE-CHROME-2.1 and SE-CHROME-4.1: worksheet targets and protected formu
     });
     act(() => {
       result.current.updateSheet(
-        writeCells(result.current.workbook, 'sheet-1', 1, 0, [['native']]).worksheets[0],
+        writeCells(result.current.workbook, [['native']], { sheetId: 'sheet-1', x: 1, y: 0 })
+          .worksheets[0],
       );
       result.current.onGridSelection({ x1: 0, x2: 0, y1: 0, y2: 0 });
     });

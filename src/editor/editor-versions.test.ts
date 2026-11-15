@@ -33,7 +33,7 @@ async function openVersions(capabilities = FULL_CAPABILITIES) {
   const edit = (value: string) =>
     act(() => {
       rendered.result.current.mutate(
-        writeCells(rendered.result.current.workbook, 'sheet-1', 0, 0, [[value]]),
+        writeCells(rendered.result.current.workbook, [[value]], { sheetId: 'sheet-1', x: 0, y: 0 }),
         'Edit',
       );
     });

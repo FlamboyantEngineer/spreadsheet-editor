@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { NumericValue } from '../calculation/values.js';
 import { createSpreadsheetCopy, pasteSpreadsheetCopy } from './clipboard.js';
-import { clearSelection, formatCells, parseDelimited, writeCells } from './editing.js';
+import { parseDelimited } from './delimited.js';
+import { clearSelection, formatCells, writeCells } from './editing.js';
 import { worksheetExtent } from './extent.js';
 import {
   changeWorkbookStructureWithOperations,
@@ -45,18 +46,23 @@ describe('SE-HOST-MODEL-1.1: canonical authored quantities and stable extent', (
     const workbook = createWorkbook([['tiny']]);
     workbook.worksheets[0].inputValues = { A1: rational };
     expect(
-      writeCells(workbook, 'sheet-1', 0, 0, [['2']]).worksheets[0].inputValues?.A1,
-    ).toBeUndefined();
-    expect(
-      writeCells(workbook, 'sheet-1', 0, 0, [['3']]).worksheets[0].inputValues?.A1,
-    ).toBeUndefined();
-    expect(
-      clearSelection(workbook, 'sheet-1', { x1: 0, y1: 0, x2: 0, y2: 0 }).worksheets[0].inputValues
+      writeCells(workbook, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }).worksheets[0].inputValues
         ?.A1,
     ).toBeUndefined();
     expect(
-      formatCells(workbook, 'sheet-1', { x1: 0, y1: 0, x2: 0, y2: 0 }, { 'font-weight': 'bold' })
+      writeCells(workbook, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 }).worksheets[0].inputValues
+        ?.A1,
+    ).toBeUndefined();
+    expect(
+      clearSelection(workbook, { sheetId: 'sheet-1', range: { x1: 0, y1: 0, x2: 0, y2: 0 } })
         .worksheets[0].inputValues?.A1,
+    ).toBeUndefined();
+    expect(
+      formatCells(
+        workbook,
+        { sheetId: 'sheet-1', range: { x1: 0, y1: 0, x2: 0, y2: 0 } },
+        { properties: { 'font-weight': 'bold' } },
+      ).worksheets[0].inputValues?.A1,
     ).toEqual(rational);
     expect(workbook.worksheets[0].inputValues?.A1).toEqual(rational);
   });
@@ -199,7 +205,12 @@ describe('SE-HOST-MODEL-2.1: semantic transactions', () => {
         changes: [{ address: 'B2', rowId: 'row-host-1', columnId: 'column-host-2' }],
       },
     ]);
-    const single = writeCells(workbook, 'sheet-1', 0, 1, [['new']], factory);
+    const single = writeCells(workbook, [['new']], {
+      sheetId: 'sheet-1',
+      x: 0,
+      y: 1,
+      idFactory: factory,
+    });
     expect(single.worksheets[0].rowIds).toEqual(['row-original', 'row-host-3']);
     expect(workbook.worksheets[0].rowIds).toEqual(['row-original']);
     expect(workbook.worksheets[0].columnIds).toEqual(['column-original']);
@@ -335,15 +346,19 @@ describe('SE-HOST-MODEL-3.1 and SE-REVIEW-8.1: authored clipboard and canonical 
     sheet.style = { A1: 'font-weight:bold' };
     const copy = createSpreadsheetCopy(
       workbook,
-      sheet.id,
-      { x1: 0, y1: 0, x2: 1, y2: 0 },
-      'displayed\tresult',
+      { sheetId: sheet.id, range: { x1: 0, y1: 0, x2: 1, y2: 0 } },
+      { text: 'displayed\tresult' },
     );
-    const pasted = pasteSpreadsheetCopy(workbook, sheet.id, 2, 1, copy, {
-      x1: 2,
-      y1: 1,
-      x2: 5,
-      y2: 2,
+    const pasted = pasteSpreadsheetCopy(workbook, copy, {
+      sheetId: sheet.id,
+      x: 2,
+      y: 1,
+      destination: {
+        x1: 2,
+        y1: 1,
+        x2: 5,
+        y2: 2,
+      },
     }).worksheets[0];
     expect(pasted.data[1].slice(2, 6)).toEqual(['1', '=C2+$A2+C$1+$A$1', '1', '=E2+$A2+E$1+$A$1']);
     expect(pasted.data[2][3]).toBe('=C3+$A3+C$1+$A$1');
@@ -356,33 +371,55 @@ describe('SE-HOST-MODEL-3.1 and SE-REVIEW-8.1: authored clipboard and canonical 
   it('pastes one whole block into smaller/nonmultiple selections and moves a cut only once', () => {
     const workbook = createWorkbook([['1', '=A1']]);
     const selection = { x1: 0, y1: 0, x2: 1, y2: 0 },
-      copy = createSpreadsheetCopy(workbook, 'sheet-1', selection, '1\t1');
-    const pasted = pasteSpreadsheetCopy(workbook, 'sheet-1', 2, 1, copy, {
-      x1: 2,
-      y1: 1,
-      x2: 4,
-      y2: 2,
+      copy = createSpreadsheetCopy(
+        workbook,
+        { sheetId: 'sheet-1', range: selection },
+        { text: '1\t1' },
+      );
+    const pasted = pasteSpreadsheetCopy(workbook, copy, {
+      sheetId: 'sheet-1',
+      x: 2,
+      y: 1,
+      destination: {
+        x1: 2,
+        y1: 1,
+        x2: 4,
+        y2: 2,
+      },
     });
     expect(pasted.worksheets[0].data[1].slice(2)).toEqual(['1', '=C2']);
     expect(pasted.worksheets[0].data[2]).toBeUndefined();
-    const cut = createSpreadsheetCopy(workbook, 'sheet-1', selection, '1\t1', true);
-    const moved = pasteSpreadsheetCopy(workbook, 'sheet-1', 1, 0, cut, {
-      x1: 1,
-      y1: 0,
-      x2: 4,
-      y2: 1,
+    const cut = createSpreadsheetCopy(
+      workbook,
+      { sheetId: 'sheet-1', range: selection },
+      { text: '1\t1', cut: true },
+    );
+    const moved = pasteSpreadsheetCopy(workbook, cut, {
+      sheetId: 'sheet-1',
+      x: 1,
+      y: 0,
+      destination: {
+        x1: 1,
+        y1: 0,
+        x2: 4,
+        y2: 1,
+      },
     });
     expect(moved.worksheets[0].data[0]).toEqual([null, '1', '=A1']);
     expect(moved.worksheets[0].data[1]).toBeUndefined();
     expect(workbook.worksheets[0].data[0]).toEqual(['1', '=A1']);
     expect(() =>
-      pasteSpreadsheetCopy(writeCells(workbook, 'sheet-1', 0, 0, [['peer']]), 'sheet-1', 2, 0, cut),
+      pasteSpreadsheetCopy(
+        writeCells(workbook, [['peer']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        cut,
+        { sheetId: 'sheet-1', x: 2, y: 0 },
+      ),
     ).toThrow('cut source');
   });
   it('keeps canonical suggestion baselines through preview/acceptance and detects canonical-only conflicts', () => {
     const workbook = createWorkbook([['tiny']]);
     workbook.worksheets[0].inputValues = { A1: rational };
-    const candidate = writeCells(workbook, 'sheet-1', 0, 0, [['2']]);
+    const candidate = writeCells(workbook, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 });
     const proposal = proposeWorkbookChange(workbook, candidate, 'Replace', stamp);
     expect(proposal.suggestions?.[0].changes[0].beforeInputValue).toEqual(rational);
     expect(previewSuggestions(proposal, 'alex').worksheets[0].inputValues?.A1).toBeUndefined();

@@ -477,16 +477,25 @@ it('SE-CHROME-1.1: an imported style and the same style applied in the editor st
   expect(style).toBe('font-weight: bold; text-align: left');
   const cell = { x1: 0, y1: 0, x2: 0, y2: 0 };
   const plain = { ...imported, worksheets: [{ ...imported.worksheets[0], style: {} }] };
-  const edited = formatCells(plain, imported.worksheets[0].id, cell, {
-    'font-weight': 'bold',
-    'text-align': 'left',
-  });
+  const edited = formatCells(
+    plain,
+    { sheetId: imported.worksheets[0].id, range: cell },
+    {
+      properties: {
+        'font-weight': 'bold',
+        'text-align': 'left',
+      },
+    },
+  );
   expect(requireDefined(edited.worksheets[0].style).A1).toBe(style);
   // Re-applying the imported properties leaves the stored text unchanged.
   expect(
     requireDefined(
-      formatCells(imported, imported.worksheets[0].id, cell, { 'font-weight': 'bold' })
-        .worksheets[0].style,
+      formatCells(
+        imported,
+        { sheetId: imported.worksheets[0].id, range: cell },
+        { properties: { 'font-weight': 'bold' } },
+      ).worksheets[0].style,
     ).A1,
   ).toBe(style);
 });

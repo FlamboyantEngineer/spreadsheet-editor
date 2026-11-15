@@ -1,4 +1,4 @@
-import { UNIT_DEFINITIONS,type UnitConversionDefinition } from './unit-catalog.js';
+import { UNIT_DEFINITIONS, type UnitConversionDefinition } from './unit-catalog.js';
 import { CalculationError, type NumericValue, TEXT_COLLATOR } from './values.js';
 
 export type Dimension = readonly [number, number, number, number, number, number, number];

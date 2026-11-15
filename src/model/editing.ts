@@ -2,13 +2,7 @@ import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
 import { requireDefined } from './require-defined.js';
 import type { CellFormat } from './review.js';
 import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
-import {
-  assertWorkbook,
-  type CellInput,
-  copyWorkbook,
-  DEFAULT_WORKBOOK_LIMITS,
-  type Workbook,
-} from './workbook.js';
+import { assertWorkbook, type CellInput, copyWorkbook, type Workbook } from './workbook.js';
 
 export interface CellSelection {
   x1: number;
@@ -50,13 +44,24 @@ export function selectionCells(range: CellSelection): { x: number; y: number; ad
   return cells;
 }
 
+/** A worksheet and the top-left cell a block of values is written at. */
+export interface CellPlacement {
+  sheetId: string;
+  x: number;
+  y: number;
+  /** Makes ids for rows and columns the write adds to a sheet that tracks them. */
+  idFactory?: WorkbookIdFactory | undefined;
+}
+/** A worksheet and a range of its cells. */
+export interface SheetRange {
+  sheetId: string;
+  range: CellSelection;
+}
+
 export function writeCells(
   workbook: Workbook,
-  sheetId: string,
-  x: number,
-  y: number,
   values: CellInput[][],
-  idFactory?: WorkbookIdFactory,
+  { sheetId, x, y, idFactory }: CellPlacement,
 ): Workbook {
   const next = copyWorkbook(workbook),
     sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
@@ -127,12 +132,16 @@ function worksheetOf(workbook: Workbook, sheetId: string) {
   if (!sheet) throw new RangeError('Unknown worksheet.');
   return sheet;
 }
+/** Style properties to set (a string) or remove (null), and a number format to set or clear. */
+export interface CellFormatting {
+  properties: Record<string, string | null>;
+  format?: CellFormat | null | undefined;
+}
+
 export function formatCells(
   workbook: Workbook,
-  sheetId: string,
-  range: CellSelection,
-  properties: Record<string, string | null>,
-  format?: CellFormat | null,
+  { sheetId, range }: SheetRange,
+  { properties, format }: CellFormatting,
 ): Workbook {
   const next = copyWorkbook(workbook),
     sheet = worksheetOf(next, sheetId);
@@ -160,8 +169,7 @@ export function formatCells(
 }
 export function clearSelection(
   workbook: Workbook,
-  sheetId: string,
-  range: CellSelection,
+  { sheetId, range }: SheetRange,
   formatting = false,
 ): Workbook {
   const next = copyWorkbook(workbook),
@@ -178,10 +186,15 @@ export function clearSelection(
   return next;
 }
 
+/** Removes a side's border, or draws it in the text colour. */
+function toggleBorder(style: Record<string, string>, side: string, remove: boolean) {
+  if (remove) delete style[`border-${side}`];
+  else style[`border-${side}`] = '1px solid currentColor';
+}
+
 export function borderCells(
   workbook: Workbook,
-  sheetId: string,
-  range: CellSelection,
+  { sheetId, range }: SheetRange,
   kind: 'all' | 'outside' | 'none' | 'top' | 'right' | 'bottom' | 'left',
 ): Workbook {
   const next = copyWorkbook(workbook),
@@ -204,90 +217,19 @@ export function borderCells(
   });
   for (const cell of cells) {
     const style = parseCellStyle(sheet.style[cell.address]);
-    for (const side of sides) {
+    for (const side of sides)
       if (kind === 'none') {
         delete style[`border-${side}`];
         delete style.border;
-      } else if (targeted(cell, side)) {
-        if (remove) delete style[`border-${side}`];
-        else style[`border-${side}`] = '1px solid currentColor';
-      }
-    }
+      } else if (targeted(cell, side)) toggleBorder(style, side, remove);
     writeCellStyle(sheet.style, cell.address, style);
   }
   return next;
 }
 
-/** RFC 4180-style quoting, also used for tab-delimited clipboard text. */
-export function parseDelimited(text: string, delimiter = '\t'): string[][] {
-  if (
-    text.length > 16 * 1024 * 1024 ||
-    new TextEncoder().encode(text).byteLength > 16 * 1024 * 1024
-  )
-    throw new RangeError('Clipboard text exceeds the byte limit.');
-  let cellCount = 0;
-  const rows: string[][] = [[]];
-  let field = '',
-    quoted = false;
-  for (let index = 0; index < text.length; index++) {
-    const character = text[index];
-    if (character === '"') {
-      if (quoted && text[index + 1] === '"') {
-        field += '"';
-        index++;
-      } else if (!field || quoted) quoted = !quoted;
-      else field += character;
-    } else if (!quoted && (character === delimiter || character === '\n' || character === '\r')) {
-      if (
-        ++cellCount > DEFAULT_WORKBOOK_LIMITS.maxCells ||
-        requireDefined(rows.at(-1)).length >= 16_384
-      )
-        throw new RangeError('Clipboard exceeds the cell limit.');
-      requireDefined(rows.at(-1)).push(field);
-      field = '';
-      if (character !== delimiter) {
-        if (character === '\r' && text[index + 1] === '\n') index++;
-        rows.push([]);
-      }
-    } else field += character;
-    if (field.length > DEFAULT_WORKBOOK_LIMITS.maxCellLength)
-      throw new RangeError('Clipboard cell exceeds the text limit.');
-  }
-  if (quoted) throw new TypeError('Unclosed quoted field.');
-  if (
-    cellCount + 1 > DEFAULT_WORKBOOK_LIMITS.maxCells ||
-    requireDefined(rows.at(-1)).length >= 16_384
-  )
-    throw new RangeError('Clipboard exceeds the cell limit.');
-  requireDefined(rows.at(-1)).push(field);
-  if (
-    rows.length > 1 &&
-    requireDefined(rows.at(-1)).length === 1 &&
-    requireDefined(rows.at(-1))[0] === '' &&
-    /[\r\n]$/.test(text)
-  )
-    rows.pop();
-  return rows;
-}
-export function serializeDelimited(rows: CellInput[][], delimiter = '\t'): string {
-  return rows
-    .map((row) =>
-      row
-        .map((value) => {
-          const text = value == null ? '' : String(value);
-          return text.includes(delimiter) || /["\r\n]/.test(text)
-            ? `"${text.replace(/"/g, '""')}"`
-            : text;
-        })
-        .join(delimiter),
-    )
-    .join('\n');
-}
-
 export function mergeSelection(
   workbook: Workbook,
-  sheetId: string,
-  range: CellSelection,
+  { sheetId, range }: SheetRange,
   unmerge = false,
 ): Workbook {
   const next = copyWorkbook(workbook),

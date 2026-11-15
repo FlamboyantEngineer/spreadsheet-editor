@@ -33,11 +33,19 @@ describe('SE-ADAPTERS-4.3: peers placed on the workbook', () => {
       editLock: { x1: 0, x2: 1, y1: 0, y2: 0 },
     });
     expect(collaboratorSheet(workbook, peer)?.id).toBe('sheet-1');
-    expect(selectionLock(workbook, 'sheet-1', { x1: 1, x2: 1, y1: 0, y2: 0 }, peers)?.name).toBe(
-      'Morgan',
-    );
     expect(
-      selectionLock(workbook, 'sheet-1', { x1: 2, x2: 2, y1: 0, y2: 0 }, peers),
+      selectionLock(
+        workbook,
+        { sheetId: 'sheet-1', selection: { x1: 1, x2: 1, y1: 0, y2: 0 } },
+        peers,
+      )?.name,
+    ).toBe('Morgan');
+    expect(
+      selectionLock(
+        workbook,
+        { sheetId: 'sheet-1', selection: { x1: 2, x2: 2, y1: 0, y2: 0 } },
+        peers,
+      ),
     ).toBeUndefined();
   });
 });

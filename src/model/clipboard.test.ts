@@ -16,30 +16,41 @@ describe('SE-HOST-MODEL-3.1: authored clipboard references', () => {
   it('copies formulas relative to their original target and cuts without translation', () => {
     const workbook = createWorkbook([['1', '=A1*2']]);
     const selection = { x1: 1, x2: 1, y1: 0, y2: 0 };
-    const copy = createSpreadsheetCopy(workbook, 'sheet-1', selection, '2');
-    expect(pasteSpreadsheetCopy(workbook, 'sheet-1', 2, 1, copy).worksheets[0].data[1][2]).toBe(
-      '=B2*2',
+    const copy = createSpreadsheetCopy(
+      workbook,
+      { sheetId: 'sheet-1', range: selection },
+      { text: '2' },
     );
-    const cut = createSpreadsheetCopy(workbook, 'sheet-1', selection, '2', true);
-    expect(pasteSpreadsheetCopy(workbook, 'sheet-1', 2, 1, cut).worksheets[0].data[1][2]).toBe(
-      '=A1*2',
+    expect(
+      pasteSpreadsheetCopy(workbook, copy, { sheetId: 'sheet-1', x: 2, y: 1 }).worksheets[0]
+        .data[1][2],
+    ).toBe('=B2*2');
+    const cut = createSpreadsheetCopy(
+      workbook,
+      { sheetId: 'sheet-1', range: selection },
+      { text: '2', cut: true },
     );
+    expect(
+      pasteSpreadsheetCopy(workbook, cut, { sheetId: 'sheet-1', x: 2, y: 1 }).worksheets[0]
+        .data[1][2],
+    ).toBe('=A1*2');
     expect(workbook.worksheets[0].data).toEqual([['1', '=A1*2']]);
   });
   it('SE-HOST-MODEL-3.1: uses the host factory when pasted data extends tracked lines', () => {
     const workbook = createWorkbook([['1']]);
     workbook.worksheets[0].rowIds = ['row-1'];
     workbook.worksheets[0].columnIds = ['column-1'];
-    const copy = createSpreadsheetCopy(workbook, 'sheet-1', { x1: 0, x2: 0, y1: 0, y2: 0 }, '1');
-    const next = pasteSpreadsheetCopy(
+    const copy = createSpreadsheetCopy(
       workbook,
-      'sheet-1',
-      1,
-      1,
-      copy,
-      undefined,
-      (kind) => `host-${kind}`,
+      { sheetId: 'sheet-1', range: { x1: 0, x2: 0, y1: 0, y2: 0 } },
+      { text: '1' },
     );
+    const next = pasteSpreadsheetCopy(workbook, copy, {
+      sheetId: 'sheet-1',
+      x: 1,
+      y: 1,
+      idFactory: (kind) => `host-${kind}`,
+    });
     expect(next.worksheets[0].rowIds).toEqual(['row-1', 'host-row']);
     expect(next.worksheets[0].columnIds).toEqual(['column-1', 'host-column']);
   });

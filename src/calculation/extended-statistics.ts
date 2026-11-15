@@ -43,7 +43,9 @@ function combineSelected(call: FunctionCall, selected: readonly CellValue[]) {
       (a, b) => (call.compare(a, b) > 0 === name.startsWith('MAX') ? a : b),
       numbers[0] ?? zeroOf(call),
     );
-  return name.startsWith('AVERAGE') ? math.average(numbers) : numbers.reduce(math.add, zeroOf(call));
+  return name.startsWith('AVERAGE')
+    ? math.average(numbers)
+    : numbers.reduce(math.add, zeroOf(call));
 }
 
 /** COUNTIF, SUMIF, AVERAGEIF and their several-condition forms, MAXIFS and MINIFS. */

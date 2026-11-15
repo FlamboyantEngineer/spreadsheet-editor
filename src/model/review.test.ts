@@ -112,7 +112,7 @@ describe('SE-REVIEW-1.1: persisted threaded comments', () => {
 describe('SE-REVIEW-2.1: tracked suggestions', () => {
   it('keeps canonical values unchanged until acceptance and retains the decision record', () => {
     const source = createWorkbook([['1E-25', '=1-A1']]);
-    const proposed = writeCells(source, 'sheet-1', 0, 0, [['2E-25']]);
+    const proposed = writeCells(source, [['2E-25']], { sheetId: 'sheet-1', x: 0, y: 0 });
     const review = proposeWorkbookChange(source, proposed, 'Edit A1', stamp('suggestion', morgan));
     expect(review.worksheets).toEqual(source.worksheets);
     const accepted = decideSuggestion(review, 'suggestion', 'accepted', stamp('decision'));
@@ -128,7 +128,7 @@ describe('SE-REVIEW-2.1: tracked suggestions', () => {
     const source = createWorkbook([['1']]);
     const review = proposeWorkbookChange(
       source,
-      writeCells(source, 'sheet-1', 0, 0, [['2']]),
+      writeCells(source, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }),
       'Edit',
       stamp('suggestion'),
     );
@@ -137,7 +137,7 @@ describe('SE-REVIEW-2.1: tracked suggestions', () => {
     expect(() => decideSuggestion(rejected, 'suggestion', 'accepted', stamp('again'))).toThrow(
       'pending',
     );
-    const conflicting = writeCells(review, 'sheet-1', 0, 0, [['3']]);
+    const conflicting = writeCells(review, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 });
     expect(() =>
       decideSuggestion(conflicting, 'suggestion', 'accepted', stamp('decision')),
     ).toThrow('not been overwritten');
@@ -147,10 +147,8 @@ describe('SE-REVIEW-2.1: tracked suggestions', () => {
     const source = createWorkbook([['1E-25']]);
     const next = formatCells(
       source,
-      'sheet-1',
-      { x1: 0, y1: 0, x2: 1, y2: 0 },
-      { 'font-weight': 'bold' },
-      { kind: 'percent', decimals: 30 },
+      { sheetId: 'sheet-1', range: { x1: 0, y1: 0, x2: 1, y2: 0 } },
+      { properties: { 'font-weight': 'bold' }, format: { kind: 'percent', decimals: 30 } },
     );
     const review = proposeWorkbookChange(source, next, 'Bold percent', stamp('format'));
     expect(review.worksheets[0].style).toBeUndefined();
@@ -197,13 +195,13 @@ describe('SE-REVIEW-7.1: conversation and reviewer overlay contracts', () => {
     const original = createWorkbook([['1', '=A1*2']]);
     let workbook = proposeWorkbookChange(
       original,
-      writeCells(original, 'sheet-1', 0, 0, [['2']]),
+      writeCells(original, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }),
       'Edit',
       stamp('first', morgan),
     );
     workbook = proposeWorkbookChange(
       workbook,
-      writeCells(workbook, 'sheet-1', 0, 0, [['3']]),
+      writeCells(workbook, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 }),
       'Edit again',
       stamp('second', morgan),
     );

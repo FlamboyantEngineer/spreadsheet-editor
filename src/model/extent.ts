@@ -10,43 +10,58 @@ export type WorkbookEntityKind = 'row' | 'column' | 'sheet' | 'transaction';
 export type WorkbookIdFactory = (kind: WorkbookEntityKind) => string;
 export const createWorkbookEntityId: WorkbookIdFactory = () => crypto.randomUUID();
 
-/** Logical geometry includes sparse metadata, not just populated data. */
-export function worksheetExtent(sheet: Worksheet, workbook?: Workbook): WorksheetExtent {
-  let columns = Math.max(
-      1,
-      sheet.minDimensions?.[0] ?? 0,
-      sheet.columns?.length ?? 0,
-      sheet.freezeColumns ?? 0,
-      sheet.columnIds?.length ?? 0,
-    ),
-    rows = Math.max(1, sheet.minDimensions?.[1] ?? 0, sheet.data.length, sheet.rowIds?.length ?? 0);
-  for (const row of sheet.data) columns = Math.max(columns, row.length);
-  for (const index of Object.keys(sheet.rows ?? {})) rows = Math.max(rows, Number(index) + 1);
-  const include = (address: string, width = 1, height = 1) => {
-    const cell = parseSpreadsheetAddress(address);
-    if (cell) {
-      columns = Math.max(columns, cell.x + width);
-      rows = Math.max(rows, cell.y + height);
-    }
-  };
-  for (const map of [sheet.style, sheet.formats, sheet.inputValues, sheet.cellProvenance])
-    for (const address of Object.keys(map ?? {})) include(address);
-  for (const [address, [width, height]] of Object.entries(sheet.mergeCells ?? {}))
-    include(address, width, height);
-  for (const thread of workbook?.comments ?? []) {
+/** Grows an extent to reach a cell, or a block anchored at it. */
+function include(extent: WorksheetExtent, address: string, [width, height] = [1, 1]) {
+  const cell = parseSpreadsheetAddress(address);
+  if (!cell) return;
+  extent.columns = Math.max(extent.columns, cell.x + width);
+  extent.rows = Math.max(extent.rows, cell.y + height);
+}
+
+/** The extent of the sheet's data, declared dimensions and row and column metadata. */
+function dataExtent(sheet: Worksheet): WorksheetExtent {
+  const columns = Math.max(
+    1,
+    sheet.minDimensions?.[0] ?? 0,
+    sheet.columns?.length ?? 0,
+    sheet.freezeColumns ?? 0,
+    sheet.columnIds?.length ?? 0,
+    sheet.data.reduce((widest, row) => Math.max(widest, row.length), 0),
+  );
+  const rows = Math.max(
+    1,
+    sheet.minDimensions?.[1] ?? 0,
+    sheet.data.length,
+    sheet.rowIds?.length ?? 0,
+    Object.keys(sheet.rows ?? {}).reduce((last, index) => Math.max(last, Number(index) + 1), 0),
+  );
+  return { columns, rows };
+}
+
+/** Grows an extent to reach the sheet's live comment ranges and current suggestions. */
+function includeReview(extent: WorksheetExtent, sheet: Worksheet, workbook: Workbook) {
+  for (const thread of workbook.comments ?? []) {
     if (thread.sheetId !== sheet.id || thread.orphaned) continue;
     const range = parseSpreadsheetRange(thread.range ?? '');
-    if (range) {
-      columns = Math.max(columns, range.end.x + 1);
-      rows = Math.max(rows, range.end.y + 1);
-    }
+    if (!range) continue;
+    extent.columns = Math.max(extent.columns, range.end.x + 1);
+    extent.rows = Math.max(extent.rows, range.end.y + 1);
   }
-  for (const suggestion of workbook?.suggestions ?? []) {
-    if (suggestion.outdated) continue;
-    for (const change of suggestion.changes)
-      if (change.sheetId === sheet.id) include(change.address);
-  }
-  return { columns, rows };
+  const changes = (workbook.suggestions ?? [])
+    .filter((suggestion) => !suggestion.outdated)
+    .flatMap((suggestion) => suggestion.changes);
+  for (const change of changes) if (change.sheetId === sheet.id) include(extent, change.address);
+}
+
+/** Logical geometry includes sparse metadata, not just populated data. */
+export function worksheetExtent(sheet: Worksheet, workbook?: Workbook): WorksheetExtent {
+  const extent = dataExtent(sheet);
+  for (const map of [sheet.style, sheet.formats, sheet.inputValues, sheet.cellProvenance])
+    for (const address of Object.keys(map ?? {})) include(extent, address);
+  for (const [address, size] of Object.entries(sheet.mergeCells ?? {}))
+    include(extent, address, size);
+  if (workbook) includeReview(extent, sheet, workbook);
+  return extent;
 }
 
 /** Calculation ranges ignore annotation and decoration anchors which only extend the viewport. */

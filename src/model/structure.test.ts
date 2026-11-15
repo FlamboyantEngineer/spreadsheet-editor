@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
-import { parseDelimited, serializeDelimited, writeCells } from './editing.js';
+import { parseDelimited, serializeDelimited } from './delimited.js';
+import { writeCells } from './editing.js';
 import { addComment, proposeWorkbookChange } from './review.js';
 import {
   changeWorkbookStructure,
@@ -92,7 +93,7 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
     });
     source = proposeWorkbookChange(
       source,
-      writeCells(source, 'sheet-1', 0, 1, [['4']]),
+      writeCells(source, [['4']], { sheetId: 'sheet-1', x: 0, y: 1 }),
       'Edit A2',
       { id: 'suggestion', actor: { id: 'alex', name: 'Alex' }, time: '2026-11-10T12:00:00Z' },
     );
@@ -186,7 +187,7 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
   it('SE-CHROME-2.1: renaming a sheet rewrites formulas held in pending suggestions', () => {
     const workbook = createWorkbook([['1']]);
     workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['3']] });
-    const proposed = writeCells(workbook, 'sheet-1', 0, 0, [['=Inputs!A1*2']]);
+    const proposed = writeCells(workbook, [['=Inputs!A1*2']], { sheetId: 'sheet-1', x: 0, y: 0 });
     const suggested = proposeWorkbookChange(workbook, proposed, 'Use inputs', {
       id: 'suggestion',
       actor: { id: 'alex', name: 'Alex' },

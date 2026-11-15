@@ -1,9 +1,5 @@
 import { assertWorkbook, DEFAULT_WORKBOOK_LIMITS, type Workbook } from '../model/workbook.js';
-import {
-  calculateWorkbook,
-  type CalculationOptions,
-  type FormulaHost,
-} from './evaluator.js';
+import { calculateWorkbook, type CalculationOptions, type FormulaHost } from './evaluator.js';
 import type { CalculationProvider } from './provider.js';
 import { assertCalculationResult } from './result-validation.js';
 

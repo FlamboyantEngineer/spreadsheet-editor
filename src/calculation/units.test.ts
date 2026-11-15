@@ -24,10 +24,8 @@ describe('SE-CALC-4.1: exact engineering quantities', () => {
     ).toBe('2e-25 mm');
     const changed = formatCells(
       workbook,
-      'sheet-1',
-      { x1: 0, x2: 0, y1: 0, y2: 0 },
-      {},
-      { kind: 'unit', unit: 'm' },
+      { sheetId: 'sheet-1', range: { x1: 0, x2: 0, y1: 0, y2: 0 } },
+      { properties: {}, format: { kind: 'unit', unit: 'm' } },
     );
     expect(requireDefined(changed.worksheets[0].formats).A1.inputUnit).toBe('mm');
     expect(calculateWorkbook(changed).worksheets[0].values[0][0]).toEqual(

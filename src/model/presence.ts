@@ -56,76 +56,80 @@ export function collaboratorSheet(workbook: Workbook, person: SpreadsheetCollabo
   return workbook.worksheets.find((sheet) => sheet.id === person.sheetId);
 }
 
+/** A peer's edit lock as a normalized selection; a malformed lock locks nothing. */
+function lockRange(peer: SpreadsheetCollaborator): CellSelection | undefined {
+  if (!peer.editLock) return undefined;
+  try {
+    return normalizeSelection(peer.editLock);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The peer whose edit lock overlaps a selection on a worksheet. */
 export function selectionLock(
   workbook: Workbook,
-  sheetId: string,
-  selection: CellSelection,
+  { sheetId, selection }: { sheetId: string; selection: CellSelection },
   peers: readonly SpreadsheetCollaborator[],
 ): SpreadsheetCollaborator | undefined {
   return peers.find((peer) => {
     if (!peer.editLock || collaboratorSheet(workbook, peer)?.id !== sheetId) return false;
-    try {
-      const lock = normalizeSelection(peer.editLock);
-      return (
-        lock.x1 <= selection.x2 &&
-        lock.x2 >= selection.x1 &&
-        lock.y1 <= selection.y2 &&
-        lock.y2 >= selection.y1
-      );
-    } catch {
-      return false;
-    }
+    const lock = lockRange(peer);
+    return Boolean(
+      lock &&
+      lock.x1 <= selection.x2 &&
+      lock.x2 >= selection.x1 &&
+      lock.y1 <= selection.y2 &&
+      lock.y2 >= selection.y1,
+    );
   });
 }
+
+type Sheet = Workbook['worksheets'][number];
+
+function dataChanged(sheet: Sheet, next: Sheet, range: CellSelection): boolean {
+  const lastRow = Math.min(range.y2, Math.max(sheet.data.length, next.data.length) - 1);
+  for (let y = range.y1; y <= lastRow; y++) {
+    const width = Math.max(sheet.data[y]?.length ?? 0, next.data[y]?.length ?? 0);
+    for (let x = range.x1; x <= Math.min(range.x2, width - 1); x++)
+      if ((sheet.data[y]?.[x] ?? null) !== (next.data[y]?.[x] ?? null)) return true;
+  }
+  return false;
+}
+
+function decorationChanged(sheet: Sheet, next: Sheet, range: CellSelection): boolean {
+  const changed = new Set([
+    ...Object.keys(sheet.style ?? {}),
+    ...Object.keys(next.style ?? {}),
+    ...Object.keys(sheet.formats ?? {}),
+    ...Object.keys(next.formats ?? {}),
+  ]);
+  return [...changed].some((address) => {
+    const cell = parseSpreadsheetAddress(address);
+    return Boolean(
+      cell &&
+      cell.x >= range.x1 &&
+      cell.x <= range.x2 &&
+      cell.y >= range.y1 &&
+      cell.y <= range.y2 &&
+      (sheet.style?.[address] !== next.style?.[address] ||
+        JSON.stringify(sheet.formats?.[address]) !== JSON.stringify(next.formats?.[address])),
+    );
+  });
+}
+
 /** Advisory UI conflict detection. Authorization and durable conflict handling remain host-owned. */
 export function lockedChange(
   before: Workbook,
   after: Workbook,
   peers: readonly SpreadsheetCollaborator[],
 ): SpreadsheetCollaborator | undefined {
-  for (const peer of peers) {
-    if (!peer.editLock) continue;
-    let range: CellSelection;
-    try {
-      range = normalizeSelection(peer.editLock);
-    } catch {
-      continue;
-    }
+  return peers.find((peer) => {
+    const range = lockRange(peer);
+    if (!range) return false;
     const sheet = collaboratorSheet(before, peer),
       next = after.worksheets.find((value) => value.id === sheet?.id);
-    if (!sheet || !next) continue;
-    const changed = new Set([
-      ...Object.keys(sheet.style ?? {}),
-      ...Object.keys(next.style ?? {}),
-      ...Object.keys(sheet.formats ?? {}),
-      ...Object.keys(next.formats ?? {}),
-    ]);
-    for (
-      let y = range.y1;
-      y <= Math.min(range.y2, Math.max(sheet.data.length, next.data.length) - 1);
-      y++
-    ) {
-      for (
-        let x = range.x1;
-        x <=
-        Math.min(range.x2, Math.max(sheet.data[y]?.length ?? 0, next.data[y]?.length ?? 0) - 1);
-        x++
-      )
-        if ((sheet.data[y]?.[x] ?? null) !== (next.data[y]?.[x] ?? null)) return peer;
-    }
-    for (const address of changed) {
-      const cell = parseSpreadsheetAddress(address);
-      if (
-        cell &&
-        cell.x >= range.x1 &&
-        cell.x <= range.x2 &&
-        cell.y >= range.y1 &&
-        cell.y <= range.y2 &&
-        (sheet.style?.[address] !== next.style?.[address] ||
-          JSON.stringify(sheet.formats?.[address]) !== JSON.stringify(next.formats?.[address]))
-      )
-        return peer;
-    }
-  }
-  return undefined;
+    if (!sheet || !next) return false;
+    return dataChanged(sheet, next, range) || decorationChanged(sheet, next, range);
+  });
 }

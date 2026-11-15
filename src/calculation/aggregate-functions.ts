@@ -1,5 +1,11 @@
 import { type EagerCall, type EagerFunction, requireArity } from './builtin-call.js';
-import { CalculationError, type CellValue, isError, isNumeric, type NumericValue } from './values.js';
+import {
+  CalculationError,
+  type CellValue,
+  isError,
+  isNumeric,
+  type NumericValue,
+} from './values.js';
 
 const COUNTS = ['COUNT', 'COUNTA', 'COUNTBLANK'];
 

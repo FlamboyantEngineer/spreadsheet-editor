@@ -1,6 +1,7 @@
 export * from './apply-operations.js';
 export * from './cell-format.js';
 export * from './clipboard.js';
+export * from './delimited.js';
 export * from './editing.js';
 export * from './extent.js';
 export * from './formula-parser.js';
