@@ -1,4 +1,4 @@
-import type { Workbook, Worksheet } from './workbook.js';
+import { DEFAULT_WORKBOOK_LIMITS, type Workbook, type Worksheet } from './workbook.js';
 import { parseSpreadsheetAddress, parseSpreadsheetRange } from './spreadsheet-addressing.js';
 
 export interface WorksheetExtent {
@@ -85,9 +85,15 @@ export function materializeWorksheetExtent(
     sheet = next.worksheets.find((candidate) => candidate.id === sheetId);
   if (!sheet) throw new RangeError('Unknown worksheet.');
   const extent = worksheetExtent(sheet, next);
-  sheet.minDimensions = sheet.minDimensions
-    ? [extent.columns, extent.rows]
-    : [Math.max(defaults[0], extent.columns), Math.max(defaults[1], extent.rows)];
+  const padded: [number, number] = [
+    Math.max(defaults[0], extent.columns),
+    Math.max(defaults[1], extent.rows),
+  ];
+  // The viewport padding is a convenience: a sheet already near the cell limit keeps its logical extent.
+  sheet.minDimensions =
+    sheet.minDimensions || padded[0] * padded[1] > DEFAULT_WORKBOOK_LIMITS.maxCells
+      ? [extent.columns, extent.rows]
+      : padded;
   return next;
 }
 

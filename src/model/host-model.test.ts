@@ -123,6 +123,34 @@ describe('SE-HOST-MODEL-1: canonical authored quantities and stable extent', () 
   });
 });
 
+describe('SE-HOST-MODEL-1: structure commands on a tall, narrow sheet', () => {
+  it('inserts rows and columns without padding the sheet past the cell limit', () => {
+    const workbook = createWorkbook(
+      Array.from({ length: 10_000 }, (_, y) => Array.from({ length: 20 }, () => String(y))),
+    );
+    const ids = (kind: string) => `${kind}-${Math.random()}`;
+    for (const [axis, size] of [
+      ['row', { columns: 20, rows: 10_001 }],
+      ['column', { columns: 21, rows: 10_000 }],
+    ] as const) {
+      const { workbook: next } = changeWorkbookStructureWithOperations(
+        workbook,
+        'sheet-1',
+        { axis, kind: 'insert', index: 1, count: 1 },
+        ids,
+      );
+      expect(worksheetExtent(next.worksheets[0], next)).toEqual(size);
+    }
+    const small = changeWorkbookStructureWithOperations(
+      createWorkbook([['1']]),
+      'sheet-1',
+      { axis: 'row', kind: 'insert', index: 0, count: 1 },
+      ids,
+    ).workbook;
+    expect(worksheetExtent(small.worksheets[0], small)).toEqual({ columns: 26, rows: 101 });
+  });
+});
+
 describe('SE-HOST-MODEL-2: semantic transactions', () => {
   it('uses the host identity factory when ordinary writes extend either axis', () => {
     const workbook = createWorkbook([['original']]);

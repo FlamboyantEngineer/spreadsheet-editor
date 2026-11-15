@@ -1,3 +1,9 @@
+/**
+ * Text order for calculation: one fixed collation, so a client and a server compare and sort text the
+ * same way whatever their runtime locale.
+ */
+export const TEXT_COLLATOR = new Intl.Collator('en-US');
+
 export interface NumericValue {
   readonly dimension?: import('./units.js').Dimension;
   readonly quantityKind?: string;

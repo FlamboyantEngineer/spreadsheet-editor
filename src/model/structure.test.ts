@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createWorkbook } from './workbook.js';
+import { calculateWorkbook } from '../calculation/evaluator.js';
 import { addComment, proposeWorkbookChange } from './review.js';
 import { writeCells, parseDelimited, serializeDelimited } from './editing.js';
 import {
@@ -146,5 +147,68 @@ describe('SE-EDIT-1: structure and exact formula text', () => {
     const rows = [['1E-25', '0.9999999999999999999999999', 'line\none', 'a,b', '"quoted"']];
     expect(parseDelimited(serializeDelimited(rows, ','), ',')).toEqual(rows);
     expect(parseDelimited('1E-25\t=1-A1\r\n')).toEqual([['1E-25', '=1-A1']]);
+  });
+  it('SE-CHROME-2: reads, rewrites, renames and deletes sheet names outside ASCII', () => {
+    const workbook = createWorkbook([['=Données!A2*2', '=Δ_1!A1']]);
+    workbook.worksheets.push(
+      { id: 'data', name: 'Données', data: [['x'], ['21']] },
+      { id: 'delta', name: 'Δ_1', data: [['5']] },
+    );
+    expect(calculateWorkbook(workbook).worksheets[0].values[0]).toEqual([
+      expect.objectContaining({ numerator: '42', denominator: '1' }),
+      expect.objectContaining({ numerator: '5', denominator: '1' }),
+    ]);
+    const insert = { axis: 'row', kind: 'insert', index: 0, count: 1 } as const;
+    expect(rewriteStructureReferences('=Données!A2*2', 'Sheet1', 'Données', insert)).toBe(
+      '=Données!A3*2',
+    );
+    expect(rewriteStructureReferences('=Données!A2*2', 'Sheet1', 'es', insert)).toBe(
+      '=Données!A2*2',
+    );
+    expect(changeWorkbookStructure(workbook, 'data', insert).worksheets[0].data[0][0]).toBe(
+      '=Données!A3*2',
+    );
+    expect(deleteWorksheet(workbook, 'data').worksheets[0].data[0][0]).toBe('=#REF!*2');
+    expect(renameWorksheet(workbook, 'data', 'Résultats').worksheets[0].data[0][0]).toBe(
+      "='Résultats'!A2*2",
+    );
+  });
+  it('SE-CHROME-2: compares sheet names the same way when renaming, restructuring and deleting', () => {
+    const workbook = createWorkbook([["='  Input   Data '!A1", '=input data!A1']]);
+    workbook.worksheets.push({ id: 'inputs', name: 'Input Data', data: [['3']] });
+    const insert = { axis: 'row', kind: 'insert', index: 0, count: 1 } as const;
+    expect(changeWorkbookStructure(workbook, 'inputs', insert).worksheets[0].data[0]).toEqual([
+      "='  Input   Data '!A2",
+      '=input data!A2',
+    ]);
+    expect(deleteWorksheet(workbook, 'inputs').worksheets[0].data[0]).toEqual(['=#REF!', '=#REF!']);
+  });
+  it('SE-CHROME-2: renaming a sheet rewrites formulas held in pending suggestions', () => {
+    const workbook = createWorkbook([['1']]);
+    workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['3']] });
+    const proposed = writeCells(workbook, 'sheet-1', 0, 0, [['=Inputs!A1*2']]);
+    const suggested = proposeWorkbookChange(workbook, proposed, 'Use inputs', {
+      id: 'suggestion',
+      actor: { id: 'alex', name: 'Alex' },
+      time: '2026-11-10T12:00:00Z',
+    });
+    const renamed = renameWorksheet(suggested, 'inputs', 'Sources');
+    expect(renamed.suggestions?.[0].changes[0].after).toBe("='Sources'!A1*2");
+  });
+  it('SE-CHROME-2: scans long formulas in linear time', () => {
+    const insert = { axis: 'row', kind: 'insert', index: 0, count: 1 } as const;
+    const references =
+      '=' + Array.from({ length: 20_000 }, (_, index) => `A${index + 1}`).join('+');
+    // A long run of words and spaces once made every word start rescan the rest of the run.
+    const words = '=' + 'ab '.repeat(40_000) + 'A1';
+    const started = performance.now();
+    const rewritten = rewriteStructureReferences(references, 'Sheet1', 'Sheet1', insert);
+    expect(rewritten.startsWith('=A2+A3+')).toBe(true);
+    expect(rewritten.endsWith('+A20001')).toBe(true);
+    expect(rewriteStructureReferences(words, 'Sheet1', 'Sheet1', insert)).toBe(
+      '=' + 'ab '.repeat(40_000) + 'A2',
+    );
+    // Generous: the quadratic scan took about 5 seconds here.
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });

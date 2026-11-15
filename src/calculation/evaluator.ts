@@ -3,6 +3,7 @@ import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { parseFormula, FormulaSyntaxError, type FormulaNode } from '../model/formula-parser.js';
 import {
   assertWorkbook,
+  worksheetNameKey,
   type CellInput,
   type Workbook,
   type WorkbookLimits,
@@ -33,6 +34,7 @@ import {
   assertJsonValue,
   assertNumericValue,
   normalizeNumericValue,
+  TEXT_COLLATOR,
 } from './values.js';
 
 export interface CalculationOptions extends NumericOptions, WorkbookLimits {
@@ -347,7 +349,7 @@ export function calculateWorkbook(
         : 1
       : isNumeric(av) && isNumeric(bv)
         ? arithmetic.compare(av, bv)
-        : String(av).toUpperCase().localeCompare(String(bv).toUpperCase());
+        : TEXT_COLLATOR.compare(String(av).toUpperCase(), String(bv).toUpperCase());
   }
   function text(value: Value): string {
     return formatCellValue(checked(scalar(value)), { approximationMarker: false });
@@ -529,9 +531,7 @@ export function calculateWorkbook(
           node.sheetName === null
             ? sheetIndex
             : workbook.worksheets.findIndex(
-                (sheet) =>
-                  sheet.name.trim().replace(/\s+/g, ' ').toUpperCase() ===
-                  node.sheetName!.trim().replace(/\s+/g, ' ').toUpperCase(),
+                (sheet) => worksheetNameKey(sheet.name) === worksheetNameKey(node.sheetName!),
               );
         if (target < 0) throw new CalculationError('#REF!');
         const sheet = workbook.worksheets[target];
