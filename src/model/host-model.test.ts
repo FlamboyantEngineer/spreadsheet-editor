@@ -434,17 +434,28 @@ describe('SE-HOST-MODEL-3.1 and SE-REVIEW-8.1: authored clipboard and canonical 
     const workbook = createWorkbook([['tiny']]);
     workbook.worksheets[0].inputValues = { A1: rational };
     const candidate = writeCells(workbook, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 });
-    const proposal = proposeWorkbookChange(workbook, candidate, 'Replace', stamp);
+    const proposal = proposeWorkbookChange(
+      workbook,
+      { proposed: candidate, summary: 'Replace' },
+      stamp,
+    );
     expect(proposal.suggestions?.[0].changes[0].beforeInputValue).toEqual(rational);
     expect(previewSuggestions(proposal, 'alex').worksheets[0].inputValues?.A1).toBeUndefined();
     expect(
-      decideSuggestion(proposal, 'proposal', 'accepted', { ...stamp, id: 'decision' }).worksheets[0]
-        .inputValues?.A1,
+      decideSuggestion(
+        proposal,
+        { id: 'proposal', decision: 'accepted' },
+        { ...stamp, id: 'decision' },
+      ).worksheets[0].inputValues?.A1,
     ).toBeUndefined();
     const conflicted = structuredClone(proposal);
     requireDefined(conflicted.worksheets[0].inputValues).A1 = { ...rational, numerator: '2' };
     expect(() =>
-      decideSuggestion(conflicted, 'proposal', 'accepted', { ...stamp, id: 'decision' }),
+      decideSuggestion(
+        conflicted,
+        { id: 'proposal', decision: 'accepted' },
+        { ...stamp, id: 'decision' },
+      ),
     ).toThrow('changed since');
   });
 });

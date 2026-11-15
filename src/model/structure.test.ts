@@ -86,11 +86,15 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
     source.worksheets[0].style = { A2: 'font-weight: bold' };
     source.worksheets[0].mergeCells = { A2: [2, 1] };
     source.worksheets.push({ id: 'other', name: 'Other', data: [['=Sheet1!A2']] });
-    source = addComment(source, 'sheet-1', 'A2', 'Move this', {
-      id: 'comment',
-      actor: { id: 'alex', name: 'Alex' },
-      time: '2026-11-10T12:00:00Z',
-    });
+    source = addComment(
+      source,
+      { sheetId: 'sheet-1', range: 'A2', text: 'Move this' },
+      {
+        id: 'comment',
+        actor: { id: 'alex', name: 'Alex' },
+        time: '2026-11-10T12:00:00Z',
+      },
+    );
     const next = changeWorkbookStructure(source, 'sheet-1', {
       axis: 'row',
       kind: 'insert',
@@ -106,15 +110,21 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
   });
   it('marks deleted comment anchors and suggestions instead of silently attaching them elsewhere', () => {
     let source = createWorkbook([['1'], ['2'], ['3']]);
-    source = addComment(source, 'sheet-1', 'A2', 'Deleted', {
-      id: 'comment',
-      actor: { id: 'alex', name: 'Alex' },
-      time: '2026-11-10T12:00:00Z',
-    });
+    source = addComment(
+      source,
+      { sheetId: 'sheet-1', range: 'A2', text: 'Deleted' },
+      {
+        id: 'comment',
+        actor: { id: 'alex', name: 'Alex' },
+        time: '2026-11-10T12:00:00Z',
+      },
+    );
     source = proposeWorkbookChange(
       source,
-      writeCells(source, [['4']], { sheetId: 'sheet-1', x: 0, y: 1 }),
-      'Edit A2',
+      {
+        proposed: writeCells(source, [['4']], { sheetId: 'sheet-1', x: 0, y: 1 }),
+        summary: 'Edit A2',
+      },
       { id: 'suggestion', actor: { id: 'alex', name: 'Alex' }, time: '2026-11-10T12:00:00Z' },
     );
     const next = changeWorkbookStructure(source, 'sheet-1', {
@@ -214,11 +224,15 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
     const workbook = createWorkbook([['1']]);
     workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['3']] });
     const proposed = writeCells(workbook, [['=Inputs!A1*2']], { sheetId: 'sheet-1', x: 0, y: 0 });
-    const suggested = proposeWorkbookChange(workbook, proposed, 'Use inputs', {
-      id: 'suggestion',
-      actor: { id: 'alex', name: 'Alex' },
-      time: '2026-11-10T12:00:00Z',
-    });
+    const suggested = proposeWorkbookChange(
+      workbook,
+      { proposed, summary: 'Use inputs' },
+      {
+        id: 'suggestion',
+        actor: { id: 'alex', name: 'Alex' },
+        time: '2026-11-10T12:00:00Z',
+      },
+    );
     const renamed = renameWorksheet(suggested, 'inputs', 'Sources');
     expect(renamed.suggestions?.[0].changes[0].after).toBe("='Sources'!A1*2");
   });

@@ -218,8 +218,7 @@ export function CommentsPanel({
                   e.commit(
                     setCommentState(
                       e.workbook,
-                      thread.id,
-                      resolved ? 'resolved' : 'open',
+                      { id: thread.id, state: resolved ? 'resolved' : 'open' },
                       e.stamp(),
                     ),
                     resolved ? 'Resolve comment' : 'Reopen comment',
@@ -242,7 +241,7 @@ export function CommentsPanel({
                     submitLabel="Post reply"
                     onSubmit={(text) => {
                       e.commit(
-                        replyToComment(e.workbook, thread.id, text, e.stamp()),
+                        replyToComment(e.workbook, { id: thread.id, text }, e.stamp()),
                         'Reply to comment',
                       );
                       e.setReplyDrafts((drafts) => ({ ...drafts, [thread.id]: '' }));
@@ -264,11 +263,8 @@ export function CommentsPanel({
                           e.commit(
                             editCommentEntry(
                               e.workbook,
-                              thread.id,
-                              post.id,
-                              text,
-                              e.actor.id,
-                              new Date().toISOString(),
+                              { threadId: thread.id, postId: post.id },
+                              { text, actorId: e.actor.id, time: new Date().toISOString() },
                             ),
                             'Edit comment',
                           )
@@ -278,7 +274,11 @@ export function CommentsPanel({
                     e.canComment && post.author === e.actor.id
                       ? () =>
                           e.commit(
-                            deleteCommentEntry(e.workbook, thread.id, post.id, e.actor.id),
+                            deleteCommentEntry(
+                              e.workbook,
+                              { threadId: thread.id, postId: post.id },
+                              e.actor.id,
+                            ),
                             'Delete comment',
                           )
                       : undefined
@@ -299,10 +299,8 @@ export function CommentsPanel({
                                 e.commit(
                                   toggleCommentReaction(
                                     e.workbook,
-                                    thread.id,
-                                    post.id,
-                                    emoji,
-                                    e.actor.id,
+                                    { threadId: thread.id, postId: post.id },
+                                    { emoji, actorId: e.actor.id },
                                   ),
                                   'React to comment',
                                 ),

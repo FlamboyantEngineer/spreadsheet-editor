@@ -85,7 +85,11 @@ export function useComments({
     commit(
       commentScope === 'workbook'
         ? addWorkbookComment(workbook, text, meta)
-        : addComment(workbook, sheet.id, selectionAddress(selection), text, meta),
+        : addComment(
+            workbook,
+            { sheetId: sheet.id, range: selectionAddress(selection), text },
+            meta,
+          ),
       'Add comment',
     );
     setCommentComposer(false);
@@ -113,7 +117,7 @@ export function useComments({
   function decide(id: string, action: 'accepted' | 'rejected') {
     if (canDecide)
       commit(
-        decideSuggestion(workbook, id, action, stamp()),
+        decideSuggestion(workbook, { id, decision: action }, stamp()),
         `${action === 'accepted' ? 'Accept' : 'Reject'} suggestion`,
       );
   }

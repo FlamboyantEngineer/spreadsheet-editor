@@ -128,9 +128,13 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
     );
   });
   it('merges simultaneous same-thread replies and reaction membership; inverse preserves the other actor', () => {
-    const initial = addComment(base(), 'sheet-1', 'A1', 'start', stamp('thread'));
-    const a = replyToComment(initial, 'thread', 'a', stamp('a'));
-    const b = replyToComment(initial, 'thread', 'b', stamp('b'));
+    const initial = addComment(
+      base(),
+      { sheetId: 'sheet-1', range: 'A1', text: 'start' },
+      stamp('thread'),
+    );
+    const a = replyToComment(initial, { id: 'thread', text: 'a' }, stamp('a'));
+    const b = replyToComment(initial, { id: 'thread', text: 'b' }, stamp('b'));
     const reactionA = updateComment(a, 'thread', (thread) => {
       thread.entries[0].reactions = { '+1': ['a'] };
     });
@@ -251,7 +255,11 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
       applyWorkbookTransaction(shared, { ...context, operations: safe.operations }).worksheets[0]
         .data[1][2],
     ).toBe('safe');
-    const annotated = addComment(initial, 'sheet-1', 'A1', 'position', stamp('new-thread'));
+    const annotated = addComment(
+      initial,
+      { sheetId: 'sheet-1', range: 'A1', text: 'position' },
+      stamp('new-thread'),
+    );
     expect(() =>
       applyWorkbookTransaction(shared, {
         ...context,

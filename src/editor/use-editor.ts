@@ -324,7 +324,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       return false;
     }
     const accepted = canSuggest
-      ? proposeWorkbookChange(workbook, next, label, stamp(), operation)
+      ? proposeWorkbookChange(workbook, { proposed: next, summary: label, operation }, stamp())
       : operation
         ? next
         : attributeCellChanges(workbook, next, {
