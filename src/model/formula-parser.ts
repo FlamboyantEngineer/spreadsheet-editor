@@ -1,4 +1,4 @@
-import { parseSpreadsheetColumnName } from './spreadsheet-addressing.js';
+import { parseSpreadsheetColumnName, UNQUOTED_SHEET_NAME } from './spreadsheet-addressing.js';
 
 export interface FormulaSpan {
   start: number;
@@ -36,7 +36,7 @@ const ROW_SPAN_PATTERN = /^\$?([1-9]\d*):\$?([1-9]\d*)(?![A-Za-z0-9_.(])/;
 const NUMBER_PATTERN = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/;
 const ERROR_LITERAL_PATTERN = /^#(?:NULL!|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A)/i;
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_.]*/;
-const UNQUOTED_SHEET_PATTERN = /^[A-Za-z_][A-Za-z0-9_ ]*/;
+const UNQUOTED_SHEET_PATTERN = new RegExp(`^${UNQUOTED_SHEET_NAME}`, 'u');
 function readStringLiteral(
   source: string,
   startIndex: number,
