@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearCalculatedPresentation, renderCalculatedCells } from './cell-renderer.js';
-import type { JSpreadsheetHostHandle } from './jspreadsheet-host.js';
+import type { JSpreadsheetHostHandle } from './jspreadsheet-types.js';
 
 function grid() {
   const cells = [document.createElement('td'), document.createElement('td')];

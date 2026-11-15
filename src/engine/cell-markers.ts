@@ -7,7 +7,10 @@ import {
 import type { Worksheet } from '../model/workbook.js';
 import { worksheetFrom } from './cell-renderer.js';
 import { collaboratorColorIndex } from './collaborator-color.js';
-import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type {
+  JSpreadsheetHostHandle,
+  JSpreadsheetWorksheetInstance,
+} from './jspreadsheet-types.js';
 
 type MarkedWorksheet = JSpreadsheetWorksheetInstance &
   Required<Pick<JSpreadsheetWorksheetInstance, 'getCellFromCoords'>>;

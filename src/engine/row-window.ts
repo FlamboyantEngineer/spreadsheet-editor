@@ -1,6 +1,6 @@
 import { requireDefined } from '../model/require-defined.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 
 /**
  * The engine builds a row element for every worksheet row; only the rows near the viewport are

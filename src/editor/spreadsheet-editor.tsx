@@ -32,7 +32,7 @@ import { formatWorksheetCell } from '../calculation/cell-format.js';
 import type {
   JSpreadsheetAnchorRect,
   JSpreadsheetCellCoords,
-} from '../engine/jspreadsheet-host.js';
+} from '../engine/jspreadsheet-types.js';
 import { worksheetExtent } from '../model/extent.js';
 import { parseFormulaReferenceHighlights } from '../model/formula-reference-parser.js';
 import { requireDefined } from '../model/require-defined.js';

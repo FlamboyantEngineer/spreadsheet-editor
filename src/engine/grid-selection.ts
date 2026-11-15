@@ -3,7 +3,7 @@ import type { CellSelection } from '../model/editing.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { Worksheet } from '../model/workbook.js';
 import { expandMergedSelection, gridBodyBounds } from './grid-geometry.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { gridRowWindow } from './row-window.js';
 
 interface Box {

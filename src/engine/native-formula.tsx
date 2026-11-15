@@ -17,7 +17,7 @@ import {
   parseFormulaReferenceHighlights,
 } from '../model/formula-reference-parser.js';
 import { requireDefined } from '../model/require-defined.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { fitNativeCellEditor } from './native-cell-editor.js';
 
 type FormulaInput = HTMLInputElement | HTMLTextAreaElement;

@@ -15,8 +15,8 @@ import {
 import {
   applyJSpreadsheetColumnMeasure,
   applyJSpreadsheetRowMeasure,
-  type JSpreadsheetWorksheetInstance,
-} from './jspreadsheet-host.js';
+} from './jspreadsheet-measures.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { restoreSharedGridBorders, syncSharedGridBorders } from './shared-grid-borders.js';
 import { gridWorksheetExtent } from './worksheet-data.js';
 

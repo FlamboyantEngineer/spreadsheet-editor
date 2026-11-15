@@ -1,7 +1,7 @@
 import type { CellSelection } from '../model/editing.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { Worksheet } from '../model/workbook.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { gridRowWindow, revealGridRows } from './row-window.js';
 
 /** Zoom is presentation state; all engine measurements are already CSS pixels. */

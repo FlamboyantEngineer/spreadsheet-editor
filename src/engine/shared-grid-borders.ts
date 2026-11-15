@@ -1,4 +1,4 @@
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 
 type Side = 'Top' | 'Right' | 'Bottom' | 'Left';
 const hidden = new WeakMap<HTMLElement, Partial<Record<Side, string>>>();

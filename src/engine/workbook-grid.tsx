@@ -42,16 +42,18 @@ import {
 } from './grid-geometry.js';
 import { measureGridSelection } from './grid-selection.js';
 import { deliveredHeader, useHeaderResize } from './header-resize.js';
+import { JSpreadsheetHost } from './jspreadsheet-host.js';
 import {
   focusJSpreadsheetWorksheet,
-  type JSpreadsheetAnchorRect,
-  type JSpreadsheetCellCoords,
-  JSpreadsheetHost,
-  type JSpreadsheetHostHandle,
-  type JSpreadsheetSelectionRange,
-  type JSpreadsheetWorksheetInstance,
   releaseJSpreadsheetKeyboardOwner,
-} from './jspreadsheet-host.js';
+} from './jspreadsheet-measures.js';
+import type {
+  JSpreadsheetAnchorRect,
+  JSpreadsheetCellCoords,
+  JSpreadsheetHostHandle,
+  JSpreadsheetSelectionRange,
+  JSpreadsheetWorksheetInstance,
+} from './jspreadsheet-types.js';
 import { useNativeFormula } from './native-formula.js';
 import { refreshGridRowWindow, revealGridRows, windowGridRows } from './row-window.js';
 import { createSelectionPublication } from './selection-publication.js';

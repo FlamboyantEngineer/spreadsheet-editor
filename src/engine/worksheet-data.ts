@@ -6,7 +6,7 @@ import {
 } from '../model/extent.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { type CellInput, DEFAULT_WORKBOOK_LIMITS, type Worksheet } from '../model/workbook.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { withLazyRebuild } from './row-window.js';
 
 /** Capture a vendor batch without turning its padded blank viewport into authored data. */

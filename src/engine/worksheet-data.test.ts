@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import {
   captureWorksheetCellChanges,
   gridWorksheetExtent,

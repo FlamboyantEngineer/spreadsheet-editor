@@ -2,7 +2,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CellInput, createWorkbook } from '../model/workbook.js';
 import { renderCalculatedCells } from './cell-renderer.js';
-import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type {
+  JSpreadsheetHostHandle,
+  JSpreadsheetWorksheetInstance,
+} from './jspreadsheet-types.js';
 import { syncSharedGridBorders } from './shared-grid-borders.js';
 import { patchWorksheetData, sameCapture } from './worksheet-data.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';

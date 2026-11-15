@@ -13,7 +13,7 @@ import {
   syncFrozenColumns,
 } from './grid-geometry.js';
 import { measureGridSelection } from './grid-selection.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {

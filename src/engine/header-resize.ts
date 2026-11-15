@@ -17,10 +17,10 @@ import {
   applyJSpreadsheetRowMeasure,
   type JSpreadsheetColumnMeasureSnapshot,
   type JSpreadsheetRowMeasureSnapshot,
-  type JSpreadsheetWorksheetInstance,
   readJSpreadsheetColumnMeasure,
   readJSpreadsheetRowMeasureSnapshot,
-} from './jspreadsheet-host.js';
+} from './jspreadsheet-measures.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 
 interface Options {
   root: RefObject<HTMLDivElement | null>;

@@ -11,7 +11,10 @@ import {
   type PaintFrame,
   releaseCell,
 } from './cell-paint.js';
-import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type {
+  JSpreadsheetHostHandle,
+  JSpreadsheetWorksheetInstance,
+} from './jspreadsheet-types.js';
 
 export type { CellPortal, GridDraft } from './cell-paint.js';
 

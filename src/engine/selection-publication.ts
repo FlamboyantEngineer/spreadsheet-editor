@@ -1,4 +1,4 @@
-import type { JSpreadsheetSelectionRange } from './jspreadsheet-host.js';
+import type { JSpreadsheetSelectionRange } from './jspreadsheet-types.js';
 
 /** Pointer drags publish a bounded amount of React work; keyboard navigation is immediate. */
 export function createSelectionPublication(
