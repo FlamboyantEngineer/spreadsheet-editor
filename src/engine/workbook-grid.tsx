@@ -21,13 +21,12 @@ import { selectionLock, type SpreadsheetCollaborator } from '../model/presence.j
 import { requireDefined } from '../model/require-defined.js';
 import type { SpreadsheetComment, SpreadsheetSuggestion } from '../model/review.js';
 import { type CellInput, createWorkbook, type Worksheet } from '../model/workbook.js';
+import { renderContributors, renderReviewMarkers } from './cell-markers.js';
 import {
   type CellPortal,
   clearCalculatedPresentation,
   type GridDraft,
   renderCalculatedCells,
-  renderContributors,
-  renderReviewMarkers,
 } from './cell-renderer.js';
 import { collaboratorColorIndex } from './collaborator-color.js';
 import {
@@ -648,21 +647,17 @@ export function WorkbookGrid(props: WorkbookGridProps) {
   }, [props.selection, controller]);
   function paint(api: JSpreadsheetHostHandle, current: WorkbookGridProps) {
     // Markers rewrite cell titles, which presentation tooltips share.
-    const markersChanged = renderReviewMarkers(
-      api,
-      current.worksheet.id,
-      current.comments,
-      current.suggestions,
-    );
-    const portalList = renderCalculatedCells(
-      api,
-      current.values,
-      current.display,
-      current.worksheet.data,
-      current.unavailableText,
-      current.worksheet.formats,
-      current.showFormulas,
-      {
+    const markersChanged = renderReviewMarkers(api, current.worksheet.id, {
+      comments: current.comments,
+      suggestions: current.suggestions,
+    });
+    const portalList = renderCalculatedCells(api, current.values, {
+      display: current.display,
+      raw: current.worksheet.data,
+      unavailableText: current.unavailableText,
+      formats: current.worksheet.formats,
+      showFormulas: current.showFormulas,
+      presentation: {
         sheetId: current.worksheet.id,
         draft: current.draft,
         readyCells: current.readyCells,
@@ -670,18 +665,16 @@ export function WorkbookGrid(props: WorkbookGridProps) {
         cellPresentation: current.cellPresentation,
         renderCellContent: current.renderCellContent,
       },
-      markersChanged,
-    );
+      repaint: markersChanged,
+    });
     // An unchanged empty list keeps its identity, so painting causes no render.
     setPortals((previous) =>
       previous.length === 0 && portalList.length === 0 ? previous : portalList,
     );
-    renderContributors(
-      api,
-      current.worksheet,
-      current.showContributors ?? false,
-      current.pickingFormula ? current.selection : undefined,
-    );
+    renderContributors(api, current.worksheet, {
+      visible: current.showContributors ?? false,
+      editing: current.pickingFormula ? current.selection : undefined,
+    });
   }
   useEffect(() => {
     if (handle.current) paint(handle.current, props);

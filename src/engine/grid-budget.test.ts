@@ -57,15 +57,15 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
   it('repaints only cells whose value changed, and cells the engine rewrote', () => {
     const { handle, records } = engineGrid([]);
     const values = [['a', 'b', 'c']];
-    renderCalculatedCells(handle, values, undefined, [['a', 'b', 'c']]);
+    renderCalculatedCells(handle, values, { raw: [['a', 'b', 'c']] });
     const nodes = records[0].map((record) => record.element.firstChild);
-    renderCalculatedCells(handle, [['a', 'B', 'c']], undefined, [['a', 'B', 'c']]);
+    renderCalculatedCells(handle, [['a', 'B', 'c']], { raw: [['a', 'B', 'c']] });
     expect(records[0][0].element.firstChild).toBe(nodes[0]);
     expect(records[0][1].element.textContent).toBe('B');
     expect(records[0][2].element.firstChild).toBe(nodes[2]);
     // The engine writes its raw value when an editor closes; the next paint restores ours.
     records[0][0].element.textContent = '=raw';
-    renderCalculatedCells(handle, [['a', 'B', 'c']], undefined, [['a', 'B', 'c']]);
+    renderCalculatedCells(handle, [['a', 'B', 'c']], { raw: [['a', 'B', 'c']] });
     expect(records[0][0].element.textContent).toBe('a');
   });
 
@@ -79,15 +79,15 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
       ['a', 'b'],
       ['c', 'd'],
     ];
-    renderCalculatedCells(handle, values, undefined, raw);
+    renderCalculatedCells(handle, values, { raw });
     const read = vi.spyOn(records[1][0].element.classList, 'contains');
     // Row 0 has a new values row; row 1 keeps its identity, so its cells are not visited.
-    renderCalculatedCells(handle, [['A', 'b'], values[1]], undefined, raw);
+    renderCalculatedCells(handle, [['A', 'b'], values[1]], { raw });
     expect(records[0][0].element.textContent).toBe('A');
     expect(read).not.toHaveBeenCalled();
     // A cell the engine rewrote is painted again even in an unchanged row.
     records[1][1].element.textContent = '=raw';
-    renderCalculatedCells(handle, [['A', 'b'], values[1]], undefined, raw);
+    renderCalculatedCells(handle, [['A', 'b'], values[1]], { raw });
     expect(records[1][1].element.textContent).toBe('d');
   });
 
@@ -97,9 +97,21 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
     const values = [['a', 'b']];
     const formats = {};
     const presentation = { sheetId: 's', draft: { x: 1, y: 0, text: 'typed' } };
-    renderCalculatedCells(handle, values, undefined, raw, '…', formats, false, presentation);
+    renderCalculatedCells(handle, values, {
+      raw,
+      unavailableText: '…',
+      formats,
+      showFormulas: false,
+      presentation,
+    });
     expect(records[0][1].element.textContent).toBe('typed');
-    renderCalculatedCells(handle, values, undefined, raw, '…', formats, false, { sheetId: 's' });
+    renderCalculatedCells(handle, values, {
+      raw,
+      unavailableText: '…',
+      formats,
+      showFormulas: false,
+      presentation: { sheetId: 's' },
+    });
     expect(records[0][1].element.textContent).toBe('b');
   });
 
@@ -111,9 +123,9 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
       denominator: '2',
       approximate: false,
     });
-    renderCalculatedCells(handle, [[number()]], undefined, [['=3/2']]);
+    renderCalculatedCells(handle, [[number()]], { raw: [['=3/2']] });
     const node = records[0][0].element.firstChild;
-    renderCalculatedCells(handle, [[number()]], undefined, [['=3/2']]);
+    renderCalculatedCells(handle, [[number()]], { raw: [['=3/2']] });
     expect(records[0][0].element.firstChild).toBe(node);
     expect(records[0][0].element.textContent).toBe('1.5');
   });
@@ -121,8 +133,14 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
   it('repaints every cell when display options change', () => {
     const { handle, records } = engineGrid([]);
     const third = { kind: 'number' as const, numerator: '1', denominator: '3', approximate: false };
-    renderCalculatedCells(handle, [[third]], { significantDigits: 32 }, [['=1/3']]);
-    renderCalculatedCells(handle, [[third]], { significantDigits: 3 }, [['=1/3']]);
+    renderCalculatedCells(handle, [[third]], {
+      display: { significantDigits: 32 },
+      raw: [['=1/3']],
+    });
+    renderCalculatedCells(handle, [[third]], {
+      display: { significantDigits: 3 },
+      raw: [['=1/3']],
+    });
     expect(records[0][0].element.textContent).toBe('0.333');
   });
 
