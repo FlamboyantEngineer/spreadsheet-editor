@@ -4,6 +4,7 @@ import { inspectXlsx, type XlsxLimits } from './guard.js';
 import type { ExcelFormulaCapabilities, XlsxImport, XlsxWarning } from './contracts.js';
 import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
 import { importCellStyle, importNumberFormat } from './styles.js';
+import { serializeCellStyle } from '../model/editing.js';
 import { createArithmetic } from '../calculation/rational.js';
 import { formatCellValue } from '../calculation/format.js';
 import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
@@ -190,14 +191,14 @@ export async function convertXlsx(
         while (values.length < x) values.push(null);
         values[x - 1] = value;
         const style = importCellStyle(cell.style, theme);
-        const alignment = cell.alignment?.horizontal
-          ? ''
-          : typeof value === 'boolean' || (typeof value === 'string' && value.startsWith('#'))
-            ? 'text-align:center'
-            : authoredNumbers.has(address)
-              ? 'text-align:right'
-              : 'text-align:left';
-        sheet.style![address] = [style, alignment].filter(Boolean).join(';');
+        if (!cell.alignment?.horizontal)
+          style['text-align'] =
+            typeof value === 'boolean' || (typeof value === 'string' && value.startsWith('#'))
+              ? 'center'
+              : authoredNumbers.has(address)
+                ? 'right'
+                : 'left';
+        sheet.style![address] = serializeCellStyle(style);
         sheet.cellProvenance![address] = {
           actor: { id: 'system', name: 'System' },
           source: 'system',

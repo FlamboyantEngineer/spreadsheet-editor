@@ -102,10 +102,11 @@ export function exportNumberFormat(format?: LocalizedFormat): string {
     decimal = places ? '.' + '0'.repeat(places) : '';
   return `${prefix}${format.kind === 'number' || format.kind === 'currency' ? '#,##' : ''}0${decimal}${format.kind === 'percent' ? '%' : format.kind === 'scientific' ? 'E+00' : format.kind === 'unit' ? ` "${format.unit}"` : ''}`;
 }
+/** Map an Excel cell style to the model's style properties; the caller serializes them. */
 export function importCellStyle(
   style: Partial<ExcelJS.Style>,
   theme: readonly string[] = [],
-): string {
+): Record<string, string> {
   const color = (value: Parameters<typeof excelColor>[0]) => excelColor(value, theme);
   const values: Record<string, string> = {},
     font = style.font;
@@ -129,9 +130,7 @@ export function importCellStyle(
   for (const side of ['top', 'right', 'bottom', 'left'] as const)
     if (style.border?.[side]?.style)
       values[`border-${side}`] = `1px solid ${color(style.border[side]?.color) ?? '#000000'}`;
-  return Object.entries(values)
-    .map(([key, value]) => `${key}:${value}`)
-    .join(';');
+  return values;
 }
 export function exportCellStyle(properties: Record<string, string>): Partial<ExcelJS.Style> {
   const font: Partial<ExcelJS.Font> = {},

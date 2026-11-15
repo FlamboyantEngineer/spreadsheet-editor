@@ -11,6 +11,7 @@ import { importNumberFormat, exportNumberFormat } from './styles.js';
 import type { ExcelFormulaCapabilities } from './contracts.js';
 import { calculateWorkbook } from '../calculation/evaluator.js';
 import { createWorkbook } from '../model/workbook.js';
+import { formatCells } from '../model/editing.js';
 
 describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
   it('keeps formulas and geometry while discarding caches and reporting unsupported content', async () => {
@@ -38,7 +39,7 @@ describe('SE-XL-1/2: Excel conversion and loss reporting', () => {
     });
     expect(converted.data[1][0]).toBe('Rich text');
     expect(converted.formats!.B2).toMatchObject({ kind: 'percent', decimals: 2 });
-    expect(converted.style!.B2).toContain('font-weight:bold');
+    expect(converted.style!.B2).toContain('font-weight: bold');
     expect(converted.style!.B2).toContain('#175cd3');
     expect(converted.columns![0].width).toBe(145);
     expect(converted.rows!['1'].height).toBe(32);
@@ -154,8 +155,8 @@ it('SE-XL-1.2: resolves theme tints and indexed colors to authored hex styles', 
   sheet.getCell('A2').value = 2;
   sheet.getCell('A2').font = { color: { indexed: 10 } as Partial<ExcelJS.Color> };
   const converted = await convertXlsx(new Uint8Array(await document.xlsx.writeBuffer()));
-  expect(converted.workbook.worksheets[0].style!.A1).toMatch(/color:#[0-9a-f]{6}/);
-  expect(converted.workbook.worksheets[0].style!.A2).toContain('color:#ff0000');
+  expect(converted.workbook.worksheets[0].style!.A1).toMatch(/color: #[0-9a-f]{6}/);
+  expect(converted.workbook.worksheets[0].style!.A2).toContain('color: #ff0000');
 });
 
 const exampleCapabilities: ExcelFormulaCapabilities = {
@@ -461,4 +462,26 @@ it('SE-XLSX-4: rejects malformed quantity and provenance result metadata at the 
     Object.assign(result.worksheets[0].values[0][0]!, metadata);
     await expect(exportXlsx(workbook, result)).rejects.toThrow();
   }
+});
+
+it('SE-CHROME-1: an imported style and the same style applied in the editor store the same text', async () => {
+  const document = new ExcelJS.Workbook(),
+    sheet = document.addWorksheet('Styles');
+  sheet.getCell('A1').value = 'Label';
+  sheet.getCell('A1').font = { bold: true };
+  const imported = (await convertXlsx(new Uint8Array(await document.xlsx.writeBuffer()))).workbook;
+  const style = imported.worksheets[0].style!.A1;
+  expect(style).toBe('font-weight: bold; text-align: left');
+  const cell = { x1: 0, y1: 0, x2: 0, y2: 0 };
+  const plain = { ...imported, worksheets: [{ ...imported.worksheets[0], style: {} }] };
+  const edited = formatCells(plain, imported.worksheets[0].id, cell, {
+    'font-weight': 'bold',
+    'text-align': 'left',
+  });
+  expect(edited.worksheets[0].style!.A1).toBe(style);
+  // Re-applying the imported properties leaves the stored text unchanged.
+  expect(
+    formatCells(imported, imported.worksheets[0].id, cell, { 'font-weight': 'bold' }).worksheets[0]
+      .style!.A1,
+  ).toBe(style);
 });
