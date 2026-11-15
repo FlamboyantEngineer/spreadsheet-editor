@@ -14,7 +14,7 @@ import { AvatarGroup } from '@flamboyantengineer/ui-components/avatar-group';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import { SaveStatus } from '@flamboyantengineer/ui-components/save-status';
 import { Tooltip } from '@flamboyantengineer/ui-components/tooltip';
-import { collaboratorColorIndex } from '../model/presence.js';
+import { collaboratorColorIndex } from '../engine/collaborator-color.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
 import { UNIT_PRESETS } from '../calculation/units.js';
 import { editorCommandMetadata, editorGlyphs, numberFormatGlyphs } from './editor-commands.js';
