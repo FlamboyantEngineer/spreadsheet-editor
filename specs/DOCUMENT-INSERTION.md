@@ -4,10 +4,10 @@
 
 The selected range can become a normal table or a live spreadsheet. Payloads carry `schemaVersion: 1`, `sheetId` and normalized A1 range.
 
-- A table payload carries calculated text cells, merge spans, ordinary ProseMirror table JSON and escaped HTML. Formulas are replaced by their current displayed values. Empty cells remain valid paragraphs. It requires matching result dimensions; callers of the headless helper supply results for the current workbook. The React editor enforces current-result identity before enabling insertion.
+- A table payload carries rows of calculated text cells with their merge spans (`rows`) and escaped HTML (`html`). Formulas are replaced by their current displayed values. Empty cells remain valid paragraphs. It requires matching result dimensions; callers of the headless helper supply results for the current workbook. The React editor enforces current-result identity before enabling insertion.
 - A live spreadsheet payload carries a deep copy of the entire source workbook, including raw formulas and referenced worksheets. It is independently editable. The selected range describes the intended document view; dependency data outside that selection is retained. The consumer owns its embedded node, React view, persistence and range presentation.
 
-The ordinary JSON uses `table`, `table_row`, `table_cell`, `paragraph` and `text` nodes with colspan, rowspan and colwidth cell attributes. This matches the document editor's table schema. Hosts can assign their own document element identifiers during insertion.
+`rows` is the neutral payload: each row lists the cells that start in it, `{ text, colspan, rowspan }`, and a cell a merge covers is left out. The document editor turns it into its stored table content with `tableFromRows` from its `./document` entry and gives the table its element identifiers as it inserts it; any other consumer reads the rows or the HTML. A live spreadsheet payload maps onto a document embed: the host keeps the workbook, names it and the range in the embed's `source` and its revision in `snapshot`, and its embed source answers with the range's calculated rows through `tableFromRows`.
 
 Implementation: `src/document/insertion.ts`, `src/editor/spreadsheet-editor.tsx`.
 

@@ -9,12 +9,6 @@ import type { CalculationResult } from '../calculation/evaluator.js';
 import type { DisplayOptions } from '../calculation/format.js';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
 
-export interface DocumentNode {
-  type: string;
-  attrs?: Record<string, unknown>;
-  text?: string;
-  content?: DocumentNode[];
-}
 export interface DocumentTableCell {
   text: string;
   colspan: number;
@@ -25,9 +19,8 @@ export interface DocumentTableInsertion {
   schemaVersion: 1;
   sheetId: string;
   range: string;
+  /** Calculated text cells; the document editor's `tableFromRows` turns them into its table. */
   rows: DocumentTableCell[][];
-  /** ProseMirror-compatible ordinary table JSON. */
-  node: DocumentNode;
   html: string;
 }
 export interface LiveSpreadsheetInsertion {
@@ -128,22 +121,6 @@ export function createDocumentInsertion(
     }
     rows.push(row);
   }
-  const node: DocumentNode = {
-    type: 'table',
-    content: rows.map((row) => ({
-      type: 'table_row',
-      content: row.map((cell) => ({
-        type: 'table_cell',
-        attrs: { colspan: cell.colspan, rowspan: cell.rowspan, colwidth: null },
-        content: [
-          {
-            type: 'paragraph',
-            ...(cell.text ? { content: [{ type: 'text', text: cell.text }] } : {}),
-          },
-        ],
-      })),
-    })),
-  };
   const html = `<table><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td colspan="${cell.colspan}" rowspan="${cell.rowspan}">${escapeHtml(cell.text)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   return {
     kind: 'table',
@@ -151,7 +128,6 @@ export function createDocumentInsertion(
     sheetId: sheet.id,
     range: range.address,
     rows,
-    node,
     html,
   };
 }
