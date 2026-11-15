@@ -1,3 +1,4 @@
+import { FORMULA_WORD_CHARACTER } from './spreadsheet-addressing.js';
 export type FormulaReferenceTarget =
   | {
       kind: 'cell';
@@ -43,7 +44,7 @@ export type FormulaReferenceTokenSegment = {
 
 type ParsedReferenceCandidate = Omit<FormulaReferenceHighlight, 'id' | 'colorIndex'>;
 
-const FORMULA_REFERENCE_BOUNDARY_PATTERN = /[A-Za-z0-9_.]/;
+const FORMULA_REFERENCE_BOUNDARY_PATTERN = FORMULA_WORD_CHARACTER;
 const FORMULA_REFERENCE_TOKEN_STOP_PATTERN = /[\s,;()+\-*/^&=<>{}]/;
 
 export const FORMULA_REFERENCE_HIGHLIGHT_COLORS = [

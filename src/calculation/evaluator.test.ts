@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createWorkbook, type Workbook } from '../model/workbook.js';
 import { calculateWorkbook } from './evaluator.js';
 import { createArithmetic } from './rational.js';
@@ -63,6 +63,16 @@ describe('SE-CALC-1: exact arithmetic', () => {
       b.sqrt(b.parse('2')).numerator.length,
     );
     expect(a.sqrt(a.parse('2')).precision).toBe(32);
+  });
+});
+
+describe('SE-CALC-2: text order does not follow the runtime locale', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('compares text with one fixed collation', () => {
+    const localeCompare = vi.spyOn(String.prototype, 'localeCompare');
+    expect(calculate('=IF("Äpfel"<"Birnen",1,0)')).toEqual(exact('1'));
+    expect(calculate('=IF("a"="A",1,0)')).toEqual(exact('1'));
+    expect(localeCompare).not.toHaveBeenCalled();
   });
 });
 

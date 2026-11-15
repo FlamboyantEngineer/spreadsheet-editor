@@ -1,5 +1,5 @@
 import type { ReviewActor } from './review.js';
-import type { Workbook } from './workbook.js';
+import { worksheetNameKey, type Workbook } from './workbook.js';
 import { normalizeSelection, type CellSelection } from './editing.js';
 import { parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 
@@ -43,8 +43,7 @@ export function collaboratorSheet(workbook: Workbook, person: SpreadsheetCollabo
     workbook.worksheets.find(
       (sheet) =>
         person.sheetName !== undefined &&
-        sheet.name.trim().replace(/\s+/g, ' ').toUpperCase() ===
-          person.sheetName.trim().replace(/\s+/g, ' ').toUpperCase(),
+        worksheetNameKey(sheet.name) === worksheetNameKey(person.sheetName),
     ) ??
     (person.sheetIndex === undefined ? undefined : workbook.worksheets[person.sheetIndex])
   );

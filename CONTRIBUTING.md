@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node 24 (selected by `.nvmrc` and CI), `npm ci`, and a scoped branch from `dev`. Node 22.13+ within Node 22 is also supported. The minimum matches the lint and DOM test toolchain. `.npmrc` enforces the engine range. On Windows, check `where.exe node` and `node --version` after switching versions; an older standalone installation earlier on `PATH` can override a version manager. Restart terminals and editors after changing the system installation or persistent `PATH`.
+Use Node 24 (selected by `.nvmrc` and CI), `npm ci`, and a short-lived branch from `dev`, merged back into `dev` by pull request once CI passes. `main` is updated only from `dev` through a reviewed release pull request. Node 22.13+ within Node 22 is also supported. The minimum matches the lint and DOM test toolchain. `.npmrc` enforces the engine range. On Windows, check `where.exe node` and `node --version` after switching versions; an older standalone installation earlier on `PATH` can override a version manager. Restart terminals and editors after changing the system installation or persistent `PATH`.
 
 The public `@flamboyantengineer/ui-components` library from [FlamboyantEngineer/ui-components](https://github.com/FlamboyantEngineer/ui-components) is pinned by Git SHA in the development manifest and lockfile; hosts supply it as a peer. npm's skipped-integrity warning for this Git package is expected; retain the reviewed full SHA. Keep React as a peer to avoid multiple renderer instances. Labs consume the public `/labs` entry point for `mountLabBar` and `bootLabSettings`; keep shell behavior in that shared code and the browser-storage adapter in `labs/`.
 
@@ -8,12 +8,14 @@ Git normalizes text checkouts to LF through `.gitattributes`, including on Windo
 
 ExcelJS 4.4.0 is still the latest stable upstream release. Scoped npm overrides select its compatible CommonJS archiver 7, fast-csv 5, unzipper 0.12 and uuid 11 dependencies; archiver-utils uses the maintained glob 14 API. These remove deprecated transitive packages without replacing the Excel adapter. A separate minimatch 10 override selects patched minimatch 11 for the lint toolchain. Review these overrides when upgrading their owners, and run the full check including Excel round trips. npm overrides apply to this root checkout; downstream hosts installing the package must manage their own dependency policy.
 
-Run `npm run labs` to install or repair its locked dependencies, build and serve the standalone demos, including the server evaluator. Changes require `npm run check` before commit. Use TypeScript tests beside source and browser tests under `e2e/`; test observable behavior and name the owning `SE-*` requirement. Update specifications and public type documentation with contract changes.
+Run `npm run labs` to install or repair its locked dependencies, build and serve the standalone demos, including the server evaluator. Before each commit, run the gates in [AGENTS.md](AGENTS.md#gates) that cover the change; CI runs `npm run check`. Use TypeScript tests beside source and browser tests under `e2e/`; test observable behavior and name the owning `SE-*` requirement. Update specifications and public type documentation with contract changes.
 
 Keep the model, calculation and document entry points usable without React or DOM globals. Exact values use reduced numerator/denominator strings; scientific input is parsed directly into integers. JavaScript numeric arithmetic is for indexes, budgets and presentation dimensions only. Decimal approximation contexts are local to a calculation. Do not use dynamic code generation to evaluate formulas.
 
 All generic UI controls use the base component library. React owns the toolbar, formula bar, worksheet tabs and status. Only `src/engine/` may touch Jspreadsheet-owned DOM. Library source loads no stylesheet and contains no application routes or persistence. Style hooks are documented in `specs/HOOK-CONTRACT.md`; reference CSS belongs in labs.
 
-The package is experimental until 1.0. Keep serialized model versions explicit and document incompatible changes. The initial extraction deliberately leaves consumer migration to separate changes. Source modules and their origin commit are recorded in NOTICE.md.
+## Versioning
+
+The package is experimental until 1.0: use minor versions for API additions, removals and reorganizations, and patches for fixes that keep the API. Remove obsolete APIs without deprecation periods or compatibility shims. Keep serialized model versions explicit and document incompatible changes. Every pull request that changes the published package adds a changeset (`npx changeset`, see [.changeset/README.md](.changeset/README.md)); `npx changeset version` turns them into the next version and its `CHANGELOG.md` entry.
 
 The base component repository is public. Local installs and CI need no private-library token. Never put credentials in manifests or lockfiles.

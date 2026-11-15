@@ -23,6 +23,14 @@
  * shared math.
  */
 
+/**
+ * An unquoted worksheet name inside a formula: a letter in any script or `_`, then letters, digits, `_`
+ * or spaces. Use with the `u` flag.
+ */
+export const UNQUOTED_SHEET_NAME = String.raw`[\p{L}_][\p{L}\p{N}_ ]*`;
+/** A character that continues a formula word, so a reference cannot start right after it. */
+export const FORMULA_WORD_CHARACTER = /[\p{L}\p{N}_.]/u;
+
 /** Parsed spreadsheet `A1` address coordinates (0-based). */
 interface SpreadsheetAddress {
   x: number;

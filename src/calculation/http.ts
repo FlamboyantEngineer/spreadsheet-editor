@@ -1,11 +1,16 @@
-import { assertWorkbook, type Workbook } from '../model/workbook.js';
+import { assertWorkbook, DEFAULT_WORKBOOK_LIMITS, type Workbook } from '../model/workbook.js';
 import {
   calculateWorkbook,
   type CalculationOptions,
   type CalculationResult,
   type FormulaHost,
 } from './evaluator.js';
-import { assertNumericValue, assertJsonValue, type CellValue } from './values.js';
+import {
+  assertNumericValue,
+  assertJsonValue,
+  FORMULA_ERROR_CODES,
+  type CellValue,
+} from './values.js';
 import type { CalculationProvider } from './provider.js';
 
 interface CalculationRequest {
@@ -14,6 +19,15 @@ interface CalculationRequest {
   workbook: Workbook;
   options?: CalculationOptions;
 }
+
+/**
+ * Default transport limits follow the cell limit: a request may use 64 bytes per cell and a response
+ * 256 bytes per cell, so a workbook the cell limit accepts is not refused for its size.
+ */
+const REQUEST_BYTES_PER_CELL = 64,
+  RESPONSE_BYTES_PER_CELL = 256;
+
+class BodyTooLargeError extends RangeError {}
 
 async function readJson(
   body: ReadableStream<Uint8Array> | null,
@@ -31,7 +45,7 @@ async function readJson(
       size += value.byteLength;
       if (size > maxBytes) {
         await reader.cancel();
-        throw new RangeError('JSON body exceeds the byte limit.');
+        throw new BodyTooLargeError('JSON body exceeds the byte limit.');
       }
       text += decoder.decode(value, { stream: true });
     }
@@ -65,26 +79,7 @@ export function assertCalculationResult(
     output.values.forEach((row, y) => {
       if (!Array.isArray(row) || row.length !== sheet.data[y].length)
         throw new TypeError('Result does not match the row.');
-      for (const cell of row) {
-        if (cell === null || typeof cell === 'string' || typeof cell === 'boolean') continue;
-        if (!cell || typeof cell !== 'object') throw new TypeError('Invalid calculated cell.');
-        if (
-          cell.kind === 'error' &&
-          [
-            '#DIV/0!',
-            '#VALUE!',
-            '#REF!',
-            '#NAME?',
-            '#NUM!',
-            '#N/A',
-            '#ERROR!',
-            '#LIMIT!',
-            '#CYCLE!',
-          ].includes(cell.code)
-        )
-          continue;
-        assertNumericValue(cell);
-      }
+      for (const cell of row) validateCell(cell);
     });
   }
   if (result.context !== undefined) {
@@ -180,6 +175,7 @@ export interface HttpCalculatorOptions {
   fetch?: typeof globalThis.fetch;
   headers?: HeadersInit;
   credentials?: RequestCredentials;
+  /** Defaults to 256 bytes per cell of the requested cell limit (64 MB for 250,000 cells). */
   maxResponseBytes?: number;
 }
 
@@ -207,7 +203,12 @@ export function createHttpCalculator(
         } satisfies CalculationRequest),
       });
       if (!response.ok) throw new Error(`Calculation server returned HTTP ${response.status}.`);
-      const body = await readJson(response.body, options.maxResponseBytes ?? 16 * 1024 * 1024);
+      const body = await readJson(
+        response.body,
+        options.maxResponseBytes ??
+          (calculationOptions?.maxCells ?? DEFAULT_WORKBOOK_LIMITS.maxCells) *
+            RESPONSE_BYTES_PER_CELL,
+      );
       if (
         !body ||
         typeof body !== 'object' ||
@@ -227,6 +228,7 @@ export interface CalculationHandlerOptions {
   host?: FormulaHost;
   /** Server ceilings take precedence over caller-requested limits. */
   limits?: CalculationOptions;
+  /** Defaults to 64 bytes per cell of the server's cell limit (16 MB for 250,000 cells). */
   maxRequestBytes?: number;
 }
 
@@ -239,9 +241,7 @@ function boundedOptions(requested: unknown, ceilings: CalculationOptions = {}): 
   const options = requested as Record<string, unknown> | undefined;
   const result: Record<string, number> = {};
   const defaults: Required<Omit<CalculationOptions, 'timeZone' | 'wordSizeBits'>> = {
-    maxCells: 250_000,
-    maxCellLength: 10_000,
-    maxWorksheets: 200,
+    ...DEFAULT_WORKBOOK_LIMITS,
     maxOperations: 2_000_000,
     maxDepth: 128,
     maxIntegerDigits: 10_000,
@@ -286,7 +286,12 @@ export async function handleCalculationRequest(
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))
     return Response.json({ error: 'Expected application/json.' }, { status: 415 });
   try {
-    const value = await readJson(request.body, configuration.maxRequestBytes ?? 2 * 1024 * 1024);
+    const value = await readJson(
+      request.body,
+      configuration.maxRequestBytes ??
+        (configuration.limits?.maxCells ?? DEFAULT_WORKBOOK_LIMITS.maxCells) *
+          REQUEST_BYTES_PER_CELL,
+    );
     if (!value || typeof value !== 'object') throw new TypeError('Invalid calculation request.');
     const body = value as Partial<CalculationRequest>;
     if (
@@ -303,36 +308,24 @@ export async function handleCalculationRequest(
       { headers: { 'cache-control': 'no-store' } },
     );
   } catch (error) {
+    if (!(error instanceof RangeError))
+      return Response.json({ error: 'Invalid calculation request.' }, { status: 400 });
+    // Say which limit was hit: the request's byte size, or a workbook or calculation limit.
     return Response.json(
       {
-        error:
-          error instanceof RangeError
-            ? 'Calculation request exceeds a configured limit.'
-            : 'Invalid calculation request.',
+        error: 'Calculation request exceeds a configured limit.',
+        limit: error instanceof BodyTooLargeError ? 'requestBytes' : 'workbook',
+        detail: error.message,
       },
-      { status: error instanceof RangeError ? 413 : 400 },
+      { status: 413 },
     );
   }
 }
 
 function validateCell(value: CellValue): void {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
-  if (
-    value &&
-    typeof value === 'object' &&
-    value.kind === 'error' &&
-    [
-      '#DIV/0!',
-      '#VALUE!',
-      '#REF!',
-      '#NAME?',
-      '#NUM!',
-      '#N/A',
-      '#ERROR!',
-      '#LIMIT!',
-      '#CYCLE!',
-    ].includes(value.code)
-  )
+  if (!value || typeof value !== 'object') throw new TypeError('Invalid calculated cell.');
+  if (value.kind === 'error' && (FORMULA_ERROR_CODES as readonly string[]).includes(value.code))
     return;
   assertNumericValue(value);
 }
