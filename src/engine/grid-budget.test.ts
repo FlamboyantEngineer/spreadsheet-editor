@@ -7,8 +7,11 @@ import { patchWorksheetData, sameCapture } from './worksheet-data.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
 import type { JSpreadsheetHostHandle, JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
 
-/** A 26 × 100 engine grid, the smallest the editor shows, with CE's padded data. */
-function engineGrid(data: CellInput[][]) {
+/**
+ * A 26 × 100 engine grid, the smallest the editor shows, with CE's padded data. Tests that
+ * measure every cell use fewer rows: jsdom's computed style costs about a millisecond a cell.
+ */
+function engineGrid(data: CellInput[][], height = 100) {
   const table = document.createElement('table');
   const head = table.createTHead().insertRow();
   head.insertCell().textContent = '';
@@ -16,7 +19,7 @@ function engineGrid(data: CellInput[][]) {
   const records: { element: HTMLTableCellElement }[][] = [];
   const rows: { element: HTMLTableRowElement }[] = [];
   const padded: CellInput[][] = [];
-  for (let y = 0; y < 100; y++) {
+  for (let y = 0; y < height; y++) {
     const row = body.insertRow();
     row.insertCell().className = 'jss_row';
     rows.push({ element: row });
@@ -165,7 +168,7 @@ describe('SE-PERF-1: grid work scales with what changed', () => {
   });
 
   it('restyles only cells whose authored style changed while zoom is unchanged', () => {
-    const { engine, records } = engineGrid([['1', '2']]);
+    const { engine, records } = engineGrid([['1', '2']], 10);
     const sheet = createWorkbook([['1', '2']]).worksheets[0];
     syncWorksheetPresentation(engine, null, sheet, false, 125);
     expect(records[5][5].element.style.padding).not.toBe('');
