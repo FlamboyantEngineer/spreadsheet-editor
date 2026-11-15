@@ -37,7 +37,7 @@ describe('SE-CALC-4.1: exact and dimensionally valid selection statistics', () =
     expect(
       summarizeCellValues([
         makeQuantity(arithmetic.parse('1'), 'J'),
-        makeQuantity(arithmetic.parse('1'), 'N*m', {}, 'torque'),
+        makeQuantity(arithmetic.parse('1'), 'N*m', { quantityKind: 'torque' }),
       ]),
     ).toMatchObject({ sum: null, average: null });
   });

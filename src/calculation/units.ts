@@ -307,12 +307,16 @@ export function resolveUnit(unit: string, options: NumericOptions = {}) {
       .join('*') || undefined;
   return { dimension, factor, offset: math.parse('0'), quantityKind };
 }
+/** Options for `makeQuantity`: the arithmetic context and the quantity's physical kind. */
+export interface QuantityOptions extends NumericOptions {
+  quantityKind?: string;
+}
 export function makeQuantity(
   value: NumericValue,
   unit: string,
-  options: NumericOptions = {},
-  quantityKind?: string,
+  options: QuantityOptions = {},
 ): NumericValue {
+  const { quantityKind } = options;
   const math = createArithmetic(options),
     definition = resolveUnit(unit, options);
   if (quantityKind && definition.quantityKind && quantityKind !== definition.quantityKind)

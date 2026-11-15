@@ -95,9 +95,11 @@ describe('SE-CALC-4.1: complete quantity metadata and registry', () => {
   });
   it('preserves physical kinds through scalars and rejects incompatible explicit kinds', () => {
     const energy = makeQuantity(numeric.parse('1'), 'J'),
-      torque = makeQuantity(numeric.parse('1'), 'N*m', {}, 'torque');
+      torque = makeQuantity(numeric.parse('1'), 'N*m', { quantityKind: 'torque' });
     expect(() => math.add(energy, torque)).toThrow('#VALUE!');
-    expect(() => makeQuantity(numeric.parse('1'), 'J', {}, 'torque')).toThrow('#VALUE!');
+    expect(() => makeQuantity(numeric.parse('1'), 'J', { quantityKind: 'torque' })).toThrow(
+      '#VALUE!',
+    );
     expect(math.multiply(energy, numeric.parse('2')).quantityKind).toBe('energy');
     expect(math.multiply(numeric.parse('2'), energy).quantityKind).toBe('energy');
     expect(math.divide(energy, numeric.parse('2')).quantityKind).toBe('energy');

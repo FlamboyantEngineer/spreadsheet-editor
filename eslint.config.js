@@ -21,16 +21,6 @@ const FORMULA_SYNTAX = [
   },
 ];
 
-const SIZE_LIMITS_PENDING = [
-  'src/calculation/**',
-  'src/document/**',
-  'src/editor/**',
-  'src/engine/**',
-  'src/excel/**',
-  'src/host/**',
-  'src/model/**',
-];
-
 const STORAGE_GLOBALS = ['localStorage', 'sessionStorage', 'indexedDB'].map((name) => ({
   name,
   message: 'Persist through a host callback (specs/HOST-INTEGRATION.md).',
@@ -66,19 +56,6 @@ export default tseslint.config(
     rules: {
       'no-restricted-globals': ['error', ...STORAGE_GLOBALS],
       'no-restricted-syntax': ['error', ENUM_SYNTAX, ...FORMULA_SYNTAX],
-    },
-  },
-  {
-    // The shared size limits are being adopted area by area: each refactor pull request removes its
-    // area from this list until it is empty.
-    files: SIZE_LIMITS_PENDING,
-    ignores: ['src/**/*.test.{ts,tsx}'],
-    rules: {
-      complexity: 'off',
-      'max-depth': 'off',
-      'max-params': 'off',
-      'max-lines': 'off',
-      'max-lines-per-function': 'off',
     },
   },
 );

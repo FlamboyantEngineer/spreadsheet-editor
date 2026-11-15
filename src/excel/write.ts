@@ -83,7 +83,7 @@ function inlineHostOperands(
     }
     if (host) {
       const stored = node.span
-        ? result.context?.operands[formulaOperandKey(sheetId, x, y, node.span.start, node.span.end)]
+        ? result.context?.operands[formulaOperandKey({ sheetId, x, y }, node.span)]
         : undefined;
       if (
         !stored ||
