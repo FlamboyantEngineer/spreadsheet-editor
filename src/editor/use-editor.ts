@@ -11,6 +11,7 @@ import { attributeCellChanges } from '../model/provenance.js';
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { calculationCellKey, pendingCalculationCells } from '../calculation/publication.js';
 import { commandOperations } from './command-operations.js';
+import { historyEntry, rebuildWorkbook, type HistoryEntry } from './history.js';
 import {
   changeWorkbookStructureWithOperations,
   collectCellOperations,
@@ -180,8 +181,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
   const workbook = props.value ?? local;
   const [history, setHistory] = useState<{
     head: Workbook | null;
-    past: { workbook: Workbook; label: string; operations: WorkbookOperation[] }[];
-    future: { workbook: Workbook; label: string; operations: WorkbookOperation[] }[];
+    past: HistoryEntry[];
+    future: HistoryEntry[];
   }>({ head: null, past: [], future: [] });
   const currentHistory =
     history.head === workbook ? history : { head: workbook, past: [], future: [] };
@@ -504,11 +505,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
       head: next,
       past: [
         ...currentHistory.past.slice(-49),
-        {
-          workbook: copyWorkbook(workbook),
-          label,
-          operations: structuredClone(acceptedOperations),
-        },
+        historyEntry(workbook, next, label, structuredClone(acceptedOperations)),
       ],
       future: [],
     });
@@ -748,17 +745,15 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     }
     const previous = currentHistory.past.at(-1);
     if (!previous) return;
-    publish(previous.workbook, invertWorkbookOperations(previous.operations), 'undo');
+    const target =
+      'snapshot' in previous ? previous.snapshot : rebuildWorkbook(workbook, previous, 'before');
+    publish(target, invertWorkbookOperations(previous.operations), 'undo');
     setDraft(null);
     setHistory({
-      head: previous.workbook,
+      head: target,
       past: currentHistory.past.slice(0, -1),
       future: [
-        {
-          workbook: copyWorkbook(workbook),
-          label: previous.label,
-          operations: previous.operations,
-        },
+        'snapshot' in previous ? { ...previous, snapshot: copyWorkbook(workbook) } : previous,
         ...currentHistory.future,
       ],
     });
@@ -771,13 +766,14 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     }
     const next = currentHistory.future[0];
     if (!next) return;
-    publish(next.workbook, next.operations, 'redo');
+    const target = 'snapshot' in next ? next.snapshot : rebuildWorkbook(workbook, next, 'after');
+    publish(target, next.operations, 'redo');
     setDraft(null);
     setHistory({
-      head: next.workbook,
+      head: target,
       past: [
         ...currentHistory.past,
-        { workbook: copyWorkbook(workbook), label: next.label, operations: next.operations },
+        'snapshot' in next ? { ...next, snapshot: copyWorkbook(workbook) } : next,
       ],
       future: currentHistory.future.slice(1),
     });
