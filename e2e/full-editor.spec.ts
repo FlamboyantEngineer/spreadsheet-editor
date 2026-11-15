@@ -265,7 +265,10 @@ test('SE-REVIEW-7: server calculations retain comments and accepted exact sugges
   expect(response.request().postDataJSON().workbook.comments).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ range: 'B3' }),
-      expect.objectContaining({ suggestionDecision: 'accepted', resolved: true }),
+      expect.objectContaining({
+        state: 'resolved',
+        decision: expect.objectContaining({ decision: 'accept' }),
+      }),
     ]),
   );
   expect(response.request().postDataJSON().workbook.suggestions.at(-1).status).toBe('accepted');

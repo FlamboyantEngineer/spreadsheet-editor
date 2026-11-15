@@ -475,8 +475,9 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
                 label="Comments"
                 icon={ReplyGlyph}
                 count={
-                  (e.workbook.comments?.filter((thread) => !thread.resolved && !thread.suggestionId)
-                    .length ?? 0) +
+                  (e.workbook.comments?.filter(
+                    (thread) => thread.state === 'open' && !thread.suggestion,
+                  ).length ?? 0) +
                   (e.workbook.suggestions?.filter((item) => item.status === 'pending').length ?? 0)
                 }
               >

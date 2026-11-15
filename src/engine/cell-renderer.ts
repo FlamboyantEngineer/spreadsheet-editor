@@ -401,7 +401,12 @@ export function renderReviewMarkers(
   }
   const marked = new Set<HTMLElement>();
   for (const thread of comments) {
-    if (thread.sheetId !== sheetId || thread.resolved || thread.orphaned || thread.suggestionId)
+    if (
+      thread.sheetId !== sheetId ||
+      thread.state === 'resolved' ||
+      thread.orphaned ||
+      thread.suggestion
+    )
       continue;
     const range = parseSpreadsheetRange(thread.range ?? '');
     if (!range) continue;

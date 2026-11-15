@@ -2,13 +2,22 @@
 
 ## SE-REVIEW-1 — Workbook comments
 
-Version-1 workbooks may carry comment threads with stable ids, worksheet/range anchors, resolution state and ordered posts. Posts carry their author, creation/edit time, plain text and emoji reaction memberships. The UI shall use shared CommentThread, CommentThreadReply, CommentComposer, Attribution and ReactionBar components. Threads support creation, replies, author-only edit/delete, reactions, resolve/reopen, open/resolved/all filtering, navigation and cell markers. Invalid imported identities, dates or reaction lists are rejected.
+Version-1 workbooks may carry comment threads. Their records take the document editor's comment shape, so a host that embeds both editors stores and lists comments the same way:
+
+- A thread has a stable `id`, a range anchor (`sheetId`, `range`) or `scope: 'workbook'`, a `state` of `'open'` or `'resolved'`, and its `entries`, the opening comment first and replies after it, oldest first.
+- An entry has an `id`, an `author` that is a person id, a `createdAt` time, its plain `text`, an `editedAt` time once its text changed, and emoji `reactions` that map each emoji to the ids of the people who reacted.
+- A resolved thread records `resolvedBy` (a person id) and `resolvedAt`; reopening clears both (SE-REVIEW-1.7).
+- A thread that discusses a suggestion names it in `suggestion`. Once the suggestion is decided, the thread is resolved and records `decision` as `{ decision: 'accept' | 'reject', suggestion, by, at }`.
+
+Comments stay in the workbook JSON; there is no separate comment store. Records store person ids only. The editor names people through the host's `identity` adapter (`resolvePeople`), and an id the adapter does not know is shown as the id itself (SE-REVIEW-1.6). Suggestions keep their recorded author name, since they become cell provenance on acceptance.
+
+The UI shall use shared CommentThread, CommentThreadReply, CommentComposer, Attribution and ReactionBar components. Threads support creation, replies, author-only edit/delete, reactions, resolve/reopen, open/resolved/all filtering, navigation and cell markers. Invalid imported ids, states, dates, decisions or reaction lists are rejected, and so are threads in the earlier `posts`/`resolved` shape.
 
 The workbook and its annotations are immutable inputs; mutations return independent snapshots through `onChange`. Save/reload, JSON export and live insertion retain the data. Storage and server authorization belong to the host; no application comment API, fixed URL or browser storage is required.
 
-Implementation: `src/model/review.ts`, `src/editor/review-panels.tsx`, `src/engine/cell-renderer.ts`.
+Implementation: `src/model/review.ts`, `src/editor/review-panels.tsx`, `src/editor/use-person-names.ts`, `src/engine/cell-renderer.ts`.
 
-Verification: `src/model/review.test.ts`, `e2e/full-editor.spec.ts` (SE-REVIEW-3).
+Verification: `src/model/review.test.ts`, `src/editor/host-integration.test.tsx` (SE-REVIEW-1.6), `e2e/full-editor.spec.ts` (SE-REVIEW-3).
 
 ## SE-REVIEW-2 — Proposals and decisions
 
@@ -34,7 +43,7 @@ Ordinary comments support range or workbook scope; a new range thread must not d
 
 A proposal creates one linked discussion. Same-author pending proposals with identical changed targets coalesce, preserving the original baseline. Authoring displays canonical cells; Reviewing displays only the current actor’s pending overlay. Acceptance/rejection resolves the linked thread with a decision and retains original-author provenance for accepted values. Structural proposal serialization remains readable for earlier version-1 workbooks, but the UI requires Authoring for structure, resize, merge, Save and decisions. Review-only host permissions clamp the mode accordingly. Server authorization remains the host’s responsibility.
 
-Built-in posts are plain text. Host organizational mentions, group expansion, notifications, rich composers and centralized comment APIs remain integrations; hosts may replace the Comments pane. Verification: model review tests, editor lifecycle tests and browser review/permission checks.
+Built-in comment entries are plain text. Host organizational mentions, group expansion, notifications, rich composers and centralized comment APIs remain integrations; hosts may replace the Comments pane. Verification: model review tests, editor lifecycle tests and browser review/permission checks.
 
 ## SE-HOST-REVIEW-1 — Canonical input baselines
 

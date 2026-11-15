@@ -500,7 +500,7 @@ export function EditorToolbar({ editor: e }: { editor: SpreadsheetEditorControll
               <Button
                 size="sm"
                 icon={editorCommandMetadata('context-comment').icon}
-                label={`Comments (${e.workbook.comments?.filter((thread) => !thread.resolved).length ?? 0})`}
+                label={`Comments (${e.workbook.comments?.filter((thread) => thread.state === 'open').length ?? 0})`}
                 tooltip="Comments"
                 onPress={() => e.openPanel('comments')}
                 isSelected={e.panelOpen && e.panel === 'comments'}

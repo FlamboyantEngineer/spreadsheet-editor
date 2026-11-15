@@ -30,11 +30,11 @@ export const sample: Workbook = {
       id: 'sample-comment',
       sheetId: 'calculations',
       range: 'B3',
-      resolved: false,
-      posts: [
+      state: 'open',
+      entries: [
         {
           id: 'sample-post',
-          author: { id: 'morgan', name: 'Morgan' },
+          author: 'morgan',
           text: 'Keep this value distinct from 1 when changing the display precision.',
           createdAt: '2026-11-10T12:00:00.000Z',
         },
