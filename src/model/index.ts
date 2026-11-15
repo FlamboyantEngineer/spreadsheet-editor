@@ -14,5 +14,3 @@ export * from './operations.js';
 export * from './cell-format.js';
 
 export * from './apply-operations.js';
-
-export * from './transaction-receipts.js';
