@@ -105,6 +105,27 @@ export function parseCellStyle(style: string | undefined): Record<string, string
   }
   return properties;
 }
+/** The one spelling of a cell style: `key: value` pairs joined by `; `. */
+export function serializeCellStyle(properties: Record<string, string>): string {
+  return Object.entries(properties)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('; ');
+}
+/** Store a cell's style, removing the entry when no property is left. */
+function writeCellStyle(
+  styles: Record<string, string>,
+  address: string,
+  properties: Record<string, string>,
+): void {
+  const serialized = serializeCellStyle(properties);
+  if (serialized) styles[address] = serialized;
+  else delete styles[address];
+}
+function worksheetOf(workbook: Workbook, sheetId: string) {
+  const sheet = workbook.worksheets.find((sheet) => sheet.id === sheetId);
+  if (!sheet) throw new RangeError('Unknown worksheet.');
+  return sheet;
+}
 export function formatCells(
   workbook: Workbook,
   sheetId: string,
@@ -113,8 +134,7 @@ export function formatCells(
   format?: CellFormat | null,
 ): Workbook {
   const next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
-  if (!sheet) throw new RangeError('Unknown worksheet.');
+    sheet = worksheetOf(next, sheetId);
   sheet.style = { ...sheet.style };
   sheet.formats = { ...sheet.formats };
   for (const { address } of selectionCells(range)) {
@@ -122,11 +142,7 @@ export function formatCells(
     for (const [property, value] of Object.entries(properties))
       if (value === null) delete style[property];
       else style[property] = value;
-    const serialized = Object.entries(style)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join('; ');
-    if (serialized) sheet.style[address] = serialized;
-    else delete sheet.style[address];
+    writeCellStyle(sheet.style, address, style);
     if (format === null) delete sheet.formats[address];
     else if (format)
       sheet.formats[address] = {
@@ -148,7 +164,7 @@ export function clearSelection(
   formatting = false,
 ): Workbook {
   const next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
+    sheet = worksheetOf(next, sheetId);
   for (const { x, y, address } of selectionCells(range)) {
     if (formatting) {
       if (sheet.style) delete sheet.style[address];
@@ -168,7 +184,7 @@ export function borderCells(
   kind: 'all' | 'outside' | 'none' | 'top' | 'right' | 'bottom' | 'left',
 ): Workbook {
   const next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
+    sheet = worksheetOf(next, sheetId);
   const r = normalizeSelection(range);
   sheet.style = { ...sheet.style };
   const cells = selectionCells(r);
@@ -196,9 +212,7 @@ export function borderCells(
         else style[`border-${side}`] = '1px solid currentColor';
       }
     }
-    sheet.style[cell.address] = Object.entries(style)
-      .map(([key, value]) => `${key}:${value}`)
-      .join(';');
+    writeCellStyle(sheet.style, cell.address, style);
   }
   return next;
 }
@@ -270,7 +284,7 @@ export function mergeSelection(
   unmerge = false,
 ): Workbook {
   const next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
+    sheet = worksheetOf(next, sheetId);
   const r = normalizeSelection(range);
   sheet.mergeCells = { ...sheet.mergeCells };
   for (const [address, [width, height]] of Object.entries(sheet.mergeCells)) {

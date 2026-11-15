@@ -4,6 +4,7 @@ import {
   DEFAULT_WORKBOOK_LIMITS,
   type Workbook,
   type Worksheet,
+  worksheetNameKey,
 } from './workbook.js';
 import { worksheetExtent, createWorkbookEntityId } from './extent.js';
 import {
@@ -12,6 +13,8 @@ import {
   parseSpreadsheetAddress,
   parseSpreadsheetColumnName,
   parseSpreadsheetRange,
+  FORMULA_WORD_CHARACTER,
+  UNQUOTED_SHEET_NAME,
 } from './spreadsheet-addressing.js';
 
 export interface StructureChange {
@@ -42,8 +45,14 @@ function interval(start: number, end: number, change: StructureChange): [number,
   }
   return reversed ? [b, a] : [a, b];
 }
-const REFERENCE =
-  /^(?:(?:'((?:[^']|'')*)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]{1,3}\$?[1-9]\d*(?::\$?[A-Za-z]{1,3}\$?[1-9]\d*)?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9]\d*:\$?[1-9]\d*)(?![A-Za-z0-9_.(])/;
+const CELL_OR_LINES = String.raw`(\$?[A-Za-z]{1,3}\$?[1-9]\d*(?::\$?[A-Za-z]{1,3}\$?[1-9]\d*)?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9]\d*:\$?[1-9]\d*)(?![\p{L}\p{N}_.(])`;
+/** Sticky patterns: one with an optional sheet prefix, one without for runs that end in no `!`. */
+const QUALIFIED_REFERENCE = new RegExp(
+    String.raw`(?:(?:'((?:[^']|'')*)'|(${UNQUOTED_SHEET_NAME}))!)?` + CELL_OR_LINES,
+    'uy',
+  ),
+  LOCAL_REFERENCE = new RegExp(`()()${CELL_OR_LINES}`, 'uy'),
+  NAME_RUN = /[\p{L}\p{N}_ ]*/uy;
 
 /** Scan references while keeping quoted text, anchors, and all authored numeric digits intact. */
 function mapReferences(
@@ -52,12 +61,23 @@ function mapReferences(
 ): string {
   if (!formula.trimStart().startsWith('=')) return formula;
   let output = '',
-    index = 0;
+    index = 0,
+    runEnd = -1;
   while (index < formula.length) {
-    if (!/[A-Za-z0-9_.]/.test(formula[index - 1] ?? '')) {
-      const match = REFERENCE.exec(formula.slice(index));
+    if (!FORMULA_WORD_CHARACTER.test(formula[index - 1] ?? '')) {
+      // An unquoted sheet name runs to the end of its run of name characters, so the run's end is
+      // found once per run; that keeps the scan linear in the formula length.
+      if (index >= runEnd) {
+        NAME_RUN.lastIndex = index;
+        NAME_RUN.exec(formula);
+        runEnd = Math.max(NAME_RUN.lastIndex, index + 1);
+      }
+      const pattern =
+        formula[index] === "'" || formula[runEnd] === '!' ? QUALIFIED_REFERENCE : LOCAL_REFERENCE;
+      pattern.lastIndex = index;
+      const match = pattern.exec(formula);
       if (match) {
-        const sheet = match[1]?.replace(/''/g, "'") ?? match[2] ?? null;
+        const sheet = match[1] ? match[1].replace(/''/g, "'") : match[2] || null;
         const prefix = match[0].slice(0, match[0].length - match[3].length);
         output += map(match[3], sheet, prefix);
         index += match[0].length;
@@ -125,7 +145,7 @@ export function rewriteStructureReferences(
   change: StructureChange,
 ): string {
   return mapReferences(formula, (reference, sheet, prefix) => {
-    if ((sheet ?? currentSheet).toUpperCase() !== targetSheet.toUpperCase())
+    if (worksheetNameKey(sheet ?? currentSheet) !== worksheetNameKey(targetSheet))
       return prefix + reference;
     const rewritten = rewriteReference(reference, change);
     return rewritten === '#REF!' ? rewritten : prefix + rewritten;
@@ -320,8 +340,7 @@ export function validateWorksheetName(workbook: Workbook, sheetId: string, name:
     /[[\]:*?/\\!]/.test(normalized) ||
     workbook.worksheets.some(
       (other) =>
-        other.id !== sheetId &&
-        other.name.trim().replace(/\s+/g, ' ').toUpperCase() === normalized.toUpperCase(),
+        other.id !== sheetId && worksheetNameKey(other.name) === worksheetNameKey(normalized),
     )
   )
     throw new TypeError('Choose a unique worksheet name without reserved characters.');
@@ -332,37 +351,42 @@ export function renameWorksheet(workbook: Workbook, sheetId: string, name: strin
   const normalized = validateWorksheetName(workbook, sheetId, name),
     next = copyWorkbook(workbook),
     sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
-  const previous = sheet.name;
+  const previous = worksheetNameKey(sheet.name);
   sheet.name = normalized;
-  next.worksheets.forEach((current) =>
-    current.data.forEach((row) =>
-      row.forEach((value, index) => {
-        if (typeof value === 'string')
-          row[index] = mapReferences(value, (reference, target, prefix) =>
-            target?.trim().replace(/\s+/g, ' ').toUpperCase() ===
-            previous.trim().replace(/\s+/g, ' ').toUpperCase()
-              ? `'${normalized.replace(/'/g, "''")}'!${reference}`
-              : prefix + reference,
-          );
-      }),
-    ),
-  );
+  const rename = (formula: string) =>
+    mapReferences(formula, (reference, target, prefix) =>
+      target !== null && worksheetNameKey(target) === previous
+        ? `'${normalized.replace(/'/g, "''")}'!${reference}`
+        : prefix + reference,
+    );
+  rewriteFormulas(next, rename);
+  assertWorkbook(next);
   return next;
+}
+
+/** Apply a formula rewrite to every authored cell and to both sides of every suggested change. */
+function rewriteFormulas(workbook: Workbook, rewrite: (formula: string) => string): void {
+  for (const sheet of workbook.worksheets)
+    for (const row of sheet.data)
+      row.forEach((value, index) => {
+        if (typeof value === 'string') row[index] = rewrite(value);
+      });
+  for (const item of workbook.suggestions ?? [])
+    for (const cell of item.changes)
+      for (const field of ['before', 'after'] as const)
+        if (typeof cell[field] === 'string') cell[field] = rewrite(cell[field] as string);
 }
 
 export function deleteWorksheet(workbook: Workbook, sheetId: string): Workbook {
   if (workbook.worksheets.length < 2) throw new Error('Keep at least one worksheet.');
   const next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId)!;
+    sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
+  if (!sheet) throw new RangeError('Unknown worksheet.');
   next.worksheets = next.worksheets.filter((sheet) => sheet.id !== sheetId);
-  next.worksheets.forEach((current) =>
-    current.data.forEach((row) =>
-      row.forEach((value, index) => {
-        if (typeof value === 'string')
-          row[index] = mapReferences(value, (reference, target, prefix) =>
-            target?.toUpperCase() === sheet.name.toUpperCase() ? '#REF!' : prefix + reference,
-          );
-      }),
+  const deleted = worksheetNameKey(sheet.name);
+  rewriteFormulas(next, (formula) =>
+    mapReferences(formula, (reference, target, prefix) =>
+      target !== null && worksheetNameKey(target) === deleted ? '#REF!' : prefix + reference,
     ),
   );
   next.comments?.forEach((thread) => {
