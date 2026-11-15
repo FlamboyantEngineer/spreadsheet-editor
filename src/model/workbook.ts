@@ -1,8 +1,8 @@
 import type { NumericValue } from '../calculation/values.js';
 import { assertNumericValue } from '../calculation/values.js';
 import { assertCellFormat } from './cell-format.js';
-import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
-import { worksheetExtent, extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
+import { parseSpreadsheetAddress } from './spreadsheet-addressing.js';
+import { worksheetExtent } from './extent.js';
 import {
   assertReviewData,
   type CellFormat,
@@ -307,37 +307,4 @@ export function appendWorksheet(workbook: Workbook): Workbook {
 export function copyWorkbook(workbook: Workbook): Workbook {
   assertWorkbook(workbook);
   return structuredClone(workbook);
-}
-
-export function setWorkbookCell(
-  workbook: Workbook,
-  sheetId: string,
-  x: number,
-  y: number,
-  value: CellInput,
-  idFactory?: WorkbookIdFactory,
-): Workbook {
-  if (
-    !Number.isSafeInteger(x) ||
-    !Number.isSafeInteger(y) ||
-    x < 0 ||
-    y < 0 ||
-    x > 16_383 ||
-    y > 1_048_575
-  ) {
-    throw new RangeError('Invalid cell coordinates.');
-  }
-  const next = copyWorkbook(workbook);
-  const sheet = next.worksheets.find((candidate) => candidate.id === sheetId);
-  if (!sheet) throw new RangeError('Unknown worksheet.');
-  // Bound sparse expansion as well as populated cells.
-  if (y > DEFAULT_WORKBOOK_LIMITS.maxCells || x > DEFAULT_WORKBOOK_LIMITS.maxCells)
-    throw new RangeError('Cell exceeds the workbook limit.');
-  while (sheet.data.length <= y) sheet.data.push([]);
-  while (sheet.data[y].length <= x) sheet.data[y].push(null);
-  sheet.data[y][x] = value;
-  if (sheet.inputValues) delete sheet.inputValues[formatSpreadsheetAddress(x, y)];
-  extendWorksheetIdentities(sheet, idFactory);
-  assertWorkbook(next);
-  return next;
 }

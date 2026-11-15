@@ -1,11 +1,11 @@
 'use client';
 
 /*
- * Allowlisted jspreadsheet engine host (#1677, #1687). The official
- * @jspreadsheet-ce/react Spreadsheet wrapper owns the engine root and instance;
- * this host preserves data-jspreadsheet-host on that root and bridges typed
- * callbacks through createBridgedConfig. React chrome consumes request events
- * outside the engine-owned DOM. See REACT_UI_ENGINE_HOST_ALLOWLIST.
+ * The one place that mounts the Jspreadsheet engine (only `src/engine/` may touch
+ * engine-owned DOM). The official @jspreadsheet-ce/react Spreadsheet wrapper owns
+ * the engine root and instance; this host preserves data-jspreadsheet-host on that
+ * root and bridges typed callbacks through createBridgedConfig. React chrome
+ * consumes request events outside the engine-owned DOM.
  *
  * The wrapper has no teardown, so unmount calls onBeforeDestroy and
  * teardownJspreadsheetInstance. setData updates the worksheet in place when
@@ -60,8 +60,8 @@ export interface JSpreadsheetSelectionRange {
 
 /**
  * Geometry of an anchor element jspreadsheet supplied for a request event.
- * Phase 9B uses this rect to position the React overlay it renders through a
- * portal. The rect is in viewport coordinates (the same convention as
+ * The editor positions the React overlay it renders through a portal with this
+ * rect. The rect is in viewport coordinates (the same convention as
  * `Element.getBoundingClientRect()`).
  */
 export interface JSpreadsheetAnchorRect {
@@ -251,8 +251,8 @@ export type JSpreadsheetInstance =
 
 /**
  * Imperative API exposed via `ref` for surrounding chrome / commands. These
- * methods are the only sanctioned way for Phase 9B to drive the engine from
- * outside the host. Anything else should be expressed as new props/events.
+ * methods are the only way for the editor to drive the engine from outside the
+ * host. Anything else should be expressed as new props/events.
  */
 export interface JSpreadsheetHostHandle {
   /** Write `value` to the cell at `(row, col)` using the active worksheet. */
@@ -314,14 +314,6 @@ export function applyJSpreadsheetColumnMeasure(
   columnElement.setAttribute('width', normalizedWidth);
   columnElement.style.width = cssWidth;
   return true;
-}
-
-/** Read the rendered height from jspreadsheet's own `<tr>` element. */
-export function readJSpreadsheetRowMeasure(
-  worksheet: JSpreadsheetWorksheetMeasureSource,
-  rowIndex: number,
-): string {
-  return worksheet.rows?.[rowIndex]?.element?.style.height ?? '';
 }
 
 export interface JSpreadsheetRowMeasureSnapshot {
@@ -401,88 +393,6 @@ export function readJSpreadsheetResizeDescriptor(
 }
 
 /**
- * Ends jspreadsheet's header-border drag without its own mouseup commit: clears
- * the vendor drag state and the `resizing` classes it put on the dragged header,
- * column cells, or row.
- */
-export function clearJSpreadsheetResizeDescriptor(worksheet: object): void {
-  const source = worksheet as JSpreadsheetResizeSource;
-  const descriptor = readJSpreadsheetResizeDescriptor(source);
-  const rowElement = source.resizing?.element;
-  source.resizing = null;
-  if (!descriptor) return;
-  const dragged: unknown[] =
-    descriptor.axis === 'column'
-      ? [
-          source.headers?.[descriptor.index],
-          ...Array.from(source.records ?? [], (row) => row?.[descriptor.index]?.element),
-        ]
-      : [
-          rowElement,
-          (source.rows?.[descriptor.index]?.element as Element | undefined)?.children?.[0],
-        ];
-  for (const element of dragged) {
-    if (element instanceof Element) element.classList.remove('resizing');
-  }
-}
-
-/**
- * Runs an engine write with jspreadsheet's native `confirm()` answered by
- * `answer`, and reports whether the engine asked. The engine asks before an
- * insert, delete or move that cuts through merged cells (then drops every merge
- * on the sheet) and returns without changing anything when told no, so a write
- * run with `false` probes whether the question arises (PT-MD-2.1).
- */
-export function runWithJSpreadsheetConfirmAnswer<T>(
-  answer: boolean,
-  write: () => T,
-): { result: T; asked: boolean } {
-  const host = globalThis as { confirm?: ((message?: string) => boolean) | undefined };
-  const nativeConfirm = host.confirm;
-  let asked = false;
-  host.confirm = () => {
-    asked = true;
-    return answer;
-  };
-  try {
-    const result = write();
-    return { result, asked };
-  } finally {
-    host.confirm = nativeConfirm;
-  }
-}
-
-/**
- * The whole rows or columns selected through their headers on the worksheet
- * jspreadsheet's keyboard handler acts on, or null. Delete and Backspace remove
- * those lines, behind a native `confirm()` the runtime replaces.
- */
-export function readJSpreadsheetHeaderSelection(): {
-  axis: 'row' | 'column';
-  worksheet: object;
-} | null {
-  const owner = (
-    jspreadsheet as unknown as {
-      current?: {
-        selectedCell?: unknown;
-        selectedRow?: unknown;
-        selectedHeader?: unknown;
-        edition?: unknown;
-        options?: { editable?: unknown; allowDeleteRow?: unknown; allowDeleteColumn?: unknown };
-      } | null;
-    }
-  ).current;
-  // The engine's own Delete handling runs under exactly these conditions.
-  if (!owner || owner.edition || !owner.selectedCell || owner.options?.editable === false)
-    return null;
-  if (owner.selectedRow != null)
-    return owner.options?.allowDeleteRow === false ? null : { axis: 'row', worksheet: owner };
-  if (owner.selectedHeader != null)
-    return owner.options?.allowDeleteColumn === false ? null : { axis: 'column', worksheet: owner };
-  return null;
-}
-
-/**
  * Detaches the worksheet jspreadsheet tracks as `jspreadsheet.current`. The
  * vendor's document keydown and paste listeners act on that worksheet whatever
  * the event target, so keys typed in an app dialog would edit, clear, or delete
@@ -515,8 +425,8 @@ export function focusJSpreadsheetWorksheet(worksheet: JSpreadsheetWorksheetInsta
 }
 
 /**
- * Public prop contract of `JSpreadsheetHost`. Every prop below is OPTIONAL
- * except `config` so Phase 9B can adopt the host incrementally.
+ * Prop contract of `JSpreadsheetHost`. Every prop below is optional except
+ * `config`.
  */
 export interface JSpreadsheetHostProps {
   /**
@@ -539,29 +449,15 @@ export interface JSpreadsheetHostProps {
   id?: string | undefined;
 
   /**
-   * Fired once after the jspreadsheet instance is created. The chrome (Phase
-   * 9B) typically needs the instance for direct commands such as inserting
-   * rows or applying formats.
+   * Fired once after the jspreadsheet instance is created. The chrome typically
+   * needs the instance for direct commands such as inserting rows or applying
+   * formats.
    */
   onMounted?:
     ((instance: JSpreadsheetInstance, handle: JSpreadsheetHostHandle) => void) | undefined;
 
   /** Fired once just before the instance is destroyed (unmount or remount). */
   onBeforeDestroy?: ((instance: JSpreadsheetInstance) => void) | undefined;
-
-  /**
-   * Fired when a cell value is committed by the engine. The host bridges the
-   * jspreadsheet `onchange(worksheet, cellEl, x, y, newValue, oldValue)`
-   * callback into this typed shape.
-   */
-  onChange?:
-    | ((
-        row: number,
-        col: number,
-        oldValue: JSpreadsheetCellValue,
-        newValue: JSpreadsheetCellValue,
-      ) => void)
-    | undefined;
 
   /** Fired when the selection range changes (mouse, keyboard, programmatic). */
   onSelectionChange?: ((coords: JSpreadsheetSelectionRange) => void) | undefined;
@@ -574,23 +470,15 @@ export interface JSpreadsheetHostProps {
     ((row: number, col: number, committedValue: JSpreadsheetCellValue) => void) | undefined;
 
   /**
-   * REQUEST event: the engine wants formula autocomplete to be displayed.
-   * Phase 9B will render the autocomplete dropdown as a React portal outside
-   * the engine DOM, anchored at `anchorRect`.
-   */
-  onFormulaAutocompleteRequest?:
-    ((query: string, anchorRect: JSpreadsheetAnchorRect) => void) | undefined;
-
-  /**
-   * REQUEST event: the user opened the cell context menu. Phase 9B will
-   * render the React context menu portal anchored at `anchorRect`.
+   * REQUEST event: the user opened the cell context menu. The editor renders
+   * the React context menu portal anchored at `anchorRect`.
    */
   onContextMenuRequest?:
     ((coords: JSpreadsheetCellCoords, anchorRect: JSpreadsheetAnchorRect) => void) | undefined;
 
   /**
-   * REQUEST event: the user requested the comment popover for a cell. Phase
-   * 9B will render the React comment popover portal anchored at `anchorRect`.
+   * REQUEST event: the user requested the comment popover for a cell. The
+   * editor renders the React comment popover portal anchored at `anchorRect`.
    */
   onCellCommentRequest?:
     ((coords: JSpreadsheetCellCoords, anchorRect: JSpreadsheetAnchorRect) => void) | undefined;
@@ -605,22 +493,12 @@ export interface JSpreadsheetHostProps {
  */
 export interface JspreadsheetBridgeOptions {
   readonly config: JSpreadsheetConfig;
-  readonly dispatchChange: (
-    row: number,
-    col: number,
-    oldValue: JSpreadsheetCellValue,
-    newValue: JSpreadsheetCellValue,
-  ) => void;
   readonly dispatchSelectionChange: (range: JSpreadsheetSelectionRange) => void;
   readonly dispatchEditStart: (row: number, col: number) => void;
   readonly dispatchEditEnd: (
     row: number,
     col: number,
     committedValue: JSpreadsheetCellValue,
-  ) => void;
-  readonly dispatchFormulaAutocompleteRequest: (
-    query: string,
-    rect: JSpreadsheetAnchorRect,
   ) => void;
   readonly dispatchContextMenuRequest: (
     coords: JSpreadsheetCellCoords,
@@ -704,7 +582,7 @@ function resolveEngineRootElement(instance: JSpreadsheetInstance | null): HTMLEl
   return null;
 }
 
-/** INV-049 / PT-RM-9.4: report vendor callback failures while allowing typed dispatchers to run. */
+/** Report vendor callback failures while allowing typed dispatchers to run. */
 function reportVendorCallbackError(callbackName: string, error: unknown): void {
   console.error(`[JSpreadsheetHost] vendor ${callbackName} callback threw`, error);
 }
@@ -745,12 +623,6 @@ export function createBridgedConfig(options: JspreadsheetBridgeOptions): Record<
           reportVendorCallbackError('onchange', error);
         }
       }
-      options.dispatchChange(
-        safeCoord(y),
-        safeCoord(x),
-        oldValue as JSpreadsheetCellValue,
-        newValue as JSpreadsheetCellValue,
-      );
     },
     onselection: (instance: unknown, x1: unknown, y1: unknown, x2: unknown, y2: unknown) => {
       if (typeof userOnSelection === 'function') {
@@ -901,7 +773,7 @@ function teardownJspreadsheetInstance(
   }
 }
 
-// --- Cell spill (SE-CR-2.2a) -------------------------------------------------
+// --- Cell spill ---------------------------------------------------------------
 
 /**
  * How far a text cell may paint past its right edge, in whole pixels; a
@@ -1154,17 +1026,6 @@ export function JSpreadsheetHost(
 
   // Stable dispatchers — they read through propsRef so prop changes do not
   // tear down the engine.
-  const dispatchChange = useCallback(
-    (
-      row: number,
-      col: number,
-      oldValue: JSpreadsheetCellValue,
-      newValue: JSpreadsheetCellValue,
-    ) => {
-      propsSlot.read().onChange?.(row, col, oldValue, newValue);
-    },
-    [propsSlot],
-  );
   const dispatchSelectionChange = useCallback(
     (range: JSpreadsheetSelectionRange) => {
       propsSlot.read().onSelectionChange?.(range);
@@ -1180,12 +1041,6 @@ export function JSpreadsheetHost(
   const dispatchEditEnd = useCallback(
     (row: number, col: number, committedValue: JSpreadsheetCellValue) => {
       propsSlot.read().onCellEditEnd?.(row, col, committedValue);
-    },
-    [propsSlot],
-  );
-  const dispatchFormulaAutocompleteRequest = useCallback(
-    (query: string, rect: JSpreadsheetAnchorRect) => {
-      propsSlot.read().onFormulaAutocompleteRequest?.(query, rect);
     },
     [propsSlot],
   );
@@ -1212,21 +1067,17 @@ export function JSpreadsheetHost(
     () =>
       createBridgedConfig({
         config: mountState.config,
-        dispatchChange,
         dispatchSelectionChange,
         dispatchEditStart,
         dispatchEditEnd,
-        dispatchFormulaAutocompleteRequest,
         dispatchContextMenuRequest,
         dispatchCellCommentRequest,
       }),
     [
       mountState.config,
-      dispatchChange,
       dispatchSelectionChange,
       dispatchEditStart,
       dispatchEditEnd,
-      dispatchFormulaAutocompleteRequest,
       dispatchContextMenuRequest,
       dispatchCellCommentRequest,
     ],
@@ -1345,7 +1196,7 @@ export function JSpreadsheetHost(
       }
     }
 
-    // SE-CR-2.2a: keep the adopted engine's text-cell spill widths current.
+    // Keep the adopted engine's text-cell spill widths current.
     const stopCellSpill =
       rootEl && instance ? observeJSpreadsheetCellSpill(rootEl, instance) : null;
 
@@ -1390,6 +1241,6 @@ export function JSpreadsheetHost(
 
 /**
  * JSpreadsheetHost — the engine boundary React component for the spreadsheet
- * editor. See file header for the carveout policy.
+ * editor. See the file header for why only this module mounts the engine.
  */
 export default JSpreadsheetHost;
