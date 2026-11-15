@@ -126,6 +126,8 @@ for (const lab of ['full', 'embedded']) {
             overflow: document.documentElement.scrollWidth > innerWidth,
           };
         });
+      // The grid loads lazily; calculation can finish before its viewport exists.
+      await expect(editor.locator('.jss_content').first()).toBeVisible();
       const initial = await measure();
       expect(initial.gutter).toBeGreaterThanOrEqual(4);
       expect(initial.edge).toBeLessThanOrEqual(initial.rail);

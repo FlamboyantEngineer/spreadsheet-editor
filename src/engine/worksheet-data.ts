@@ -68,6 +68,43 @@ export function gridWorksheetExtent(
   ];
 }
 
+/** At most this many cells are updated in place; a larger change rebuilds the rows. */
+const PATCH_LIMIT = 2_000;
+
+/** Update the engine's values in place when only cell values changed and the grid keeps
+ * its extent: rebuilding every row makes the browser restyle and lay out every cell.
+ * Returns false, changing nothing, when the rows must be rebuilt with `syncWorksheetData`.
+ */
+export function patchWorksheetData(
+  engine: JSpreadsheetWorksheetInstance,
+  next: Worksheet,
+  logicalExtent?: WorksheetExtent,
+): boolean {
+  const data = engine.options?.data as CellInput[][] | undefined;
+  const [columns, rows] = gridWorksheetExtent(next, logicalExtent);
+  if (!data || data.length !== rows || engine.records?.length !== rows) return false;
+  const changes: { x: number; y: number; value: CellInput }[] = [];
+  for (let y = 0; y < rows; y++) {
+    const current = data[y],
+      source = next.data[y];
+    if (current?.length !== columns || engine.records[y]?.length !== columns) return false;
+    for (let x = 0; x < columns; x++) {
+      // The engine holds an empty string where the workbook has no value.
+      const value = source?.[x] ?? '';
+      if (current[x] === value) continue;
+      changes.push({ x, y, value });
+      if (changes.length > PATCH_LIMIT) return false;
+    }
+  }
+  for (const { x, y, value } of changes) {
+    data[y][x] = value;
+    const cell = engine.records[y][x]?.element;
+    if (cell instanceof HTMLElement && !cell.classList.contains('editor'))
+      cell.textContent = String(value);
+  }
+  return true;
+}
+
 /** setData rebuilds body rows, but CE keeps existing column/header structures.
  * Resize those structures first, then set current logical minima before body rebuild.
  * The surrounding controller suppresses authored callbacks for this presentation work.
@@ -105,4 +142,38 @@ export function syncWorksheetData(
     options.allowDeleteColumn = permissions.allowDeleteColumn;
     if (!options.mergeCells) options.mergeCells = merges;
   }
+}
+
+/** Whether a captured worksheet is the current one, compared as their JSON would be,
+ * without serializing every cell: data compares cell by cell, other fields by JSON.
+ */
+export function sameCapture(current: Worksheet, next: Worksheet): boolean {
+  if (current === next) return true;
+  const keys = Object.keys(next) as (keyof Worksheet)[];
+  const currentKeys = Object.keys(current);
+  // Fields in another order or left undefined serialize differently; compare in full.
+  if (
+    keys.length !== currentKeys.length ||
+    keys.some((key, index) => key !== currentKeys[index] || next[key] === undefined)
+  )
+    return JSON.stringify(next) === JSON.stringify(current);
+  return keys.every((key) =>
+    key === 'data'
+      ? sameRows(current.data, next.data)
+      : current[key] === next[key] || JSON.stringify(current[key]) === JSON.stringify(next[key]),
+  );
+}
+
+function sameRows(current: readonly CellInput[][], next: readonly CellInput[][]): boolean {
+  if (current === next) return true;
+  if (current.length !== next.length) return false;
+  for (let y = 0; y < next.length; y++) {
+    const a = current[y],
+      b = next[y];
+    if (a === b) continue;
+    if (!a || !b || a.length !== b.length) return JSON.stringify(a) === JSON.stringify(b);
+    // JSON writes a missing array entry as null.
+    for (let x = 0; x < b.length; x++) if ((a[x] ?? null) !== (b[x] ?? null)) return false;
+  }
+  return true;
 }

@@ -10,7 +10,9 @@ import type {
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
 import {
   captureWorksheetCellChanges,
+  sameCapture,
   gridWorksheetExtent,
+  patchWorksheetData,
   syncWorksheetData,
 } from './worksheet-data.js';
 import { createSelectionPublication } from './selection-publication.js';
@@ -449,7 +451,7 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
           ...(merge && !Array.isArray(merge) ? { mergeCells: structuredClone(merge) } : {}),
         };
         // Native data edits must never capture zoomed presentation measures as authored sizes.
-        if (JSON.stringify(next) !== JSON.stringify(current)) latest.current.onChange(next);
+        if (!sameCapture(current, next)) latest.current.onChange(next);
       } catch (error) {
         // A batch has already changed CE's presentation. Reconcile it with the
         // accepted workbook after host preflight refuses the complete command.
@@ -585,10 +587,13 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     try {
       const nextExtent = gridWorksheetExtent(props.worksheet, props.logicalExtent);
       const oldExtent = appliedExtent.current;
+      const extentChanged =
+        !oldExtent || nextExtent.some((value, axis) => value !== oldExtent[axis]);
+      // Changed values are written in place; rebuilding every row restyles every cell.
       if (
-        applied.current?.data !== props.worksheet.data ||
-        !oldExtent ||
-        nextExtent.some((value, axis) => value !== oldExtent[axis])
+        extentChanged ||
+        (applied.current?.data !== props.worksheet.data &&
+          (!applied.current || !patchWorksheetData(sheet, props.worksheet, props.logicalExtent)))
       )
         syncWorksheetData(sheet, props.worksheet, props.logicalExtent);
       const viewport = gridViewport(sheet);
@@ -637,25 +642,34 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
       controller.select(next);
   }, [props.selection, controller]);
   function paint(api: JSpreadsheetHostHandle, current: WorkbookGridProps) {
-    renderReviewMarkers(api, current.worksheet.id, current.comments, current.suggestions);
-    setPortals(
-      renderCalculatedCells(
-        api,
-        current.values,
-        current.display,
-        current.worksheet.data,
-        current.unavailableText,
-        current.worksheet.formats,
-        current.showFormulas,
-        {
-          sheetId: current.worksheet.id,
-          draft: current.draft,
-          readyCells: current.readyCells,
-          publication: current.publication,
-          cellPresentation: current.cellPresentation,
-          renderCellContent: current.renderCellContent,
-        },
-      ),
+    // Markers rewrite cell titles, which presentation tooltips share.
+    const markersChanged = renderReviewMarkers(
+      api,
+      current.worksheet.id,
+      current.comments,
+      current.suggestions,
+    );
+    const portalList = renderCalculatedCells(
+      api,
+      current.values,
+      current.display,
+      current.worksheet.data,
+      current.unavailableText,
+      current.worksheet.formats,
+      current.showFormulas,
+      {
+        sheetId: current.worksheet.id,
+        draft: current.draft,
+        readyCells: current.readyCells,
+        publication: current.publication,
+        cellPresentation: current.cellPresentation,
+        renderCellContent: current.renderCellContent,
+      },
+      markersChanged,
+    );
+    // An unchanged empty list keeps its identity, so painting causes no render.
+    setPortals((previous) =>
+      previous.length === 0 && portalList.length === 0 ? previous : portalList,
     );
     renderContributors(
       api,
@@ -675,7 +689,10 @@ export default function WorkbookGrid(props: WorkbookGridProps) {
     props.suggestions,
     props.showFormulas,
     props.showContributors,
-    props.draft,
+    // A draft is a new object on each render; only its cell and text matter.
+    props.draft?.x,
+    props.draft?.y,
+    props.draft?.text,
     props.readyCells,
     props.publication,
     props.cellPresentation,

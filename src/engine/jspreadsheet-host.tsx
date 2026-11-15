@@ -311,8 +311,10 @@ export function applyJSpreadsheetColumnMeasure(
 ): boolean {
   const columnElement = worksheet.cols?.[columnIndex]?.colElement;
   if (!(columnElement instanceof HTMLElement)) return false;
-  columnElement.setAttribute('width', normalizedWidth);
-  columnElement.style.width = cssWidth;
+  // Unchanged measures are not rewritten: each write is a mutation the spill observer handles.
+  if (columnElement.getAttribute('width') !== normalizedWidth)
+    columnElement.setAttribute('width', normalizedWidth);
+  if (columnElement.style.width !== cssWidth) columnElement.style.width = cssWidth;
   return true;
 }
 
@@ -347,8 +349,9 @@ export function applyJSpreadsheetRowMeasure(
 ): boolean {
   const rowElement = worksheet.rows?.[rowIndex]?.element;
   if (!(rowElement instanceof HTMLElement)) return false;
-  rowElement.style.height = cssHeight;
-  rowElement.setAttribute('height', attributeHeight);
+  if (rowElement.style.height !== cssHeight) rowElement.style.height = cssHeight;
+  if (rowElement.getAttribute('height') !== attributeHeight)
+    rowElement.setAttribute('height', attributeHeight);
   return true;
 }
 
