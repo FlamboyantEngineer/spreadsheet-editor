@@ -14,7 +14,7 @@ Verification: `src/model/host-model.test.ts`, `src/editor/host-integration.test.
 
 A flush requested while another is active first commits the current draft, and waits for a further save when the active one does not cover its draft. Opening a saved version (SE-ADAPTERS-5.1) commits native and formula-bar drafts, flushes the session, and stays on the current workbook after a failed save or when a change newer than that save is unsaved. Opening a version from a pristine session saves nothing.
 
-Implementation: `src/editor/contracts.ts`, `src/editor/public-host.ts`, `src/editor/use-editor.ts`.
+Implementation: `src/editor/contracts.ts`, `src/editor/public-host.ts`, `src/editor/use-editor.ts`, `src/editor/editor-handle.ts`, `src/editor/use-session-state.ts`, `src/editor/use-session-actions.ts`.
 
 Verification: `src/editor/host-integration.test.tsx`, `src/editor/use-editor.test.ts`, `src/editor/editor-lifecycle.test.tsx`.
 

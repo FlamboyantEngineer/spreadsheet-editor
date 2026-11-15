@@ -166,7 +166,7 @@ Verification: `src/host/workbook-session.test.ts`
 
 With a session, the editor shall show the session's workbook unless `value` is given, record every accepted change in the session after the host's `onChange` accepts it, and refuse a change while the session has not loaded. Save (button, menu and Ctrl+S) commits the active draft and saves through the session; the handle's `flush` commits the draft and waits until every change accepted before it is saved. The save status shows the session's phase, and the handle's state reports `dirty`, `saving` and the current session failure from it, including failures of background autosaves. Controlled `value` editors use the same session and causal transaction acknowledgements; receipts neither save nor acknowledge active drafts. Opening a saved version first flushes, and stays closed when the flush fails or a newer change is unsaved (SE-ADAPTERS-5.1). Without a session the editor has no Save control and saves nothing.
 
-Implementation: `src/editor/use-editor.ts`, `src/editor/use-workbook-session.ts`, `src/editor/editor-toolbar.tsx`
+Implementation: `src/editor/use-editor.ts`, `src/editor/editor-handle.ts`, `src/editor/use-session-state.ts`, `src/editor/use-session-actions.ts`, `src/editor/use-workbook-session.ts`, `src/editor/editor-toolbar.tsx`
 Verification: `src/editor/host-integration.test.tsx`, `src/editor/use-editor.test.ts`, `src/editor/editor-lifecycle.test.tsx`, `e2e/host-integration.spec.ts`, `e2e/full-editor.spec.ts`
 
 ## SE-ADAPTERS-5 - Versions

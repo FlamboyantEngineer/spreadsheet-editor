@@ -1,4 +1,4 @@
-import type { WorkbookOperation } from '../model/operations.js';
+import { invertWorkbookOperations, type WorkbookOperation } from '../model/operations.js';
 import { copyWorkbook, type Workbook, type Worksheet } from '../model/workbook.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 
@@ -155,4 +155,50 @@ export function rebuildWorkbook(
     }
   for (const [id, shape] of entry.shapes[side]) restoreShape(sheetOf(id), shape);
   return next;
+}
+
+/** Local undo history; `head` is the workbook it belongs to. */
+export interface EditorHistory {
+  head: Workbook | null;
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+}
+
+/** The workbook one step back, the operations that reach it, and the history after the step. */
+export function undoStep(history: EditorHistory, workbook: Workbook) {
+  const previous = history.past.at(-1);
+  if (!previous) return null;
+  const target =
+    'snapshot' in previous ? previous.snapshot : rebuildWorkbook(workbook, previous, 'before');
+  return {
+    target,
+    operations: invertWorkbookOperations(previous.operations),
+    history: {
+      head: target,
+      past: history.past.slice(0, -1),
+      future: [
+        'snapshot' in previous ? { ...previous, snapshot: copyWorkbook(workbook) } : previous,
+        ...history.future,
+      ],
+    },
+  };
+}
+
+/** The workbook one step forward, the operations that reach it, and the history after the step. */
+export function redoStep(history: EditorHistory, workbook: Workbook) {
+  const next = history.future[0];
+  if (!next) return null;
+  const target = 'snapshot' in next ? next.snapshot : rebuildWorkbook(workbook, next, 'after');
+  return {
+    target,
+    operations: next.operations,
+    history: {
+      head: target,
+      past: [
+        ...history.past,
+        'snapshot' in next ? { ...next, snapshot: copyWorkbook(workbook) } : next,
+      ],
+      future: history.future.slice(1),
+    },
+  };
 }
