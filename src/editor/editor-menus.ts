@@ -198,21 +198,14 @@ export function editorMenus(editor: SpreadsheetEditorController) {
     ) ?? []),
   ];
   const review: MenuEntry[] = [
-    item(
-      'author',
-      'Authoring mode',
-      () => e.setMode('author'),
-      e.props.readOnly || e.props.permissions?.edit === false,
-    ),
+    item('author', 'Authoring mode', () => e.setMode('author'), e.locked || !e.capabilities.edit),
     item(
       'review',
       'Reviewing mode',
       () => e.setMode('review'),
-      e.props.readOnly ||
-        e.props.permissions?.suggest === false ||
-        e.props.features?.suggestions === false,
+      e.locked || !e.capabilities.suggest || e.props.features?.suggestions === false,
     ),
-    item('read', 'Reading mode', () => e.setMode('read'), e.props.readOnly),
+    item('read', 'Reading mode', () => e.setMode('read'), e.locked),
     { id: 'review-separator', type: 'separator' },
     item('new-comment', 'Add comment', e.beginComment, !e.canComment),
     item('comments', 'Comments', () => e.openPanel('comments')),

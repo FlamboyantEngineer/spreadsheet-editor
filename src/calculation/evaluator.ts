@@ -66,6 +66,11 @@ export const formulaOperandKey = (
 export interface CalculationDependencies {
   cells: Record<string, string[]>;
   extents?: Record<string, string[]>;
+  /**
+   * `'formulas'`: `cells` has an entry for every formula cell and none for other cells, which read
+   * nothing. Without it, a cell with no entry has unknown dependencies.
+   */
+  scope?: 'formulas';
 }
 export interface FormulaCellContext {
   sheetId: string;
@@ -216,10 +221,14 @@ export function calculateWorkbook(
   )
     throw new RangeError('Invalid wordSizeBits context.');
   const operands: CalculationContext['operands'] = {};
+  // Dependencies use the internal `sheet:x:y` key while calculating; the public
+  // `[sheetId,x,y]` key is written once per entry in the result.
   const cellDependencies = new Map<string, Set<string>>(),
     extentDependencies = new Map<string, Set<string>>();
-  const publicKey = (sheet: number, x: number, y: number) =>
-    JSON.stringify([workbook.worksheets[sheet].id, x, y]);
+  const publicKey = (key: string) => {
+    const [sheet, x, y] = key.split(':').map(Number);
+    return JSON.stringify([workbook.worksheets[sheet].id, x, y]);
+  };
   function rememberRead(
     sheet: number,
     x: number,
@@ -228,25 +237,39 @@ export function calculateWorkbook(
     tx: number,
     ty: number,
   ) {
-    const key = publicKey(sheet, x, y);
+    const key = keyFor(sheet, x, y);
     let reads = cellDependencies.get(key);
     if (!reads) {
       reads = new Set();
       cellDependencies.set(key, reads);
     }
-    reads.add(publicKey(target, tx, ty));
+    reads.add(keyFor(target, tx, ty));
   }
+  const extents = new Map<number, { columns: number; rows: number }>();
+  /** The workbook does not change during a calculation, so each sheet's extent is read once. */
+  function calculationExtent(sheetIndex: number) {
+    let extent = extents.get(sheetIndex);
+    if (!extent) {
+      extent = worksheetCalculationExtent(workbook.worksheets[sheetIndex]);
+      extents.set(sheetIndex, extent);
+    }
+    return extent;
+  }
+  const isFormula = (input: CellInput): boolean =>
+    typeof input === 'string' && input.trimStart().startsWith('=');
   const cache = new Map<string, CellValue>(),
     visiting = new Set<string>();
   const parsed = new Map<string, FormulaNode>();
-  class NeedCell extends Error {
+  /**
+   * Thrown when a formula reads a formula cell that is not calculated yet; `ensureCell` calculates
+   * that cell and resumes. Not an `Error`, so throwing it captures no stack.
+   */
+  class NeedCell {
     constructor(
       readonly sheet: number,
       readonly x: number,
       readonly y: number,
-    ) {
-      super('Dependency pending');
-    }
+    ) {}
   }
   const cellMemos = new Map<string, WeakMap<FormulaNode, Value>>();
   const rangeMemos = new Map<
@@ -272,6 +295,9 @@ export function calculateWorkbook(
     const key = keyFor(sheetIndex, x, y);
     if (cache.has(key)) return cache.get(key)!;
     if (visiting.has(key)) return errorValue('#CYCLE!');
+    // A value cell reads nothing, so it is calculated in place instead of suspending the reader.
+    if (!isFormula(workbook.worksheets[sheetIndex]?.data[y]?.[x] ?? null))
+      return evaluateCell(sheetIndex, x, y, 0);
     throw new NeedCell(sheetIndex, x, y);
   }
   function ensureCell(sheetIndex: number, x: number, y: number): CellValue {
@@ -362,11 +388,8 @@ export function calculateWorkbook(
       const input: CellInput = workbook.worksheets[sheetIndex].data[y]?.[x] ?? null;
       const address = formatSpreadsheetAddress(x, y);
       const canonical = workbook.worksheets[sheetIndex].inputValues?.[address];
-      cellDependencies.set(
-        publicKey(sheetIndex, x, y),
-        cellDependencies.get(publicKey(sheetIndex, x, y)) ?? new Set(),
-      );
-      if (typeof input === 'string' && input.trimStart().startsWith('=')) {
+      if (typeof input === 'string' && isFormula(input)) {
+        if (!cellDependencies.has(key)) cellDependencies.set(key, new Set());
         const formula = input.trimStart().slice(1);
         let tree = parsed.get(formula);
         if (!tree) {
@@ -525,11 +548,11 @@ export function calculateWorkbook(
               );
         if (target < 0) throw new CalculationError('#REF!');
         const sheet = workbook.worksheets[target];
-        const extent = worksheetCalculationExtent(sheet),
-          width = extent.columns,
-          height = extent.rows;
+        const extent = node.kind === 'lines' ? calculationExtent(target) : null,
+          width = extent?.columns ?? 0,
+          height = extent?.rows ?? 0;
         if (node.kind === 'lines') {
-          const key = publicKey(sheetIndex, x, y),
+          const key = keyFor(sheetIndex, x, y),
             extents = extentDependencies.get(key) ?? new Set<string>();
           extents.add(sheet.id);
           extentDependencies.set(key, extents);
@@ -1088,14 +1111,17 @@ export function calculateWorkbook(
     })),
   };
   result.dependencies = {
-    cells: Object.fromEntries([...cellDependencies].map(([key, reads]) => [key, [...reads]])),
+    cells: Object.fromEntries(
+      [...cellDependencies].map(([key, reads]) => [publicKey(key), [...reads].map(publicKey)]),
+    ),
     ...(extentDependencies.size
       ? {
           extents: Object.fromEntries(
-            [...extentDependencies].map(([key, sheets]) => [key, [...sheets]]),
+            [...extentDependencies].map(([key, sheets]) => [publicKey(key), [...sheets]]),
           ),
         }
       : {}),
+    scope: 'formulas',
   };
   if (Object.keys(operands).length || host.hostContext !== undefined)
     result.context = {

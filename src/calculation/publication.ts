@@ -30,21 +30,42 @@ export function orderedJson(value: unknown): string {
     .map((key) => `${JSON.stringify(key)}:${orderedJson((value as Record<string, unknown>)[key])}`)
     .join(',')}}`;
 }
-/** A deterministic freshness token. This is deliberately not an authorization signature. */
+/** Two seeded 53-bit string hashes (cyrb53), as 28 hex digits. Not a cryptographic digest. */
+function digest(text: string): string {
+  const half = (seed: number) => {
+    let h1 = 0xdeadbeef ^ seed,
+      h2 = 0x41c6ce57 ^ seed;
+    for (let index = 0; index < text.length; index++) {
+      const code = text.charCodeAt(index);
+      h1 = Math.imul(h1 ^ code, 2654435761);
+      h2 = Math.imul(h2 ^ code, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+  };
+  return half(0) + half(0x9e3779b9);
+}
+/**
+ * A deterministic freshness token: a short digest of the canonical calculation inputs, so equal
+ * inputs share a key across transports. This is deliberately not an authorization signature.
+ */
 export function workbookCalculationKey(workbook: Workbook): string {
   assertWorkbook(workbook);
-  return orderedJson(
-    workbook.worksheets.map((sheet) => ({
-      id: sheet.id,
-      name: sheet.name,
-      data: sheet.data,
-      inputValues: sheet.inputValues,
-      extent: worksheetCalculationExtent(sheet),
-      rowIds: sheet.rowIds,
-      columnIds: sheet.columnIds,
-      formats: calculationFormats(sheet),
-    })),
-  );
+  return `wck1-${digest(
+    orderedJson(
+      workbook.worksheets.map((sheet) => ({
+        id: sheet.id,
+        name: sheet.name,
+        data: sheet.data,
+        inputValues: sheet.inputValues,
+        extent: worksheetCalculationExtent(sheet),
+        rowIds: sheet.rowIds,
+        columnIds: sheet.columnIds,
+        formats: calculationFormats(sheet),
+      })),
+    ),
+  )}`;
 }
 const states = new Set(['pending', 'ready', 'unavailable']);
 function assertTransportTree(value: unknown, ancestors = new Set<object>(), depth = 0): void {
@@ -139,7 +160,7 @@ export function assertExternalCalculationSnapshot(
 }
 
 interface DependencyIndex {
-  /** Cells pending whatever was edited: every cell without recorded dependencies. */
+  /** Cells pending whatever was edited: every cell whose dependencies are unknown. */
   unrecorded: string[];
   /** Cells that read the used extent of a worksheet, by worksheet id. */
   extentReaders: [string, string[]][];
@@ -154,13 +175,15 @@ function dependencyIndex(result: CalculationResult): DependencyIndex {
   const recorded = result.dependencies?.cells,
     unrecorded: string[] = [],
     dependents = new Map<string, string[]>();
-  for (const sheet of result.worksheets)
-    sheet.values.forEach((row, y) =>
-      row.forEach((_cell, x) => {
-        const key = calculationCellKey(sheet.id, x, y);
-        if (!recorded || !Object.hasOwn(recorded, key)) unrecorded.push(key);
-      }),
-    );
+  // With formula scope, a cell without an entry is a value cell, which reads nothing.
+  if (result.dependencies?.scope !== 'formulas')
+    for (const sheet of result.worksheets)
+      sheet.values.forEach((row, y) =>
+        row.forEach((_cell, x) => {
+          const key = calculationCellKey(sheet.id, x, y);
+          if (!recorded || !Object.hasOwn(recorded, key)) unrecorded.push(key);
+        }),
+      );
   for (const [key, dependencies] of Object.entries(recorded ?? {}))
     for (const dependency of dependencies) {
       const list = dependents.get(dependency);

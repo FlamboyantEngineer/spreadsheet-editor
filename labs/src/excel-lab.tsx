@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '@flamboyantengineer/ui-components/modal';
 import { FileField } from '@flamboyantengineer/ui-components/file-field';
 import { SpreadsheetEditor } from '../../src/index.js';
+import { READ_ONLY_CAPABILITIES } from '../../src/host/index.js';
 import type { Workbook } from '../../src/model/index.js';
 import type { CalculationResult } from '../../src/calculation/index.js';
 import type { XlsxImport } from '../../src/excel/contracts.js';
@@ -129,7 +130,7 @@ export function useExcelLab() {
               chrome="embedded"
               value={prepared.workbook}
               calculation={{ mode: 'server', provider: calculator }}
-              readOnly
+              capabilities={READ_ONLY_CAPABILITIES}
               features={{
                 comments: false,
                 suggestions: false,

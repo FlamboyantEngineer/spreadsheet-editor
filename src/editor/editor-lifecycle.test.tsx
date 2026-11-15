@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWorkbook } from '../model/workbook.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 import type { SpreadsheetEditorHandle, SpreadsheetEditorProps } from './contracts.js';
+import { READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 
 const entry = { id: 'saved', timestamp: '2026-01-01T00:00:00Z', author: { id: 'a', name: 'Alex' } };
 
@@ -73,7 +74,7 @@ describe('SE-HOST-2: durability barriers cover each requested edit', () => {
       void flushing.catch(() => {});
     });
     await waitFor(() => expect(onFlush).toHaveBeenCalledTimes(1));
-    rerender({ ...result.current.props, readOnly: true });
+    rerender({ ...result.current.props, capabilities: READ_ONLY_CAPABILITIES });
     expect(onFlush.mock.calls[0][1].signal.aborted).toBe(true);
     await act(async () => {
       finish();

@@ -81,6 +81,7 @@ import {
 } from '../model/review.js';
 import { createDocumentInsertion } from '../document/insertion.js';
 import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
+import { FULL_CAPABILITIES, resolveSpreadsheetMode } from '../host/capabilities.js';
 
 export type EditorDialog =
   'row-height' | 'column-width' | 'import' | 'export' | 'confirm-structure' | null;
@@ -185,31 +186,28 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     history.head === workbook ? history : { head: workbook, past: [], future: [] };
   const [localMode, setLocalMode] = useState<SpreadsheetMode>(props.defaultMode ?? 'author');
   const requestedMode = props.mode ?? localMode;
-  const mode: SpreadsheetMode = props.readOnly
-    ? 'read'
-    : props.permissions?.edit === false
-      ? (props.permissions.suggest === false || props.features?.suggestions === false) &&
-        (props.permissions.comment === false || props.features?.comments === false)
-        ? 'read'
-        : 'review'
-      : requestedMode;
-  const canEdit = !props.readOnly && mode === 'author' && props.permissions?.edit !== false;
+  const capabilities = props.capabilities ?? FULL_CAPABILITIES;
+  const highestMode = resolveSpreadsheetMode(capabilities);
+  /** Nothing is allowed: no mode can be chosen. */
+  const locked = highestMode === 'read';
+  const mode: SpreadsheetMode =
+    highestMode === 'author'
+      ? requestedMode
+      : highestMode === 'review' &&
+          ((capabilities.suggest && props.features?.suggestions !== false) ||
+            (capabilities.comment && props.features?.comments !== false))
+        ? 'review'
+        : 'read';
+  const canEdit = mode === 'author' && capabilities.edit;
   const canSuggest =
-    !props.readOnly &&
-    mode === 'review' &&
-    props.permissions?.suggest !== false &&
-    props.features?.suggestions !== false;
+    mode === 'review' && capabilities.suggest && props.features?.suggestions !== false;
   const canWrite = canEdit || canSuggest;
-  const canComment =
-    !props.readOnly &&
-    mode !== 'read' &&
-    props.permissions?.comment !== false &&
-    props.features?.comments !== false;
-  const canDecide =
-    canEdit &&
-    props.permissions?.decideSuggestions !== false &&
-    props.features?.suggestions !== false;
-  const actor = props.currentUser ?? { id: 'local-user', name: 'You' };
+  const canComment = mode !== 'read' && capabilities.comment && props.features?.comments !== false;
+  const canDecide = canEdit && capabilities.decide && props.features?.suggestions !== false;
+  const actor = useMemo(() => {
+    const person = props.identity?.currentPerson();
+    return person ? { id: person.id, name: person.name } : { id: 'local-user', name: 'You' };
+  }, [props.identity]);
   const peers = useMemo(
     () =>
       remoteCollaborators(props.collaborators ?? [], actor.id).map((person) => ({
@@ -638,7 +636,7 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     }
   }
   function setMode(next: SpreadsheetMode) {
-    if (props.readOnly || (props.permissions?.edit === false && next !== mode)) return;
+    if (locked || (!capabilities.edit && next !== mode)) return;
     if (!applyFormula()) return;
     setLocalMode(next);
     props.onModeChange?.(next);
@@ -1429,25 +1427,19 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     if (!targets.length) return 0;
     mutateWithDraft(
       (base) => {
-        let next = base;
+        // Matches are authored cells, so every replacement lands in one copy (SE-8).
+        const next = copyWorkbook(base),
+          pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
         for (const match of targets) {
-          const value = String(
-            next.worksheets.find((sheet) => sheet.id === match.sheetId)!.data[match.y][match.x] ??
-              '',
+          const target = next.worksheets.find((sheet) => sheet.id === match.sheetId)!;
+          target.data[match.y][match.x] = String(target.data[match.y][match.x] ?? '').replace(
+            pattern,
+            () => text,
           );
-          const pattern = new RegExp(
-            query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-            all ? 'gi' : 'i',
-          );
-          next = writeCells(
-            next,
-            match.sheetId,
-            match.x,
-            match.y,
-            [[value.replace(pattern, () => text)]],
-            props.idFactory,
-          );
+          if (target.inputValues)
+            delete target.inputValues[formatSpreadsheetAddress(match.x, match.y)];
         }
+        assertWorkbook(next);
         return next;
       },
       all ? 'Replace all matches' : 'Replace match',
@@ -1608,6 +1600,8 @@ export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
     pasteCells,
     followCollaborator,
     publishPresence,
+    capabilities,
+    locked,
     canEdit,
     canSuggest,
     canWrite,

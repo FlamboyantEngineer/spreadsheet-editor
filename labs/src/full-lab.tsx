@@ -4,6 +4,11 @@ import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { SelectField } from '@flamboyantengineer/ui-components/select-field';
 import { SpreadsheetEditor } from '../../src/index.js';
 import {
+  createMemoryHost,
+  FULL_CAPABILITIES,
+  READ_ONLY_CAPABILITIES,
+} from '../../src/host/index.js';
+import {
   createHttpCalculator,
   createClientCalculator,
   calculateWorkbook,
@@ -50,6 +55,13 @@ export function FullLab() {
   const [autosave, setAutosave] = useState(false);
   const [actorId, setActorId] = useState('alex');
   const [readOnly, setReadOnly] = useState(false);
+  const identities = useMemo(
+    () => ({
+      alex: createMemoryHost({ reader: { id: 'alex', name: 'Alex' } }).identity,
+      morgan: createMemoryHost({ reader: { id: 'morgan', name: 'Morgan' } }).identity,
+    }),
+    [],
+  );
   const [mode, setMode] = useState<'client' | 'server'>('client');
   const [digits, setDigits] = useState('32');
   const [insertion, setInsertion] = useState<DocumentInsertion | null>(null);
@@ -103,7 +115,13 @@ export function FullLab() {
               setHistorical(snapshots.find((snapshot) => snapshot.id === entry.id) ?? null),
           }}
           autosaveMs={autosave ? 1000 : undefined}
-          permissions={reviewerOnly ? { edit: false } : undefined}
+          capabilities={
+            readOnly
+              ? READ_ONLY_CAPABILITIES
+              : reviewerOnly
+                ? { ...FULL_CAPABILITIES, edit: false }
+                : FULL_CAPABILITIES
+          }
           collaborators={
             presence
               ? [
@@ -124,7 +142,7 @@ export function FullLab() {
           calculation={selectedMode}
           display={display}
           onInsert={setInsertion}
-          currentUser={{ id: actorId, name: actorId === 'alex' ? 'Alex' : 'Morgan' }}
+          identity={actorId === 'alex' ? identities.alex : identities.morgan}
           onSave={async (snapshot, context) => {
             if (context.signal.aborted) return;
             setSaved(snapshot);
@@ -142,7 +160,6 @@ export function FullLab() {
                 },
               ]);
           }}
-          readOnly={readOnly}
         />
       </section>
       <section className="lab-section" aria-labelledby="settings-title">
