@@ -26,7 +26,7 @@ Lazy initial engine adoption could also steal focus and shift the Add worksheet 
 | ---------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Notices, history status and calculation errors | ui-components Banner and InlineError, now used directly                                | Message content, severity, expiry and recovery actions                        |
 | Search and replacement controls                | ui-components FindBar                                                                  | Match discovery, cell navigation, authored-only replacement and availability  |
-| Formula entry and completions                  | ui-components FormulaBar, CodeEditor and CompletionList                                | Formula grammar, reference picking, protected drafts and function descriptors |
+| Formula entry and completions                  | ui-components CodeEditor and CompletionList                                            | Formula grammar, reference picking, protected drafts and function descriptors |
 | Font, color and formatting controls            | ui-components NumberField, ColorField, ColorSwatchButton/Picker, menus and popovers    | Spreadsheet formatting commands, presets and physical-unit interpretation     |
 | Toolbar, worksheet and panel layout            | ui-components ToolbarRow, Tabs, DockPanel, ZoomControl                                 | Workbook state, worksheet operations and engine viewport                      |
 | Conversations and actors                       | ui-components CommentThread, CommentComposer, ReactionBar, Attribution and AvatarGroup | Range anchors, suggestion baselines and host identities                       |
@@ -37,7 +37,7 @@ No additional ui-components dependency or API is required for these corrections.
 ## Decisions retained for a later round
 
 - Multi-header resizing currently applies a shared delta, retaining differences between original widths/heights. Normalizing every selected line to the dragged line's resulting size changes interaction semantics and needs a product choice.
-- Saved history currently opens through a context-menu View action. The shared VersionHistory control supports direct selection and richer compare/restore actions; adopting it requires choosing the desired activation behavior rather than silently changing the current contract.
+- Saved history opens through a context-menu View action and renders in the editor’s own history panel. ui-components has no shared version history control; a shared one would be requested there and needs a choice of activation behavior.
 - A preset/custom-color toolbar composite could be shared if multiple editors need the same composition. The current implementation already uses the public color primitives. Keep the existing composition until a common API and consumers justify a new public component.
 
 ## Validation
