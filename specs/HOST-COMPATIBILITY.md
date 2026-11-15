@@ -33,4 +33,4 @@ A host may connect semantic operations to its existing shared document, supply i
 
 Formula descriptors advertise host capabilities without authorizing execution. Excel capabilities explicitly identify permitted host functions and captured-text policy; exports use stored operands without live resolution. Unknown functions return `#NAME?` in native calculation.
 
-[HOST-INTEGRATION.md](HOST-INTEGRATION.md) owns the public contracts. [Source provenance](../NOTICE.md) records upstream revisions and paths. Normal CI uses portable fixtures and requires no application checkout or backend.
+[HOST-INTEGRATION.md](HOST-INTEGRATION.md) owns the public contracts. Normal CI uses portable fixtures and requires no application checkout or backend.
