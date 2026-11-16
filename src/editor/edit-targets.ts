@@ -11,10 +11,10 @@ export function mergeTargets(a: CellTargets, b: CellTargets): CellTargets {
       merged.set(id, new Set([...(merged.get(id) ?? []), ...addresses]));
   return merged;
 }
+/** The cells a block of `values` writes from its top-left cell `{x, y}`. */
 export function blockTargets(
   sheetId: string,
-  x: number,
-  y: number,
+  { x, y }: { x: number; y: number },
   values: unknown[][],
 ): CellTargets {
   return new Map([

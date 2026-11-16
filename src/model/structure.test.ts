@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
-import { parseDelimited, serializeDelimited, writeCells } from './editing.js';
+import { parseDelimited, serializeDelimited } from './delimited.js';
+import { writeCells } from './editing.js';
+import { rewriteStructureReferences } from './formula-references.js';
 import { addComment, proposeWorkbookChange } from './review.js';
 import {
   changeWorkbookStructure,
   deleteWorksheet,
   renameWorksheet,
-  rewriteStructureReferences,
   validateWorksheetName,
 } from './structure.js';
 import { createWorkbook } from './workbook.js';
@@ -15,46 +16,66 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
   it('rewrites relative and absolute references and preserves strings and scientific literals', () => {
     const formula = '=SUM($A$1:A3)+Other!B2+\'Sheet one\'!B2+1E-25+IF(TRUE,"A2",LOG10(100))';
     expect(
-      rewriteStructureReferences(formula, 'Sheet one', 'Sheet one', {
-        axis: 'row',
-        kind: 'insert',
-        index: 1,
-        count: 1,
-      }),
+      rewriteStructureReferences(
+        formula,
+        {
+          axis: 'row',
+          kind: 'insert',
+          index: 1,
+          count: 1,
+        },
+        { currentSheet: 'Sheet one', targetSheet: 'Sheet one' },
+      ),
     ).toBe('=SUM($A$1:A4)+Other!B2+\'Sheet one\'!B3+1E-25+IF(TRUE,"A2",LOG10(100))');
     expect(
-      rewriteStructureReferences('=SUM(A1:A3)+A2', 'Sheet1', 'Sheet1', {
-        axis: 'row',
-        kind: 'delete',
-        index: 0,
-        count: 1,
-      }),
+      rewriteStructureReferences(
+        '=SUM(A1:A3)+A2',
+        {
+          axis: 'row',
+          kind: 'delete',
+          index: 0,
+          count: 1,
+        },
+        { currentSheet: 'Sheet1', targetSheet: 'Sheet1' },
+      ),
     ).toBe('=SUM(A1:A2)+A1');
     expect(
-      rewriteStructureReferences('=A2', 'Sheet1', 'Sheet1', {
-        axis: 'row',
-        kind: 'delete',
-        index: 1,
-        count: 1,
-      }),
+      rewriteStructureReferences(
+        '=A2',
+        {
+          axis: 'row',
+          kind: 'delete',
+          index: 1,
+          count: 1,
+        },
+        { currentSheet: 'Sheet1', targetSheet: 'Sheet1' },
+      ),
     ).toBe('=#REF!');
   });
   it('rewrites whole rows/columns and quoted sheet names with escaped apostrophes', () => {
     expect(
-      rewriteStructureReferences("=SUM('O''Brien'!$A:$C)+SUM(1:3)", 'Sheet1', "O'Brien", {
-        axis: 'column',
-        kind: 'insert',
-        index: 1,
-        count: 2,
-      }),
+      rewriteStructureReferences(
+        "=SUM('O''Brien'!$A:$C)+SUM(1:3)",
+        {
+          axis: 'column',
+          kind: 'insert',
+          index: 1,
+          count: 2,
+        },
+        { currentSheet: 'Sheet1', targetSheet: "O'Brien" },
+      ),
     ).toBe("=SUM('O''Brien'!$A:$E)+SUM(1:3)");
     expect(
-      rewriteStructureReferences('=SUM($1:$3)', 'Sheet1', 'Sheet1', {
-        axis: 'row',
-        kind: 'delete',
-        index: 1,
-        count: 1,
-      }),
+      rewriteStructureReferences(
+        '=SUM($1:$3)',
+        {
+          axis: 'row',
+          kind: 'delete',
+          index: 1,
+          count: 1,
+        },
+        { currentSheet: 'Sheet1', targetSheet: 'Sheet1' },
+      ),
     ).toBe('=SUM($1:$2)');
   });
   it('moves data, formulas on other sheets, styles, merge spans, and comment anchors together', () => {
@@ -65,11 +86,15 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
     source.worksheets[0].style = { A2: 'font-weight: bold' };
     source.worksheets[0].mergeCells = { A2: [2, 1] };
     source.worksheets.push({ id: 'other', name: 'Other', data: [['=Sheet1!A2']] });
-    source = addComment(source, 'sheet-1', 'A2', 'Move this', {
-      id: 'comment',
-      actor: { id: 'alex', name: 'Alex' },
-      time: '2026-11-10T12:00:00Z',
-    });
+    source = addComment(
+      source,
+      { sheetId: 'sheet-1', range: 'A2', text: 'Move this' },
+      {
+        id: 'comment',
+        actor: { id: 'alex', name: 'Alex' },
+        time: '2026-11-10T12:00:00Z',
+      },
+    );
     const next = changeWorkbookStructure(source, 'sheet-1', {
       axis: 'row',
       kind: 'insert',
@@ -85,15 +110,21 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
   });
   it('marks deleted comment anchors and suggestions instead of silently attaching them elsewhere', () => {
     let source = createWorkbook([['1'], ['2'], ['3']]);
-    source = addComment(source, 'sheet-1', 'A2', 'Deleted', {
-      id: 'comment',
-      actor: { id: 'alex', name: 'Alex' },
-      time: '2026-11-10T12:00:00Z',
-    });
+    source = addComment(
+      source,
+      { sheetId: 'sheet-1', range: 'A2', text: 'Deleted' },
+      {
+        id: 'comment',
+        actor: { id: 'alex', name: 'Alex' },
+        time: '2026-11-10T12:00:00Z',
+      },
+    );
     source = proposeWorkbookChange(
       source,
-      writeCells(source, 'sheet-1', 0, 1, [['4']]),
-      'Edit A2',
+      {
+        proposed: writeCells(source, [['4']], { sheetId: 'sheet-1', x: 0, y: 1 }),
+        summary: 'Edit A2',
+      },
       { id: 'suggestion', actor: { id: 'alex', name: 'Alex' }, time: '2026-11-10T12:00:00Z' },
     );
     const next = changeWorkbookStructure(source, 'sheet-1', {
@@ -159,12 +190,18 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
       expect.objectContaining({ numerator: '5', denominator: '1' }),
     ]);
     const insert = { axis: 'row', kind: 'insert', index: 0, count: 1 } as const;
-    expect(rewriteStructureReferences('=Données!A2*2', 'Sheet1', 'Données', insert)).toBe(
-      '=Données!A3*2',
-    );
-    expect(rewriteStructureReferences('=Données!A2*2', 'Sheet1', 'es', insert)).toBe(
-      '=Données!A2*2',
-    );
+    expect(
+      rewriteStructureReferences('=Données!A2*2', insert, {
+        currentSheet: 'Sheet1',
+        targetSheet: 'Données',
+      }),
+    ).toBe('=Données!A3*2');
+    expect(
+      rewriteStructureReferences('=Données!A2*2', insert, {
+        currentSheet: 'Sheet1',
+        targetSheet: 'es',
+      }),
+    ).toBe('=Données!A2*2');
     expect(changeWorkbookStructure(workbook, 'data', insert).worksheets[0].data[0][0]).toBe(
       '=Données!A3*2',
     );
@@ -186,12 +223,16 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
   it('SE-CHROME-2.1: renaming a sheet rewrites formulas held in pending suggestions', () => {
     const workbook = createWorkbook([['1']]);
     workbook.worksheets.push({ id: 'inputs', name: 'Inputs', data: [['3']] });
-    const proposed = writeCells(workbook, 'sheet-1', 0, 0, [['=Inputs!A1*2']]);
-    const suggested = proposeWorkbookChange(workbook, proposed, 'Use inputs', {
-      id: 'suggestion',
-      actor: { id: 'alex', name: 'Alex' },
-      time: '2026-11-10T12:00:00Z',
-    });
+    const proposed = writeCells(workbook, [['=Inputs!A1*2']], { sheetId: 'sheet-1', x: 0, y: 0 });
+    const suggested = proposeWorkbookChange(
+      workbook,
+      { proposed, summary: 'Use inputs' },
+      {
+        id: 'suggestion',
+        actor: { id: 'alex', name: 'Alex' },
+        time: '2026-11-10T12:00:00Z',
+      },
+    );
     const renamed = renameWorksheet(suggested, 'inputs', 'Sources');
     expect(renamed.suggestions?.[0].changes[0].after).toBe("='Sources'!A1*2");
   });
@@ -202,12 +243,15 @@ describe('SE-CHROME-2.1: structure and exact formula text', () => {
     // A long run of words and spaces once made every word start rescan the rest of the run.
     const words = '=' + 'ab '.repeat(40_000) + 'A1';
     const started = performance.now();
-    const rewritten = rewriteStructureReferences(references, 'Sheet1', 'Sheet1', insert);
+    const rewritten = rewriteStructureReferences(references, insert, {
+      currentSheet: 'Sheet1',
+      targetSheet: 'Sheet1',
+    });
     expect(rewritten.startsWith('=A2+A3+')).toBe(true);
     expect(rewritten.endsWith('+A20001')).toBe(true);
-    expect(rewriteStructureReferences(words, 'Sheet1', 'Sheet1', insert)).toBe(
-      '=' + 'ab '.repeat(40_000) + 'A2',
-    );
+    expect(
+      rewriteStructureReferences(words, insert, { currentSheet: 'Sheet1', targetSheet: 'Sheet1' }),
+    ).toBe('=' + 'ab '.repeat(40_000) + 'A2');
     // Generous: the quadratic scan took about 5 seconds here.
     expect(performance.now() - started).toBeLessThan(1_000);
   });

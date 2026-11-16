@@ -70,7 +70,7 @@ describe('SE-UI-2.1: calculation lifecycle', () => {
       calculate: () => new Promise((resolve) => replies.push(resolve)),
     };
     const { result, rerender } = renderHook(
-      ({ enabled }) => useCalculation(workbook, provider, undefined, enabled),
+      ({ enabled }) => useCalculation(workbook, provider, { enabled }),
       { initialProps: { enabled: true } },
     );
     await waitFor(() => expect(replies).toHaveLength(1));

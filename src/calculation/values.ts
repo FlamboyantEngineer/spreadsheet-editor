@@ -1,4 +1,4 @@
-import type { Dimension } from './units.js';
+import type { Dimension } from './quantity-core.js';
 /**
  * Text order for calculation: one fixed collation, so a client and a server compare and sort text the
  * same way whatever their runtime locale.
@@ -96,60 +96,66 @@ export function assertJsonValue(
   if (bytes > maxBytes) throw new RangeError('Host JSON exceeds the byte limit.');
 }
 
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  [Object.prototype, null].includes(Object.getPrototypeOf(value) as object | null);
+
+function validMagnitude(cell: NumericValue, maxDigits: number): boolean {
+  return (
+    cell.kind === 'number' &&
+    typeof cell.numerator === 'string' &&
+    typeof cell.denominator === 'string' &&
+    cell.numerator.length <= maxDigits + 1 &&
+    cell.denominator.length <= maxDigits &&
+    /^-?(?:0|[1-9]\d*)$/.test(cell.numerator) &&
+    /^[1-9]\d*$/.test(cell.denominator)
+  );
+}
+function validPrecision(cell: NumericValue): boolean {
+  if (typeof cell.approximate !== 'boolean') return false;
+  if (cell.precision === undefined) return !cell.approximate;
+  return Number.isInteger(cell.precision) && cell.precision >= 16 && cell.precision <= 1000;
+}
+const validDimension = ({ dimension }: NumericValue) =>
+  dimension === undefined ||
+  (Array.isArray(dimension) &&
+    dimension.length === 7 &&
+    Array.from(dimension).every((n) => Number.isInteger(n) && Math.abs(n) <= 32));
+const validKind = ({ quantityKind }: NumericValue) =>
+  quantityKind === undefined ||
+  (typeof quantityKind === 'string' && Boolean(quantityKind) && quantityKind.length <= 128);
+const validTemperature = (cell: NumericValue) =>
+  cell.temperature === undefined ||
+  (['absolute', 'difference'].includes(cell.temperature) && isPureTemperature(cell));
+const validRevision = ([key, revision]: [string, unknown]) =>
+  Boolean(key) &&
+  key.length <= 1024 &&
+  typeof revision === 'string' &&
+  Boolean(revision) &&
+  revision.length <= 1024;
+const validProvenance = ({ provenance }: NumericValue) =>
+  provenance === undefined ||
+  (isPlainRecord(provenance) &&
+    Object.keys(provenance).length <= 128 &&
+    Object.entries(provenance).every(validRevision));
+
 export function assertNumericValue(
   value: unknown,
   maxDigits = 100_000,
 ): asserts value is NumericValue {
+  if (!isPlainRecord(value)) throw new TypeError('Invalid numeric value.');
+  const cell = value as unknown as NumericValue;
   if (
-    !value ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(value) as object | null)
-  )
-    throw new TypeError('Invalid numeric value.');
-  const cell = value as NumericValue;
-  if (
-    cell.kind !== 'number' ||
-    typeof cell.numerator !== 'string' ||
-    typeof cell.denominator !== 'string' ||
-    cell.numerator.length > maxDigits + 1 ||
-    cell.denominator.length > maxDigits ||
-    !/^-?(?:0|[1-9]\d*)$/.test(cell.numerator) ||
-    !/^[1-9]\d*$/.test(cell.denominator) ||
-    typeof cell.approximate !== 'boolean' ||
-    (cell.precision !== undefined &&
-      (!Number.isInteger(cell.precision) || cell.precision < 16 || cell.precision > 1000)) ||
-    (cell.approximate && cell.precision === undefined) ||
-    (cell.dimension !== undefined &&
-      (!Array.isArray(cell.dimension) ||
-        cell.dimension.length !== 7 ||
-        Array.from(cell.dimension).some((n) => !Number.isInteger(n) || Math.abs(n) > 32))) ||
-    (cell.quantityKind !== undefined &&
-      (typeof cell.quantityKind !== 'string' ||
-        !cell.quantityKind ||
-        cell.quantityKind.length > 128)) ||
-    (cell.temperature !== undefined &&
-      (!['absolute', 'difference'].includes(cell.temperature) || !isPureTemperature(cell)))
+    !validMagnitude(cell, maxDigits) ||
+    !validPrecision(cell) ||
+    !validDimension(cell) ||
+    !validKind(cell) ||
+    !validTemperature(cell)
   )
     throw new TypeError('Invalid numeric value or quantity metadata.');
-  if (cell.provenance !== undefined) {
-    if (
-      !cell.provenance ||
-      typeof cell.provenance !== 'object' ||
-      Array.isArray(cell.provenance) ||
-      ![Object.prototype, null].includes(Object.getPrototypeOf(cell.provenance) as object | null) ||
-      Object.keys(cell.provenance).length > 128 ||
-      Object.entries(cell.provenance).some(
-        ([key, revision]) =>
-          !key ||
-          key.length > 1024 ||
-          typeof revision !== 'string' ||
-          !revision ||
-          revision.length > 1024,
-      )
-    )
-      throw new TypeError('Invalid numeric provenance.');
-  }
+  if (!validProvenance(cell)) throw new TypeError('Invalid numeric provenance.');
 }
 
 export function isPureTemperature(value: NumericValue): boolean {

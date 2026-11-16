@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import {
   observeGridBorderCopies,
   restoreSharedGridBorders,

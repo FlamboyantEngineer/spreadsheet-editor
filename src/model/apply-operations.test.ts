@@ -41,8 +41,16 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
     initial.worksheets[0].inputValues = {
       A1: { kind: 'number', numerator: '1', denominator: '3', approximate: false },
     };
-    const first = writeCellsWithOperations(initial, 'sheet-1', 0, 0, [['first']]);
-    const second = writeCellsWithOperations(initial, 'sheet-1', 1, 0, [['second']]);
+    const first = writeCellsWithOperations(initial, [['first']], {
+      sheetId: 'sheet-1',
+      x: 0,
+      y: 0,
+    });
+    const second = writeCellsWithOperations(initial, [['second']], {
+      sheetId: 'sheet-1',
+      x: 1,
+      y: 0,
+    });
     const shared = applyWorkbookOperations(
       applyWorkbookOperations(initial, first.operations),
       second.operations,
@@ -55,21 +63,33 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
   });
   it('rebases same-row inserts, deletes only targeted identities and follows surviving cells', () => {
     const initial = base();
-    const a = changeWorkbookStructureWithOperations(initial, 'sheet-1', {
-      axis: 'row',
-      kind: 'insert',
-      index: 1,
-      count: 1,
-      ids: ['a'],
+    const a = changeWorkbookStructureWithOperations(
+      initial,
+      { sheetId: 'sheet-1' },
+      {
+        axis: 'row',
+        kind: 'insert',
+        index: 1,
+        count: 1,
+        ids: ['a'],
+      },
+    );
+    const b = changeWorkbookStructureWithOperations(
+      initial,
+      { sheetId: 'sheet-1' },
+      {
+        axis: 'row',
+        kind: 'insert',
+        index: 1,
+        count: 1,
+        ids: ['b'],
+      },
+    );
+    const cell = writeCellsWithOperations(initial, [['survives']], {
+      sheetId: 'sheet-1',
+      x: 1,
+      y: 1,
     });
-    const b = changeWorkbookStructureWithOperations(initial, 'sheet-1', {
-      axis: 'row',
-      kind: 'insert',
-      index: 1,
-      count: 1,
-      ids: ['b'],
-    });
-    const cell = writeCellsWithOperations(initial, 'sheet-1', 1, 1, [['survives']]);
     let shared = applyWorkbookOperations(
       applyWorkbookOperations(initial, a.operations),
       b.operations,
@@ -82,12 +102,16 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
       requireDefined(initial.worksheets[0].rowIds)[1],
     ]);
     expect(shared.worksheets[0].data[3][1]).toBe('survives');
-    const deletion = changeWorkbookStructureWithOperations(initial, 'sheet-1', {
-      axis: 'row',
-      kind: 'delete',
-      index: 1,
-      count: 1,
-    });
+    const deletion = changeWorkbookStructureWithOperations(
+      initial,
+      { sheetId: 'sheet-1' },
+      {
+        axis: 'row',
+        kind: 'delete',
+        index: 1,
+        count: 1,
+      },
+    );
     expect(() =>
       applyWorkbookTransaction(shared, {
         transactionId: 'stale-delete',
@@ -104,9 +128,13 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
     );
   });
   it('merges simultaneous same-thread replies and reaction membership; inverse preserves the other actor', () => {
-    const initial = addComment(base(), 'sheet-1', 'A1', 'start', stamp('thread'));
-    const a = replyToComment(initial, 'thread', 'a', stamp('a'));
-    const b = replyToComment(initial, 'thread', 'b', stamp('b'));
+    const initial = addComment(
+      base(),
+      { sheetId: 'sheet-1', range: 'A1', text: 'start' },
+      stamp('thread'),
+    );
+    const a = replyToComment(initial, { id: 'thread', text: 'a' }, stamp('a'));
+    const b = replyToComment(initial, { id: 'thread', text: 'b' }, stamp('b'));
     const reactionA = updateComment(a, 'thread', (thread) => {
       thread.entries[0].reactions = { '+1': ['a'] };
     });
@@ -143,7 +171,11 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
     expect(shared.worksheets[0].columns).toEqual([{ width: 100 }, { width: 120 }]);
     const stale = copyWorkbook(initial);
     requireDefined(stale.worksheets[0].columns)[0].width = 150;
-    const cell = writeCellsWithOperations(initial, 'sheet-1', 0, 0, [['must rollback']]);
+    const cell = writeCellsWithOperations(initial, [['must rollback']], {
+      sheetId: 'sheet-1',
+      x: 0,
+      y: 0,
+    });
     expect(() =>
       applyWorkbookOperations(shared, [
         ...cell.operations,
@@ -158,7 +190,7 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
     );
     const reordered = copyWorkbook(sheets);
     reordered.worksheets.reverse();
-    const op = sheetOperation('sheet-reorder', sheets, reordered);
+    const op = sheetOperation({ kind: 'sheet-reorder' }, sheets, reordered);
     const latest = copyWorkbook(sheets);
     [latest.worksheets[0], latest.worksheets[1]] = [latest.worksheets[1], latest.worksheets[0]];
     expect(() => applyWorkbookOperations(latest, [op])).toThrow(WorkbookOperationConflict);
@@ -193,17 +225,21 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
   });
   it('rejects stale positional layout and anchors after structure; retries identified cells safely', () => {
     const initial = base();
-    const inserted = changeWorkbookStructureWithOperations(initial, 'sheet-1', {
-      axis: 'column',
-      kind: 'insert',
-      index: 0,
-      count: 1,
-      ids: ['new-column'],
-    });
+    const inserted = changeWorkbookStructureWithOperations(
+      initial,
+      { sheetId: 'sheet-1' },
+      {
+        axis: 'column',
+        kind: 'insert',
+        index: 0,
+        count: 1,
+        ids: ['new-column'],
+      },
+    );
     const shared = applyWorkbookOperations(initial, inserted.operations);
     const geometry = copyWorkbook(initial);
     geometry.worksheets[0].columns = [{ width: 180 }];
-    const safe = writeCellsWithOperations(initial, 'sheet-1', 1, 1, [['safe']]);
+    const safe = writeCellsWithOperations(initial, [['safe']], { sheetId: 'sheet-1', x: 1, y: 1 });
     const context = {
       transactionId: 'layout',
       source: 'user' as const,
@@ -219,7 +255,11 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
       applyWorkbookTransaction(shared, { ...context, operations: safe.operations }).worksheets[0]
         .data[1][2],
     ).toBe('safe');
-    const annotated = addComment(initial, 'sheet-1', 'A1', 'position', stamp('new-thread'));
+    const annotated = addComment(
+      initial,
+      { sheetId: 'sheet-1', range: 'A1', text: 'position' },
+      stamp('new-thread'),
+    );
     expect(() =>
       applyWorkbookTransaction(shared, {
         ...context,
@@ -244,7 +284,11 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
       },
       { rememberTransactions: 1 },
     );
-    const edit = writeCellsWithOperations(initial, 'sheet-1', 0, 0, [['accepted']]);
+    const edit = writeCellsWithOperations(initial, [['accepted']], {
+      sheetId: 'sheet-1',
+      x: 0,
+      y: 0,
+    });
     const transaction = {
       transactionId: 'one',
       source: 'user' as const,
@@ -255,7 +299,11 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
     expect(() => binding.applyTransaction(edit.workbook, transaction)).toThrow('transaction-id');
     // Provider reconnect/replacement leaves this host-owned applier intact.
     expect(commits).toBe(1);
-    const changed = writeCellsWithOperations(shared, 'sheet-1', 0, 0, [['newer']]);
+    const changed = writeCellsWithOperations(shared, [['newer']], {
+      sheetId: 'sheet-1',
+      x: 0,
+      y: 0,
+    });
     binding.applyTransaction(changed.workbook, {
       ...transaction,
       baseline: shared,
@@ -272,12 +320,16 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
     initial.worksheets[0].columns = [{ width: 91 }, { width: 137 }];
     initial.worksheets[0].mergeCells = { A1: [2, 2] };
     for (const axis of ['row', 'column'] as const) {
-      const removed = changeWorkbookStructureWithOperations(initial, 'sheet-1', {
-        axis,
-        kind: 'delete',
-        index: 0,
-        count: 1,
-      });
+      const removed = changeWorkbookStructureWithOperations(
+        initial,
+        { sheetId: 'sheet-1' },
+        {
+          axis,
+          kind: 'delete',
+          index: 0,
+          count: 1,
+        },
+      );
       const restored = applyWorkbookOperations(
         removed.workbook,
         invertWorkbookOperations(removed.operations),
@@ -310,7 +362,11 @@ describe('SE-HOST-1.1: atomic serialized operation application', () => {
       operations: commandOperations(initial, renamed),
     });
     expect(applied.worksheets[0].name).toBe('Renamed');
-    const staleFormula = writeCellsWithOperations(initial, 'other', 0, 0, [["='Sheet1'!A1"]]);
+    const staleFormula = writeCellsWithOperations(initial, [["='Sheet1'!A1"]], {
+      sheetId: 'other',
+      x: 0,
+      y: 0,
+    });
     expect(() =>
       applyWorkbookTransaction(applied, {
         transactionId: 'stale-formula',

@@ -1,16 +1,20 @@
-import { createWorkbookEntityId, worksheetExtent } from './extent.js';
+import { createWorkbookEntityId, type WorksheetExtent, worksheetExtent } from './extent.js';
+import {
+  interval,
+  mapReferences,
+  moveAddress,
+  moveRange,
+  rewriteStructureReferences,
+} from './formula-references.js';
 import { requireDefined } from './require-defined.js';
 import {
   formatSpreadsheetAddress,
-  formatSpreadsheetColumnName,
-  FORMULA_WORD_CHARACTER,
   parseSpreadsheetAddress,
-  parseSpreadsheetColumnName,
   parseSpreadsheetRange,
-  UNQUOTED_SHEET_NAME,
 } from './spreadsheet-addressing.js';
 import {
   assertWorkbook,
+  type CellInput,
   copyWorkbook,
   DEFAULT_WORKBOOK_LIMITS,
   type Workbook,
@@ -27,163 +31,7 @@ export interface StructureChange {
   ids?: readonly string[];
 }
 
-function interval(start: number, end: number, change: StructureChange): [number, number] | null {
-  const reversed = start > end,
-    left = Math.min(start, end),
-    right = Math.max(start, end);
-  let a = left,
-    b = right;
-  if (change.kind === 'insert') {
-    if (a >= change.index) a += change.count;
-    if (b >= change.index) b += change.count;
-  } else {
-    const last = change.index + change.count - 1;
-    if (a > last) a -= change.count;
-    else if (a >= change.index) a = change.index;
-    if (b > last) b -= change.count;
-    else if (b >= change.index) b = change.index - 1;
-    if (a > b) return null;
-  }
-  return reversed ? [b, a] : [a, b];
-}
-const CELL_OR_LINES = String.raw`(\$?[A-Za-z]{1,3}\$?[1-9]\d*(?::\$?[A-Za-z]{1,3}\$?[1-9]\d*)?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9]\d*:\$?[1-9]\d*)(?![\p{L}\p{N}_.(])`;
-/** Sticky patterns: one with an optional sheet prefix, one without for runs that end in no `!`. */
-const QUALIFIED_REFERENCE = new RegExp(
-    String.raw`(?:(?:'((?:[^']|'')*)'|(${UNQUOTED_SHEET_NAME}))!)?` + CELL_OR_LINES,
-    'uy',
-  ),
-  LOCAL_REFERENCE = new RegExp(`()()${CELL_OR_LINES}`, 'uy'),
-  NAME_RUN = /[\p{L}\p{N}_ ]*/uy;
-
-/** Scan references while keeping quoted text, anchors, and all authored numeric digits intact. */
-function mapReferences(
-  formula: string,
-  map: (reference: string, sheet: string | null, prefix: string) => string,
-): string {
-  if (!formula.trimStart().startsWith('=')) return formula;
-  let output = '',
-    index = 0,
-    runEnd = -1;
-  while (index < formula.length) {
-    if (!FORMULA_WORD_CHARACTER.test(formula[index - 1] ?? '')) {
-      // An unquoted sheet name runs to the end of its run of name characters, so the run's end is
-      // found once per run; that keeps the scan linear in the formula length.
-      if (index >= runEnd) {
-        NAME_RUN.lastIndex = index;
-        NAME_RUN.exec(formula);
-        runEnd = Math.max(NAME_RUN.lastIndex, index + 1);
-      }
-      const pattern =
-        formula[index] === "'" || formula[runEnd] === '!' ? QUALIFIED_REFERENCE : LOCAL_REFERENCE;
-      pattern.lastIndex = index;
-      const match = pattern.exec(formula);
-      if (match) {
-        const sheet = match[1] ? match[1].replace(/''/g, "'") : match[2] || null;
-        const prefix = match[0].slice(0, match[0].length - match[3].length);
-        output += map(match[3], sheet, prefix);
-        index += match[0].length;
-        continue;
-      }
-    }
-    const character = formula[index++];
-    output += character;
-    if (character === '"' || character === "'") {
-      while (index < formula.length) {
-        const next = formula[index++];
-        output += next;
-        if (next === character) {
-          if (formula[index] === character) output += formula[index++];
-          else break;
-        }
-      }
-    }
-  }
-  return output;
-}
-
-function rewriteReference(reference: string, change: StructureChange): string {
-  const pieces = reference.split(':'),
-    first = pieces[0],
-    last = pieces[1] ?? first;
-  const cellPattern = /^(\$?)([A-Za-z]+)(\$?)([1-9]\d*)$/;
-  const firstCell = cellPattern.exec(first),
-    lastCell = cellPattern.exec(last);
-  if (firstCell && lastCell) {
-    const from =
-      change.axis === 'row'
-        ? Number(firstCell[4]) - 1
-        : requireDefined(parseSpreadsheetColumnName(firstCell[2]));
-    const to =
-      change.axis === 'row'
-        ? Number(lastCell[4]) - 1
-        : requireDefined(parseSpreadsheetColumnName(lastCell[2]));
-    const transformed = interval(from, to, change);
-    if (!transformed) return '#REF!';
-    const format = (match: RegExpExecArray, value: number) =>
-      change.axis === 'row'
-        ? `${match[1]}${match[2]}${match[3]}${value + 1}`
-        : `${match[1]}${formatSpreadsheetColumnName(value)}${match[3]}${match[4]}`;
-    return pieces.length === 1
-      ? format(firstCell, transformed[0])
-      : `${format(firstCell, transformed[0])}:${format(lastCell, transformed[1])}`;
-  }
-  const wholeColumns = /^\$?[A-Za-z]+$/.test(first);
-  if ((wholeColumns && change.axis !== 'column') || (!wholeColumns && change.axis !== 'row'))
-    return reference;
-  const from = wholeColumns
-    ? requireDefined(parseSpreadsheetColumnName(first.replace('$', '')))
-    : Number(first.replace('$', '')) - 1;
-  const to = wholeColumns
-    ? requireDefined(parseSpreadsheetColumnName(last.replace('$', '')))
-    : Number(last.replace('$', '')) - 1;
-  const transformed = interval(from, to, change);
-  if (!transformed) return '#REF!';
-  const format = (original: string, value: number) =>
-    `${original.startsWith('$') ? '$' : ''}${wholeColumns ? formatSpreadsheetColumnName(value) : value + 1}`;
-  return `${format(first, transformed[0])}:${format(last, transformed[1])}`;
-}
-
-export function rewriteStructureReferences(
-  formula: string,
-  currentSheet: string,
-  targetSheet: string,
-  change: StructureChange,
-): string {
-  return mapReferences(formula, (reference, sheet, prefix) => {
-    if (worksheetNameKey(sheet ?? currentSheet) !== worksheetNameKey(targetSheet))
-      return prefix + reference;
-    const rewritten = rewriteReference(reference, change);
-    return rewritten === '#REF!' ? rewritten : prefix + rewritten;
-  });
-}
-
-function moveAddress(address: string, change: StructureChange): string | null {
-  const cell = parseSpreadsheetAddress(address);
-  if (!cell) return null;
-  const index = change.axis === 'row' ? cell.y : cell.x,
-    next = interval(index, index, change);
-  return next
-    ? formatSpreadsheetAddress(
-        change.axis === 'column' ? next[0] : cell.x,
-        change.axis === 'row' ? next[0] : cell.y,
-      )
-    : null;
-}
-function moveRange(range: string, change: StructureChange): string | null {
-  const parsed = parseSpreadsheetRange(range);
-  if (!parsed) return null;
-  const start = change.axis === 'row' ? parsed.start.y : parsed.start.x,
-    end = change.axis === 'row' ? parsed.end.y : parsed.end.x;
-  const moved = interval(start, end, change);
-  if (!moved) return null;
-  return `${formatSpreadsheetAddress(change.axis === 'column' ? moved[0] : parsed.start.x, change.axis === 'row' ? moved[0] : parsed.start.y)}:${formatSpreadsheetAddress(change.axis === 'column' ? moved[1] : parsed.end.x, change.axis === 'row' ? moved[1] : parsed.end.y)}`;
-}
-
-export function changeWorkbookStructure(
-  workbook: Workbook,
-  sheetId: string,
-  change: StructureChange,
-): Workbook {
+function checkChange(change: StructureChange) {
   if (
     !Number.isSafeInteger(change.index) ||
     !Number.isSafeInteger(change.count) ||
@@ -193,84 +41,84 @@ export function changeWorkbookStructure(
     change.count > 50_000
   )
     throw new RangeError('Invalid structural change.');
-  const next = copyWorkbook(workbook),
-    sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
-  if (!sheet) throw new RangeError('Unknown worksheet.');
-  const extent = worksheetExtent(sheet, next),
-    axisExtent = change.axis === 'row' ? extent.rows : extent.columns;
+}
+
+/** The change within the sheet's extent; a deletion always leaves one line. */
+function boundedChange(change: StructureChange, axisExtent: number): StructureChange {
   if (change.index > axisExtent || (change.kind === 'delete' && change.index >= axisExtent))
     throw new RangeError('Structural change is outside the worksheet extent.');
   if (change.kind === 'delete' && change.index + change.count > axisExtent)
     throw new RangeError('Structural deletion is outside the worksheet extent.');
-  change = {
+  return {
     ...change,
     count: change.kind === 'delete' ? Math.min(change.count, axisExtent - 1) : change.count,
   };
-  if (!change.count) return next;
-  const columns =
-      extent.columns +
-      (change.axis === 'column' ? (change.kind === 'insert' ? change.count : -change.count) : 0),
-    rows =
-      extent.rows +
-      (change.axis === 'row' ? (change.kind === 'insert' ? change.count : -change.count) : 0);
+}
+
+/** Records the sheet's new dimensions, within the cell limit. */
+function resize(sheet: Worksheet, extent: WorksheetExtent, change: StructureChange) {
+  const delta = change.kind === 'insert' ? change.count : -change.count;
+  const columns = extent.columns + (change.axis === 'column' ? delta : 0),
+    rows = extent.rows + (change.axis === 'row' ? delta : 0);
   if (columns > 16384 || rows > 1048576 || columns * rows > DEFAULT_WORKBOOK_LIMITS.maxCells)
     throw new RangeError('Worksheet exceeds the cell limit.');
   sheet.minDimensions = [columns, rows];
-  let existingIds = change.axis === 'row' ? sheet.rowIds : sheet.columnIds;
-  if (!existingIds && change.ids) {
-    existingIds = Array.from({ length: axisExtent }, () => createWorkbookEntityId(change.axis));
-    if (change.axis === 'row') sheet.rowIds = existingIds;
-    else sheet.columnIds = existingIds;
+}
+
+function invalidIds(ids: readonly string[], change: StructureChange, existing?: string[]) {
+  return (
+    change.kind !== 'insert' ||
+    ids.length !== change.count ||
+    ids.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
+    new Set(ids).size !== ids.length ||
+    ids.some((id) => existing?.includes(id))
+  );
+}
+
+/** Inserts or removes line identities; supplied ids start tracking on a sheet without them. */
+function changeLineIds(sheet: Worksheet, change: StructureChange, axisExtent: number) {
+  let existing = change.axis === 'row' ? sheet.rowIds : sheet.columnIds;
+  if (!existing && change.ids) {
+    existing = Array.from({ length: axisExtent }, () => createWorkbookEntityId(change.axis));
+    if (change.axis === 'row') sheet.rowIds = existing;
+    else sheet.columnIds = existing;
   }
-  if (
-    change.ids !== undefined &&
-    (change.kind !== 'insert' ||
-      change.ids.length !== change.count ||
-      change.ids.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
-      new Set(change.ids).size !== change.ids.length ||
-      change.ids.some((id) => existingIds?.includes(id)))
-  )
+  if (change.ids !== undefined && invalidIds(change.ids, change, existing))
     throw new TypeError('Invalid inserted line identities.');
-  if (existingIds)
-    existingIds.splice(
-      change.index,
-      change.kind === 'delete' ? change.count : 0,
-      ...(change.kind === 'insert'
-        ? (change.ids ??
-          Array.from({ length: change.count }, () => createWorkbookEntityId(change.axis)))
-        : []),
-    );
+  if (!existing) return;
+  const inserted =
+    change.kind === 'insert'
+      ? (change.ids ??
+        Array.from({ length: change.count }, () => createWorkbookEntityId(change.axis)))
+      : [];
+  existing.splice(change.index, change.kind === 'delete' ? change.count : 0, ...inserted);
+}
+
+/** Inserts blank entries into a list that reaches the change, or removes the deleted ones. */
+function spliceLines<T>(list: T[], change: StructureChange, blank: () => T) {
+  if (change.kind === 'delete') list.splice(change.index, change.count);
+  else if (change.index < list.length)
+    list.splice(change.index, 0, ...Array.from({ length: change.count }, blank));
+}
+
+function changeLines(sheet: Worksheet, change: StructureChange) {
   if (change.axis === 'row') {
-    if (change.kind === 'insert') {
-      if (change.index < sheet.data.length)
-        sheet.data.splice(change.index, 0, ...Array.from({ length: change.count }, () => []));
-    } else sheet.data.splice(change.index, change.count);
+    spliceLines<CellInput[]>(sheet.data, change, () => []);
+    if (!sheet.rows) return;
     const rowSettings: NonNullable<Worksheet['rows']> = {};
-    for (const [index, settings] of Object.entries(sheet.rows ?? {})) {
+    for (const [index, settings] of Object.entries(sheet.rows)) {
       const moved = interval(Number(index), Number(index), change);
       if (moved) rowSettings[String(moved[0])] = settings;
     }
-    if (sheet.rows) sheet.rows = rowSettings;
-  } else {
-    sheet.data.forEach((row) => {
-      if (change.kind === 'insert') {
-        if (change.index < row.length)
-          row.splice(change.index, 0, ...Array.from({ length: change.count }, () => null));
-      } else row.splice(change.index, change.count);
-    });
-    if (sheet.columns) {
-      if (change.kind === 'insert') {
-        if (change.index < sheet.columns.length)
-          sheet.columns.splice(
-            change.index,
-            0,
-            ...Array.from({ length: change.count }, () => ({})),
-          );
-      } else sheet.columns.splice(change.index, change.count);
-    }
+    sheet.rows = rowSettings;
+    return;
   }
-  if (!sheet.data.length) sheet.data = [['']];
-  if (!sheet.data.some((row) => row.length)) sheet.data[0].push(null);
+  sheet.data.forEach((row) => spliceLines<CellInput>(row, change, () => null));
+  if (sheet.columns) spliceLines(sheet.columns, change, () => ({}));
+}
+
+/** Moves every cell-keyed map and merge with the change; deleted cells drop out. */
+function moveCellMaps(sheet: Worksheet, change: StructureChange) {
   const remap = <T>(map: Record<string, T> | undefined): Record<string, T> =>
     Object.fromEntries(
       Object.entries(map ?? {}).flatMap(([address, value]) => {
@@ -283,8 +131,9 @@ export function changeWorkbookStructure(
   if (sheet.formats) sheet.formats = remap(sheet.formats);
   if (sheet.cellProvenance) sheet.cellProvenance = remap(sheet.cellProvenance);
   if (sheet.inputValues) sheet.inputValues = remap(sheet.inputValues);
+  if (!sheet.mergeCells) return;
   const merges: NonNullable<Worksheet['mergeCells']> = {};
-  for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells ?? {})) {
+  for (const [address, [columns, rows]] of Object.entries(sheet.mergeCells)) {
     const anchor = requireDefined(parseSpreadsheetAddress(address));
     const moved = moveRange(
       `${address}:${formatSpreadsheetAddress(anchor.x + columns - 1, anchor.y + rows - 1)}`,
@@ -297,41 +146,63 @@ export function changeWorkbookStructure(
         span.end.y - span.start.y + 1,
       ];
   }
-  if (sheet.mergeCells) sheet.mergeCells = merges;
+  sheet.mergeCells = merges;
+}
+
+/** Rewrites formulas, comment ranges and suggestions across the workbook for the change. */
+function followChange(next: Workbook, sheet: Worksheet, change: StructureChange) {
+  const rewrite = (formula: string, currentSheet: string) =>
+    rewriteStructureReferences(formula, change, { currentSheet, targetSheet: sheet.name });
   next.worksheets.forEach((current) =>
     current.data.forEach((row) =>
       row.forEach((value, index) => {
-        if (typeof value === 'string')
-          row[index] = rewriteStructureReferences(value, current.name, sheet.name, change);
+        if (typeof value === 'string') row[index] = rewrite(value, current.name);
       }),
     ),
   );
   next.comments?.forEach((thread) => {
-    if (thread.sheetId === sheetId && !thread.orphaned) {
-      const moved = moveRange(thread.range ?? '', change);
-      if (moved) thread.range = requireDefined(parseSpreadsheetRange(moved)).address;
-      else thread.orphaned = true;
-    }
+    if (thread.sheetId !== sheet.id || thread.orphaned) return;
+    const moved = moveRange(thread.range ?? '', change);
+    if (moved) thread.range = requireDefined(parseSpreadsheetRange(moved)).address;
+    else thread.orphaned = true;
   });
   next.suggestions?.forEach((item) =>
     item.changes.forEach((cell) => {
-      const current = next.worksheets.find((sheet) => sheet.id === cell.sheetId);
-      if (cell.sheetId === sheetId) {
+      const current = next.worksheets.find((candidate) => candidate.id === cell.sheetId);
+      if (cell.sheetId === sheet.id) {
         const moved = moveAddress(cell.address, change);
         if (moved) cell.address = moved;
         else item.outdated = true;
       }
-      if (current)
-        for (const field of ['before', 'after'] as const)
-          if (typeof cell[field] === 'string')
-            cell[field] = rewriteStructureReferences(
-              cell[field] as string,
-              current.name,
-              sheet.name,
-              change,
-            );
+      if (!current) return;
+      for (const field of ['before', 'after'] as const) {
+        const value = cell[field];
+        if (typeof value === 'string') cell[field] = rewrite(value, current.name);
+      }
     }),
   );
+}
+
+export function changeWorkbookStructure(
+  workbook: Workbook,
+  sheetId: string,
+  requested: StructureChange,
+): Workbook {
+  checkChange(requested);
+  const next = copyWorkbook(workbook),
+    sheet = next.worksheets.find((sheet) => sheet.id === sheetId);
+  if (!sheet) throw new RangeError('Unknown worksheet.');
+  const extent = worksheetExtent(sheet, next),
+    axisExtent = requested.axis === 'row' ? extent.rows : extent.columns;
+  const change = boundedChange(requested, axisExtent);
+  if (!change.count) return next;
+  resize(sheet, extent, change);
+  changeLineIds(sheet, change, axisExtent);
+  changeLines(sheet, change);
+  if (!sheet.data.length) sheet.data = [['']];
+  if (!sheet.data.some((row) => row.length)) sheet.data[0].push(null);
+  moveCellMaps(sheet, change);
+  followChange(next, sheet, change);
   assertWorkbook(next);
   return next;
 }
@@ -377,10 +248,10 @@ function rewriteFormulas(workbook: Workbook, rewrite: (formula: string) => strin
       row.forEach((value, index) => {
         if (typeof value === 'string') row[index] = rewrite(value);
       });
-  for (const item of workbook.suggestions ?? [])
-    for (const cell of item.changes)
-      for (const field of ['before', 'after'] as const)
-        if (typeof cell[field] === 'string') cell[field] = rewrite(cell[field] as string);
+  const changes = (workbook.suggestions ?? []).flatMap((item) => item.changes);
+  for (const cell of changes)
+    for (const field of ['before', 'after'] as const)
+      if (typeof cell[field] === 'string') cell[field] = rewrite(cell[field] as string);
 }
 
 export function deleteWorksheet(workbook: Workbook, sheetId: string): Workbook {
@@ -402,32 +273,4 @@ export function deleteWorksheet(workbook: Workbook, sheetId: string): Workbook {
     if (item.changes.some((cell) => cell.sheetId === sheetId)) item.outdated = true;
   });
   return next;
-}
-
-/** Translate a copied formula without touching literals, sheet names or absolute axes. */
-export function translateFormulaReferences(formula: string, dx: number, dy: number): string {
-  return mapReferences(formula, (reference, _sheet, prefix) => {
-    const axis = (token: string, kind: 'column' | 'row'): string | null => {
-      const anchored = token.startsWith('$');
-      const bare = token.replace('$', '');
-      const before = kind === 'column' ? parseSpreadsheetColumnName(bare) : Number(bare) - 1;
-      if (before === null) return null;
-      const after = before + (anchored ? 0 : kind === 'column' ? dx : dy);
-      if (after < 0 || after > (kind === 'column' ? 16383 : 1048575)) return null;
-      return (
-        (anchored ? '$' : '') +
-        (kind === 'column' ? formatSpreadsheetColumnName(after) : String(after + 1))
-      );
-    };
-    const pieces = reference.split(':').map((token) => {
-      const cell = /^(\$?[A-Za-z]+)(\$?[1-9]\d*)$/.exec(token);
-      if (cell) {
-        const x = axis(cell[1], 'column'),
-          y = axis(cell[2], 'row');
-        return x === null || y === null ? null : x + y;
-      }
-      return axis(token, /[A-Za-z]/.test(token) ? 'column' : 'row');
-    });
-    return pieces.some((part) => part === null) ? '#REF!' : prefix + pieces.join(':');
-  });
 }

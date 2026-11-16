@@ -1,6 +1,6 @@
 import { requireDefined } from '../model/require-defined.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 
 /**
  * The engine builds a row element for every worksheet row; only the rows near the viewport are
@@ -120,54 +120,62 @@ function sizeSpacers(engine: JSpreadsheetWorksheetInstance, state: RowWindowStat
   }
 }
 
-/** Attach rows [start, end) and detach the rest, moving only rows that change sides. */
-function place(
+type Span = [start: number, end: number];
+
+/** Appends the existing rows [from, to) before a node, returning the rows it attached. */
+function attachRows(
+  engine: JSpreadsheetWorksheetInstance,
+  [from, to]: Span,
+  before: Node | null,
+): number[] {
+  const tbody = requireDefined(engine.tbody);
+  const rows = tbody.ownerDocument.createDocumentFragment();
+  const attached: number[] = [];
+  for (let y = from; y < to; y++) {
+    const element = rowElement(engine, y);
+    if (!element) continue;
+    rows.append(element);
+    attached.push(y);
+  }
+  tbody.insertBefore(rows, before);
+  return attached;
+}
+
+/** Moves the window to [start, end), returning the rows it attached. */
+function moveWindow(
   engine: JSpreadsheetWorksheetInstance,
   state: RowWindowState,
-  start: number,
-  end: number,
-): void {
-  const tbody = requireDefined(engine.tbody);
-  const count = engine.rows?.length ?? 0;
-  [start, end] = widenForMerges(engine, Math.max(0, start), Math.min(count, end));
-  if (start === state.start && end === state.end) return;
+  [start, end]: Span,
+) {
   state.top.remove();
   state.bottom.remove();
   const kept = start < state.end && end > state.start;
   for (let y = state.start; y < state.end; y++)
     if (!kept || y < start || y >= end) rowElement(engine, y)?.remove();
-  const attached: number[] = [];
-  const fragment = () => tbody.ownerDocument.createDocumentFragment();
-  const attach = (from: number, to: number, before: Node | null) => {
-    const rows = fragment();
-    for (let y = from; y < to; y++) {
-      const element = rowElement(engine, y);
-      if (!element) continue;
-      rows.append(element);
-      attached.push(y);
-    }
-    tbody.insertBefore(rows, before);
-  };
-  if (!kept) attach(start, end, null);
-  else {
-    if (start < state.start) attach(start, state.start, rowElement(engine, state.start) ?? null);
-    if (end > state.end) attach(state.end, end, null);
-  }
+  if (!kept) return attachRows(engine, [start, end], null);
+  return [
+    ...(start < state.start
+      ? attachRows(engine, [start, state.start], rowElement(engine, state.start) ?? null)
+      : []),
+    ...(end > state.end ? attachRows(engine, [state.end, end], null) : []),
+  ];
+}
+
+/** Attach rows [start, end) and detach the rest, moving only rows that change sides. */
+function place(engine: JSpreadsheetWorksheetInstance, state: RowWindowState, span: Span): void {
+  const count = engine.rows?.length ?? 0;
+  const [start, end] = widenForMerges(engine, Math.max(0, span[0]), Math.min(count, span[1]));
+  if (start === state.start && end === state.end) return;
+  const attached = moveWindow(engine, state, [start, end]);
   state.start = start;
   state.end = end;
   sizeSpacers(engine, state);
   if (attached.length) state.onAttach(attached);
 }
 
-/** The window that covers the viewport with overscan, or the current one while it still does. */
-function wanted(
-  engine: JSpreadsheetWorksheetInstance,
-  state: RowWindowState,
-  reveal?: [number, number],
-): [number, number] {
-  const viewport = engine.content;
+/** The rows the viewport shows, by their heights below the column header. */
+function visibleRows(engine: JSpreadsheetWorksheetInstance, viewport: HTMLElement): Span {
   const count = engine.rows?.length ?? 0;
-  if (!viewport) return [0, count];
   const heights = rowHeights(engine);
   const header = engine.table?.tHead?.offsetHeight ?? 0;
   const top = viewport.scrollTop - header,
@@ -177,17 +185,32 @@ function wanted(
   while (first < count - 1 && offset + heights[first] <= top) offset += heights[first++];
   let last = first;
   while (last < count && offset < bottom) offset += heights[last++];
-  if (reveal) {
-    first = Math.min(first, reveal[0]);
-    last = Math.max(last, reveal[1] + 1);
-  }
-  if (
-    !reveal &&
+  return [first, last];
+}
+
+/** Whether the current window still covers the visible rows with their margin. */
+function covers(engine: JSpreadsheetWorksheetInstance, state: RowWindowState, [first, last]: Span) {
+  const count = engine.rows?.length ?? 0;
+  return (
     state.rows === engine.rows &&
     state.start <= Math.max(0, first - MARGIN_ROWS) &&
     state.end >= Math.min(count, last + MARGIN_ROWS)
-  )
-    return [state.start, state.end];
+  );
+}
+
+/** The window that covers the viewport with overscan, or the current one while it still does. */
+function wanted(
+  engine: JSpreadsheetWorksheetInstance,
+  state: RowWindowState,
+  reveal?: [number, number],
+): Span {
+  const viewport = engine.content;
+  if (!viewport) return [0, engine.rows?.length ?? 0];
+  let [first, last] = visibleRows(engine, viewport);
+  if (reveal) {
+    first = Math.min(first, reveal[0]);
+    last = Math.max(last, reveal[1] + 1);
+  } else if (covers(engine, state, [first, last])) return [state.start, state.end];
   return [first - OVERSCAN_ROWS, last + OVERSCAN_ROWS];
 }
 
@@ -214,8 +237,7 @@ export function windowGridRows(
   const update = () => {
     if (state.rows !== engine.rows) resetGridRowWindow(engine);
     else {
-      const [start, end] = wanted(engine, state);
-      place(engine, state, start, end);
+      place(engine, state, wanted(engine, state));
     }
   };
   viewport.addEventListener('scroll', update, { passive: true });
@@ -242,11 +264,10 @@ function resetGridRowWindow(engine: JSpreadsheetWorksheetInstance): void {
   state.start = 0;
   state.end = attached;
   if (count < MIN_WINDOWED_ROWS) {
-    place(engine, state, 0, count);
+    place(engine, state, [0, count]);
     return;
   }
-  const [start, end] = wanted(engine, { ...state, rows: [] });
-  place(engine, state, start, end);
+  place(engine, state, wanted(engine, { ...state, rows: [] }));
 }
 
 /** Resize the spacers after row heights change, as zoom and row resizing do, and follow the viewport. */
@@ -258,8 +279,7 @@ export function refreshGridRowWindow(engine: JSpreadsheetWorksheetInstance): voi
     return;
   }
   sizeSpacers(engine, state);
-  const [start, end] = wanted(engine, state);
-  place(engine, state, start, end);
+  place(engine, state, wanted(engine, state));
 }
 
 /** Attach rows y1 to y2 before something measures them or scrolls to them. */
@@ -272,11 +292,10 @@ export function revealGridRows(engine: JSpreadsheetWorksheetInstance, y1: number
   // A far row joins a window around itself rather than stretching the current one.
   const span = state.end - state.start;
   if (first > state.end + span || last < state.start - span) {
-    place(engine, state, first - OVERSCAN_ROWS, last + 1 + OVERSCAN_ROWS);
+    place(engine, state, [first - OVERSCAN_ROWS, last + 1 + OVERSCAN_ROWS]);
     return;
   }
-  const [start, end] = wanted(engine, state, [first, last]);
-  place(engine, state, start, end);
+  place(engine, state, wanted(engine, state, [first, last]));
 }
 
 /** Run an engine rebuild so that it attaches only its first rows, as its lazy mode does. */

@@ -30,10 +30,18 @@ const stamp = (id: string, actor = alex): ReviewStamp => ({
 describe('SE-REVIEW-1.1: persisted threaded comments', () => {
   it('round-trips anchors, authors, replies, resolution and reactions without changing cells', () => {
     const source = createWorkbook([['1E-25', '=1-A1']]);
-    let next = addComment(source, 'sheet-1', 'B1', 'Check the precision', stamp('thread'));
-    next = replyToComment(next, 'thread', 'Confirmed', stamp('reply', morgan));
-    next = toggleCommentReaction(next, 'thread', 'reply', '👍', alex.id);
-    next = setCommentState(next, 'thread', 'resolved', stamp('resolve', morgan));
+    let next = addComment(
+      source,
+      { sheetId: 'sheet-1', range: 'B1', text: 'Check the precision' },
+      stamp('thread'),
+    );
+    next = replyToComment(next, { id: 'thread', text: 'Confirmed' }, stamp('reply', morgan));
+    next = toggleCommentReaction(
+      next,
+      { threadId: 'thread', postId: 'reply' },
+      { emoji: '👍', actorId: alex.id },
+    );
+    next = setCommentState(next, { id: 'thread', state: 'resolved' }, stamp('resolve', morgan));
     const stored = copyWorkbook(JSON.parse(JSON.stringify(next)));
     expect(stored.comments?.[0]).toMatchObject({
       range: 'B1',
@@ -47,37 +55,53 @@ describe('SE-REVIEW-1.1: persisted threaded comments', () => {
     });
     expect(stored.worksheets).toEqual(source.worksheets);
     expect(source.comments).toBeUndefined();
-    expect(() => replyToComment(stored, 'thread', 'New reply', stamp('later'))).toThrow('Reopen');
-    next = setCommentState(stored, 'thread', 'open', stamp('reopen'));
+    expect(() =>
+      replyToComment(stored, { id: 'thread', text: 'New reply' }, stamp('later')),
+    ).toThrow('Reopen');
+    next = setCommentState(stored, { id: 'thread', state: 'open' }, stamp('reopen'));
     expect(next.comments?.[0].resolvedBy).toBeUndefined();
     expect(next.comments?.[0].resolvedAt).toBeUndefined();
     expect(
-      replyToComment(next, 'thread', 'Reopened', stamp('later')).comments?.[0].entries,
+      replyToComment(next, { id: 'thread', text: 'Reopened' }, stamp('later')).comments?.[0]
+        .entries,
     ).toHaveLength(3);
   });
   it('restricts edit/delete to the post author and preserves immutable source snapshots', () => {
-    const workbook = addComment(createWorkbook(), 'sheet-1', 'A1', 'Original', stamp('thread'));
+    const workbook = addComment(
+      createWorkbook(),
+      { sheetId: 'sheet-1', range: 'A1', text: 'Original' },
+      stamp('thread'),
+    );
     expect(() =>
-      editCommentEntry(workbook, 'thread', 'thread', 'Changed', morgan.id, stamp('a').time),
+      editCommentEntry(
+        workbook,
+        { threadId: 'thread', postId: 'thread' },
+        { text: 'Changed', actorId: morgan.id, time: stamp('a').time },
+      ),
     ).toThrow('author');
-    expect(() => deleteCommentEntry(workbook, 'thread', 'thread', morgan.id)).toThrow('author');
+    expect(() =>
+      deleteCommentEntry(workbook, { threadId: 'thread', postId: 'thread' }, morgan.id),
+    ).toThrow('author');
     const next = editCommentEntry(
       workbook,
-      'thread',
-      'thread',
-      'Changed',
-      alex.id,
-      stamp('a').time,
+      { threadId: 'thread', postId: 'thread' },
+      { text: 'Changed', actorId: alex.id, time: stamp('a').time },
     );
     expect(next.comments?.[0].entries[0]).toMatchObject({
       text: 'Changed',
       editedAt: stamp('a').time,
     });
     expect(workbook.comments?.[0].entries[0].text).toBe('Original');
-    expect(deleteCommentEntry(next, 'thread', 'thread', alex.id).comments).toEqual([]);
+    expect(
+      deleteCommentEntry(next, { threadId: 'thread', postId: 'thread' }, alex.id).comments,
+    ).toEqual([]);
   });
   it('validates imported comment authors, dates, identities and reaction lists', () => {
-    const original = addComment(createWorkbook(), 'sheet-1', 'A1', 'Text', stamp('thread'));
+    const original = addComment(
+      createWorkbook(),
+      { sheetId: 'sheet-1', range: 'A1', text: 'Text' },
+      stamp('thread'),
+    );
     const duplicate = structuredClone(original);
     requireDefined(duplicate.comments).push(structuredClone(requireDefined(duplicate.comments)[0]));
     expect(() => copyWorkbook(duplicate)).toThrow('comment ids');
@@ -95,15 +119,19 @@ describe('SE-REVIEW-1.1: persisted threaded comments', () => {
     expect(() => copyWorkbook(earlierShape as never)).toThrow('comment thread');
   });
   it('SE-REVIEW-1.1: records who resolved a thread and clears it on reopening', () => {
-    const open = addComment(createWorkbook(), 'sheet-1', 'A1', 'Text', stamp('thread'));
-    const resolved = setCommentState(open, 'thread', 'resolved', stamp('r', morgan));
+    const open = addComment(
+      createWorkbook(),
+      { sheetId: 'sheet-1', range: 'A1', text: 'Text' },
+      stamp('thread'),
+    );
+    const resolved = setCommentState(open, { id: 'thread', state: 'resolved' }, stamp('r', morgan));
     expect(resolved.comments?.[0]).toMatchObject({
       state: 'resolved',
       resolvedBy: 'morgan',
       resolvedAt: '2026-11-10T12:00:00.000Z',
     });
     expect(open.comments?.[0].state).toBe('open');
-    const reopened = setCommentState(resolved, 'thread', 'open', stamp('o'));
+    const reopened = setCommentState(resolved, { id: 'thread', state: 'open' }, stamp('o'));
     expect(reopened.comments?.[0]).not.toHaveProperty('resolvedBy');
     expect(reopened.comments?.[0]).not.toHaveProperty('resolvedAt');
   });
@@ -112,10 +140,18 @@ describe('SE-REVIEW-1.1: persisted threaded comments', () => {
 describe('SE-REVIEW-2.1: tracked suggestions', () => {
   it('keeps canonical values unchanged until acceptance and retains the decision record', () => {
     const source = createWorkbook([['1E-25', '=1-A1']]);
-    const proposed = writeCells(source, 'sheet-1', 0, 0, [['2E-25']]);
-    const review = proposeWorkbookChange(source, proposed, 'Edit A1', stamp('suggestion', morgan));
+    const proposed = writeCells(source, [['2E-25']], { sheetId: 'sheet-1', x: 0, y: 0 });
+    const review = proposeWorkbookChange(
+      source,
+      { proposed, summary: 'Edit A1' },
+      stamp('suggestion', morgan),
+    );
     expect(review.worksheets).toEqual(source.worksheets);
-    const accepted = decideSuggestion(review, 'suggestion', 'accepted', stamp('decision'));
+    const accepted = decideSuggestion(
+      review,
+      { id: 'suggestion', decision: 'accepted' },
+      stamp('decision'),
+    );
     expect(accepted.worksheets[0].data[0][0]).toBe('2E-25');
     expect(calculateWorkbook(accepted).worksheets[0].values[0][1]).toMatchObject({
       numerator: '4999999999999999999999999',
@@ -128,18 +164,24 @@ describe('SE-REVIEW-2.1: tracked suggestions', () => {
     const source = createWorkbook([['1']]);
     const review = proposeWorkbookChange(
       source,
-      writeCells(source, 'sheet-1', 0, 0, [['2']]),
-      'Edit',
+      {
+        proposed: writeCells(source, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        summary: 'Edit',
+      },
       stamp('suggestion'),
     );
-    const rejected = decideSuggestion(review, 'suggestion', 'rejected', stamp('decision'));
-    expect(rejected.worksheets[0].data).toEqual([['1']]);
-    expect(() => decideSuggestion(rejected, 'suggestion', 'accepted', stamp('again'))).toThrow(
-      'pending',
+    const rejected = decideSuggestion(
+      review,
+      { id: 'suggestion', decision: 'rejected' },
+      stamp('decision'),
     );
-    const conflicting = writeCells(review, 'sheet-1', 0, 0, [['3']]);
+    expect(rejected.worksheets[0].data).toEqual([['1']]);
     expect(() =>
-      decideSuggestion(conflicting, 'suggestion', 'accepted', stamp('decision')),
+      decideSuggestion(rejected, { id: 'suggestion', decision: 'accepted' }, stamp('again')),
+    ).toThrow('pending');
+    const conflicting = writeCells(review, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 });
+    expect(() =>
+      decideSuggestion(conflicting, { id: 'suggestion', decision: 'accepted' }, stamp('decision')),
     ).toThrow('not been overwritten');
     expect(conflicting.worksheets[0].data).toEqual([['3']]);
   });
@@ -147,14 +189,20 @@ describe('SE-REVIEW-2.1: tracked suggestions', () => {
     const source = createWorkbook([['1E-25']]);
     const next = formatCells(
       source,
-      'sheet-1',
-      { x1: 0, y1: 0, x2: 1, y2: 0 },
-      { 'font-weight': 'bold' },
-      { kind: 'percent', decimals: 30 },
+      { sheetId: 'sheet-1', range: { x1: 0, y1: 0, x2: 1, y2: 0 } },
+      { properties: { 'font-weight': 'bold' }, format: { kind: 'percent', decimals: 30 } },
     );
-    const review = proposeWorkbookChange(source, next, 'Bold percent', stamp('format'));
+    const review = proposeWorkbookChange(
+      source,
+      { proposed: next, summary: 'Bold percent' },
+      stamp('format'),
+    );
     expect(review.worksheets[0].style).toBeUndefined();
-    const accepted = decideSuggestion(review, 'format', 'accepted', stamp('decision'));
+    const accepted = decideSuggestion(
+      review,
+      { id: 'format', decision: 'accepted' },
+      stamp('decision'),
+    );
     expect(accepted.worksheets[0].style?.B1).toBe('font-weight: bold');
     expect(accepted.worksheets[0].formats?.A1).toEqual({ kind: 'percent', decimals: 30 });
     expect(accepted.worksheets[0].data[0][0]).toBe('1E-25');
@@ -167,13 +215,23 @@ describe('SE-REVIEW-2.1: tracked suggestions', () => {
     } as const;
     let review = proposeWorkbookChange(
       source,
-      changeWorkbookStructure(source, 'sheet-1', operation.change),
-      'Insert row',
+      {
+        proposed: changeWorkbookStructure(source, 'sheet-1', operation.change),
+        summary: 'Insert row',
+        operation,
+      },
       stamp('structure'),
-      operation,
     );
-    review = addComment(review, 'sheet-1', 'A2', 'Move this anchor too', stamp('comment'));
-    const accepted = decideSuggestion(review, 'structure', 'accepted', stamp('decision'));
+    review = addComment(
+      review,
+      { sheetId: 'sheet-1', range: 'A2', text: 'Move this anchor too' },
+      stamp('comment'),
+    );
+    const accepted = decideSuggestion(
+      review,
+      { id: 'structure', decision: 'accepted' },
+      stamp('decision'),
+    );
     expect(accepted.worksheets[0].data[2][0]).toBe('=A2');
     expect(accepted.comments?.[0].range).toBe('A3');
     expect(accepted.suggestions?.[0].status).toBe('accepted');
@@ -182,13 +240,25 @@ describe('SE-REVIEW-2.1: tracked suggestions', () => {
 
 describe('SE-REVIEW-7.1: conversation and reviewer overlay contracts', () => {
   it('prevents overlapping open threads, keeps workbook scope, and reopens a resolved range', () => {
-    let workbook = addComment(createWorkbook(), 'sheet-1', 'A1:B2', 'Range', stamp('range'));
-    expect(findOpenComment(workbook, 'sheet-1', 'B2:C3')?.id).toBe('range');
-    expect(() => addComment(workbook, 'sheet-1', 'B2', 'Duplicate', stamp('duplicate'))).toThrow(
-      'already',
+    let workbook = addComment(
+      createWorkbook(),
+      { sheetId: 'sheet-1', range: 'A1:B2', text: 'Range' },
+      stamp('range'),
     );
-    workbook = setCommentState(workbook, 'range', 'resolved', stamp('resolve'));
-    workbook = addComment(workbook, 'sheet-1', 'B2', 'Another', stamp('next'));
+    expect(findOpenComment(workbook, 'sheet-1', 'B2:C3')?.id).toBe('range');
+    expect(() =>
+      addComment(
+        workbook,
+        { sheetId: 'sheet-1', range: 'B2', text: 'Duplicate' },
+        stamp('duplicate'),
+      ),
+    ).toThrow('already');
+    workbook = setCommentState(workbook, { id: 'range', state: 'resolved' }, stamp('resolve'));
+    workbook = addComment(
+      workbook,
+      { sheetId: 'sheet-1', range: 'B2', text: 'Another' },
+      stamp('next'),
+    );
     workbook = addWorkbookComment(workbook, 'Whole workbook', stamp('whole'));
     expect(requireDefined(workbook.comments).at(-1)).toMatchObject({ scope: 'workbook' });
     expect(requireDefined(requireDefined(workbook.comments).at(-1)).range).toBeUndefined();
@@ -197,14 +267,18 @@ describe('SE-REVIEW-7.1: conversation and reviewer overlay contracts', () => {
     const original = createWorkbook([['1', '=A1*2']]);
     let workbook = proposeWorkbookChange(
       original,
-      writeCells(original, 'sheet-1', 0, 0, [['2']]),
-      'Edit',
+      {
+        proposed: writeCells(original, [['2']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        summary: 'Edit',
+      },
       stamp('first', morgan),
     );
     workbook = proposeWorkbookChange(
       workbook,
-      writeCells(workbook, 'sheet-1', 0, 0, [['3']]),
-      'Edit again',
+      {
+        proposed: writeCells(workbook, [['3']], { sheetId: 'sheet-1', x: 0, y: 0 }),
+        summary: 'Edit again',
+      },
       stamp('second', morgan),
     );
     expect(workbook.suggestions).toHaveLength(1);
@@ -220,7 +294,11 @@ describe('SE-REVIEW-7.1: conversation and reviewer overlay contracts', () => {
       numerator: '2',
     });
     expect(findOpenComment(workbook, 'sheet-1', 'A1')).toBeUndefined();
-    const accepted = decideSuggestion(workbook, 'first', 'accepted', stamp('decision'));
+    const accepted = decideSuggestion(
+      workbook,
+      { id: 'first', decision: 'accepted' },
+      stamp('decision'),
+    );
     expect(requireDefined(accepted.comments)[0]).toMatchObject({
       suggestion: 'first',
       state: 'resolved',

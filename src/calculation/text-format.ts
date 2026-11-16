@@ -2,59 +2,26 @@ import { Decimal } from 'decimal.js';
 import { calendarParts } from './calendar.js';
 import { CalculationError, type NumericValue } from './values.js';
 
-/** Deliberately bounded Excel TEXT subset; unsupported masks fail explicitly. */
-export function formatTextMask(value: NumericValue, mask: string): string {
-  if (value.dimension || value.quantityKind || mask.length > 128)
-    throw new CalculationError('#VALUE!');
-  const dateMasks = new Set([
-    'yyyy-mm-dd',
-    'mm/dd/yyyy',
-    'm/d/yyyy',
-    'dd/mm/yyyy',
-    'd-mmm-yyyy',
-    'mmm d, yyyy',
-    'hh:mm:ss',
-    'hh:mm',
-    'h:mm:ss',
-    'h:mm',
-  ]);
-  const normalized = mask.toLowerCase();
-  if (dateMasks.has(normalized)) {
-    const p = calendarParts(value),
-      pad = (n: number) => String(n).padStart(2, '0');
-    if (normalized.includes('h'))
-      return `${normalized.startsWith('hh') ? pad(p.hour) : p.hour}:${pad(p.minute)}${normalized.endsWith(':ss') ? `:${pad(p.second)}` : ''}`;
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    switch (normalized) {
-      case 'yyyy-mm-dd':
-        return `${String(p.year).padStart(4, '0')}-${pad(p.month)}-${pad(p.day)}`;
-      case 'mm/dd/yyyy':
-        return `${pad(p.month)}/${pad(p.day)}/${p.year}`;
-      case 'm/d/yyyy':
-        return `${p.month}/${p.day}/${p.year}`;
-      case 'dd/mm/yyyy':
-        return `${pad(p.day)}/${pad(p.month)}/${p.year}`;
-      case 'd-mmm-yyyy':
-        return `${p.day}-${months[p.month - 1]}-${p.year}`;
-      default:
-        return `${months[p.month - 1]} ${p.day}, ${p.year}`;
-    }
-  }
-  const match = /^(\$)?(0|#,##0)(?:\.(0{1,100}))?(%)?$/.exec(mask);
-  if (!match || (match[1] && match[4])) throw new CalculationError('#VALUE!');
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+type Parts = ReturnType<typeof calendarParts>;
+const pad = (n: number) => String(n).padStart(2, '0');
+const TIME_MASKS = new Set(['hh:mm:ss', 'hh:mm', 'h:mm:ss', 'h:mm']);
+const DATE_MASKS: Readonly<Record<string, (p: Parts) => string>> = {
+  'yyyy-mm-dd': (p) => `${String(p.year).padStart(4, '0')}-${pad(p.month)}-${pad(p.day)}`,
+  'mm/dd/yyyy': (p) => `${pad(p.month)}/${pad(p.day)}/${p.year}`,
+  'm/d/yyyy': (p) => `${p.month}/${p.day}/${p.year}`,
+  'dd/mm/yyyy': (p) => `${pad(p.day)}/${pad(p.month)}/${p.year}`,
+  'd-mmm-yyyy': (p) => `${p.day}-${MONTHS[p.month - 1]}-${p.year}`,
+  'mmm d, yyyy': (p) => `${MONTHS[p.month - 1]} ${p.day}, ${p.year}`,
+};
+
+function timeText(p: Parts, mask: string): string {
+  const hour = mask.startsWith('hh') ? pad(p.hour) : String(p.hour);
+  return `${hour}:${pad(p.minute)}${mask.endsWith(':ss') ? `:${pad(p.second)}` : ''}`;
+}
+
+/** `0`, `#,##0`, either with fixed decimals, and a `$` prefix or a `%` suffix. */
+function numberMaskText(value: NumericValue, match: RegExpExecArray): string {
   const D = Decimal.clone({
     precision: Math.min(100_100, Math.max(value.numerator.length, value.denominator.length) + 110),
     rounding: Decimal.ROUND_HALF_UP,
@@ -69,6 +36,19 @@ export function formatTextMask(value: NumericValue, mask: string): string {
       (fraction === undefined ? '' : '.' + fraction);
   }
   return `${match[1] ?? ''}${text}${match[4] ?? ''}`;
+}
+
+/** Deliberately bounded Excel TEXT subset; unsupported masks fail explicitly. */
+export function formatTextMask(value: NumericValue, mask: string): string {
+  if (value.dimension || value.quantityKind || mask.length > 128)
+    throw new CalculationError('#VALUE!');
+  const normalized = mask.toLowerCase();
+  if (TIME_MASKS.has(normalized)) return timeText(calendarParts(value), normalized);
+  const date = DATE_MASKS[normalized];
+  if (date) return date(calendarParts(value));
+  const match = /^(\$)?(0|#,##0)(?:\.(0{1,100}))?(%)?$/.exec(mask);
+  if (!match || (match[1] && match[4])) throw new CalculationError('#VALUE!');
+  return numberMaskText(value, match);
 }
 
 const windows1252 = [

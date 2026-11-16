@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { IdentityAdapter } from '../host/adapters.js';
 import type { ReviewActor, SpreadsheetComment } from '../model/review.js';
 
+const NO_PEOPLE: readonly (string | null)[] = [];
+
 /**
  * Names the people who wrote, resolved or reacted to the workbook's comments, and the `others`
  * the editor shows, such as the authors of saved versions. Comments and versions store person ids
@@ -12,9 +14,15 @@ import type { ReviewActor, SpreadsheetComment } from '../model/review.js';
  */
 export function usePersonNames(
   identity: IdentityAdapter | undefined,
-  comments: readonly SpreadsheetComment[] | undefined,
-  actor: ReviewActor,
-  others: readonly (string | null)[] = [],
+  {
+    comments,
+    actor,
+    others = NO_PEOPLE,
+  }: {
+    comments: readonly SpreadsheetComment[] | undefined;
+    actor: ReviewActor;
+    others?: readonly (string | null)[] | undefined;
+  },
 ): (id: string) => string {
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
   const wanted = useMemo(() => {

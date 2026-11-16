@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
 import { useHeaderResize } from './header-resize.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 
 function setup(zoom: number, axis: 'column' | 'row' = 'column') {
   const sheet = createWorkbook([['1']]).worksheets[0];

@@ -15,8 +15,8 @@ import {
 import {
   applyJSpreadsheetColumnMeasure,
   applyJSpreadsheetRowMeasure,
-  type JSpreadsheetWorksheetInstance,
-} from './jspreadsheet-host.js';
+} from './jspreadsheet-measures.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { restoreSharedGridBorders, syncSharedGridBorders } from './shared-grid-borders.js';
 import { gridWorksheetExtent } from './worksheet-data.js';
 
@@ -45,41 +45,66 @@ const authoredStyles = new WeakMap<JSpreadsheetWorksheetInstance, Worksheet['sty
 /** Cells being edited during a zoom change; the next pass presents them. */
 const deferredCells = new WeakMap<JSpreadsheetWorksheetInstance, Set<HTMLElement>>();
 
-/** Update the adopted engine without replacing its root, selection owner or event handlers.
- * Per-cell work is limited to cells that need it: every cell when zoom changes, otherwise
- * cells whose authored style changed and cells the engine has created since the last pass.
- */
-export function syncWorksheetPresentation(
+type EngineOptions = NonNullable<JSpreadsheetWorksheetInstance['options']>;
+/** The two versions of a worksheet a presentation pass moves between. */
+interface WorksheetVersions {
+  previous: Worksheet | null;
+  next: Worksheet;
+}
+/** How the grid is viewed: editable or not, at a zoom, over the logical extent. */
+interface WorksheetView {
+  readOnly: boolean;
+  zoom?: number | undefined;
+  logicalExtent?: WorksheetExtent | undefined;
+}
+
+/** Writes every line's scaled size into the engine's options and measures. */
+function syncLineSizes(
   engine: JSpreadsheetWorksheetInstance,
-  previous: Worksheet | null,
-  next: Worksheet,
-  readOnly: boolean,
-  zoom = 100,
-  logicalExtent?: WorksheetExtent,
+  options: EngineOptions,
+  { next, scale, extent }: { next: Worksheet; scale: number; extent: WorksheetExtent | undefined },
 ) {
-  const options = engine.options;
-  if (!options) return;
-  restoreSharedGridBorders(engine);
-  options.editable = !readOnly;
-  const scale = gridZoomScale(zoom);
-  const zoomChanged = engineScale.get(engine) !== scale;
-  engineScale.set(engine, scale);
-  const [columns, rows] = gridWorksheetExtent(next, logicalExtent);
+  const [columns, rows] = gridWorksheetExtent(next, extent);
   for (let x = 0; x < columns; x++) {
     const width = (next.columns?.[x]?.width ?? DEFAULT_COLUMN_WIDTH) * scale;
     options.columns ??= [];
     options.columns[x] = { ...options.columns[x], width, type: 'text' };
-    applyJSpreadsheetColumnMeasure(engine, x, String(width));
+    applyJSpreadsheetColumnMeasure(engine, x, { attributeWidth: String(width) });
   }
   for (let y = 0; y < rows; y++) {
     const height = (next.rows?.[String(y)]?.height ?? DEFAULT_ROW_HEIGHT) * scale;
     (options.rows ??= {})[y] = { height };
-    applyJSpreadsheetRowMeasure(engine, y, `${height}px`, String(height));
+    applyJSpreadsheetRowMeasure(engine, y, {
+      cssHeight: `${height}px`,
+      attributeHeight: String(height),
+    });
   }
   options.defaultColWidth = DEFAULT_COLUMN_WIDTH * scale;
   options.defaultRowHeight = DEFAULT_ROW_HEIGHT * scale;
-  const stale = (cell: HTMLElement) => presentedScale.get(cell) !== scale;
-  const pending = new Set<HTMLElement>();
+}
+
+/** A pass over the engine's cells at one zoom scale. */
+interface Pass {
+  engine: JSpreadsheetWorksheetInstance;
+  scale: number;
+  zoomChanged: boolean;
+}
+const stale = (cell: HTMLElement, scale: number) => presentedScale.get(cell) !== scale;
+
+/** Writes the authored visual style of one cell over its previous one. */
+function restyleCell(cell: HTMLElement, before: string | undefined, after: string | undefined) {
+  const old = parseCellStyle(before);
+  const style = parseCellStyle(after);
+  for (const property of new Set([...Object.keys(old), ...Object.keys(style)]))
+    if (visualProperties.has(property)) cell.style.setProperty(property, style[property] ?? '');
+}
+
+/** Restyles the cells whose authored style changed, or all styled cells on a zoom change. */
+function restyleCells(
+  { engine, scale, zoomChanged }: Pass,
+  { previous, next }: WorksheetVersions,
+  pending: Set<HTMLElement>,
+) {
   const addresses = new Set([
     ...Object.keys(previous?.style ?? {}),
     ...Object.keys(next.style ?? {}),
@@ -88,23 +113,28 @@ export function syncWorksheetPresentation(
     const coords = parseSpreadsheetAddress(address);
     const cell = coords && engine.getCellFromCoords?.(coords.x, coords.y);
     if (!cell || cell.classList.contains('editor')) continue;
-    if (!zoomChanged && !stale(cell) && previous?.style?.[address] === next.style?.[address])
-      continue;
-    const old = parseCellStyle(previous?.style?.[address]);
-    const style = parseCellStyle(next.style?.[address]);
-    for (const property of new Set([...Object.keys(old), ...Object.keys(style)])) {
-      if (visualProperties.has(property)) cell.style.setProperty(property, style[property] ?? '');
-    }
+    const before = previous?.style?.[address],
+      after = next.style?.[address];
+    if (!zoomChanged && !stale(cell, scale) && before === after) continue;
+    restyleCell(cell, before, after);
     pending.add(cell);
   }
+}
+
+/** Adds the cells whose text metrics are stale, and cells deferred while they were edited. */
+function staleCells({ engine, scale, zoomChanged }: Pass, pending: Set<HTMLElement>) {
   // Unscaled cells carry no presentation metrics, so only cells with authored styles
   // need the pass below; scaled cells need it once each, and all of them on a zoom change.
   if (zoomChanged || scale !== 1)
     for (const cell of engine.table?.querySelectorAll<HTMLElement>('thead td, tbody td') ?? [])
-      if (zoomChanged || stale(cell)) pending.add(cell);
+      if (zoomChanged || stale(cell, scale)) pending.add(cell);
   for (const cell of deferredCells.get(engine) ?? []) if (cell.isConnected) pending.add(cell);
+}
+
+/** Presents the attached pending cells; cells being edited wait for the next pass. */
+function presentPending(pass: Pass, pending: Set<HTMLElement>, authored: Worksheet['style']) {
   const editing = new Set([...pending].filter((cell) => cell.classList.contains('editor')));
-  deferredCells.set(engine, editing);
+  deferredCells.set(pass.engine, editing);
   // Detached rows are presented when the row window attaches them (SE-PERF-1.1).
   const attached: HTMLElement[] = [];
   for (const cell of pending) {
@@ -112,7 +142,11 @@ export function syncWorksheetPresentation(
     if (cell.isConnected) attached.push(cell);
     else presentedScale.delete(cell);
   }
-  presentCells(attached, next.style, scale);
+  presentCells(attached, authored, pass.scale);
+}
+
+/** Scales the row-header column and the column-header row. */
+function syncHeaderBands(engine: JSpreadsheetWorksheetInstance, scale: number) {
   const table = engine.table;
   const cornerColumn = table?.querySelector<HTMLElement>('colgroup > col:first-child');
   if (cornerColumn) {
@@ -124,22 +158,47 @@ export function syncWorksheetPresentation(
   const header = table?.tHead?.rows[0];
   const headerHeight = `${DEFAULT_ROW_HEIGHT * scale}px`;
   if (header && header.style.height !== headerHeight) header.style.height = headerHeight;
+}
+
+/** Removes merges that changed or went away, then sets the merges that are new or changed. */
+function syncMerges(engine: JSpreadsheetWorksheetInstance, next: Worksheet) {
+  const oldMerges = engine.getMerge?.();
+  const known = oldMerges && !Array.isArray(oldMerges) ? oldMerges : undefined;
+  for (const [address, span] of Object.entries(known ?? {}))
+    if (JSON.stringify(span) !== JSON.stringify(next.mergeCells?.[address]))
+      engine.removeMerge?.(address);
+  for (const [address, span] of Object.entries(next.mergeCells ?? {}))
+    if (!known || JSON.stringify(known[address]) !== JSON.stringify(span))
+      engine.setMerge?.(address, span[0], span[1]);
+}
+
+/** Update the adopted engine without replacing its root, selection owner or event handlers.
+ * Per-cell work is limited to cells that need it: every cell when zoom changes, otherwise
+ * cells whose authored style changed and cells the engine has created since the last pass.
+ */
+export function syncWorksheetPresentation(
+  engine: JSpreadsheetWorksheetInstance,
+  versions: WorksheetVersions,
+  view: WorksheetView,
+) {
+  const options = engine.options;
+  if (!options) return;
+  const { next } = versions;
+  restoreSharedGridBorders(engine);
+  options.editable = !view.readOnly;
+  const scale = gridZoomScale(view.zoom ?? 100);
+  const zoomChanged = engineScale.get(engine) !== scale;
+  engineScale.set(engine, scale);
+  syncLineSizes(engine, options, { next, scale, extent: view.logicalExtent });
+  const pass: Pass = { engine, scale, zoomChanged };
+  const pending = new Set<HTMLElement>();
+  restyleCells(pass, versions, pending);
+  staleCells(pass, pending);
+  presentPending(pass, pending, next.style);
+  syncHeaderBands(engine, scale);
   // The engine's `options.style` is a getter that reads every cell's style attribute.
   authoredStyles.set(engine, next.style);
-  const oldMerges = engine.getMerge?.();
-  if (oldMerges && !Array.isArray(oldMerges)) {
-    for (const [address, span] of Object.entries(oldMerges))
-      if (JSON.stringify(span) !== JSON.stringify(next.mergeCells?.[address]))
-        engine.removeMerge?.(address);
-  }
-  for (const [address, span] of Object.entries(next.mergeCells ?? {})) {
-    if (
-      !oldMerges ||
-      Array.isArray(oldMerges) ||
-      JSON.stringify(oldMerges[address]) !== JSON.stringify(span)
-    )
-      engine.setMerge?.(address, span[0], span[1]);
-  }
+  syncMerges(engine, next);
   options.freezeColumns = next.freezeColumns ?? 0;
   syncFrozenColumns(engine);
   syncSharedGridBorders(engine);

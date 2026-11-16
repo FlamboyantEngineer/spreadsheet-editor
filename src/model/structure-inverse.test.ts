@@ -35,7 +35,7 @@ function rich(): Workbook {
   sheet.formats = { B2: { kind: 'number', decimals: 2 }, D4: { kind: 'general' } };
   sheet.style = { A2: 'font-weight: bold', C1: 'color: red' };
   sheet.freezeColumns = 1;
-  workbook = addComment(workbook, 'sheet-1', 'B3', 'Check this', stamp);
+  workbook = addComment(workbook, { sheetId: 'sheet-1', range: 'B3', text: 'Check this' }, stamp);
   workbook = appendWorksheet(workbook);
   workbook.worksheets[1].id = 'sheet-2';
   workbook.worksheets[1].data = [["='Sheet1'!A1", 'x']];
@@ -45,7 +45,11 @@ function rich(): Workbook {
 function lines(workbook: Workbook, change: StructureChange) {
   const ids = Array.from({ length: change.count }, (_, index) => `new-${change.axis}-${index}`);
   let next = 0;
-  return changeWorkbookStructureWithOperations(workbook, 'sheet-1', change, () => ids[next++]);
+  return changeWorkbookStructureWithOperations(
+    workbook,
+    { sheetId: 'sheet-1', idFactory: () => ids[next++] },
+    change,
+  );
 }
 function sheetChange(before: Workbook, after: Workbook) {
   return { workbook: after, operations: commandOperations(before, after) };

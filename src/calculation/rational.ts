@@ -10,7 +10,92 @@ export interface NumericOptions {
   wordSizeBits?: string;
 }
 
-export function createArithmetic(options: NumericOptions = {}) {
+type RoundingMode = 'nearest' | 'down' | 'up' | 'floor' | 'ceil';
+type DecimalType = InstanceType<typeof Decimal>;
+
+const abs = (n: bigint) => (n < 0n ? -n : n);
+function gcd(a: bigint, b: bigint): bigint {
+  a = abs(a);
+  b = abs(b);
+  while (b) {
+    const remainder = a % b;
+    a = b;
+    b = remainder;
+  }
+  return a || 1n;
+}
+function integerRoot(n: bigint): bigint {
+  if (n < 0n) throw new CalculationError('#NUM!');
+  if (n < 2n) return n;
+  let root = 1n << BigInt(Math.ceil(n.toString(2).length / 2));
+  for (;;) {
+    const next = (root + n / root) / 2n;
+    if (next >= root) return root;
+    root = next;
+  }
+}
+
+/** e^x - 1, by its series near zero, where subtracting from e^x would lose digits. */
+function expm1(input: DecimalType): DecimalType {
+  if (input.abs().gte('0.1')) return input.exp().minus(1);
+  let term = input,
+    sum = input;
+  for (let k = 2; k <= 20000; k++) {
+    term = term.mul(input).div(k);
+    const next = sum.plus(term);
+    if (next.eq(sum)) return next;
+    sum = next;
+  }
+  throw new CalculationError('#LIMIT!');
+}
+/** ln(1 + x), by the series of atanh near zero. */
+function log1p(input: DecimalType): DecimalType {
+  if (input.abs().gte('0.1')) return input.plus(1).ln();
+  const u = input.div(input.plus(2)),
+    squared = u.mul(u);
+  let power = u,
+    sum = u;
+  for (let k = 3; k <= 40001; k += 2) {
+    power = power.mul(squared);
+    const next = sum.plus(power.div(k));
+    if (next.eq(sum)) return next.mul(2);
+    sum = next;
+  }
+  throw new CalculationError('#LIMIT!');
+}
+const DECIMAL_FUNCTIONS: Readonly<Record<string, (x: DecimalType) => DecimalType>> = {
+  SIN: (x) => x.sin(),
+  COS: (x) => x.cos(),
+  TAN: (x) => x.tan(),
+  ASIN: (x) => x.asin(),
+  ACOS: (x) => x.acos(),
+  ATAN: (x) => x.atan(),
+  SINH: (x) => x.sinh(),
+  COSH: (x) => x.cosh(),
+  TANH: (x) => x.tanh(),
+  ASINH: (x) => x.asinh(),
+  ACOSH: (x) => x.acosh(),
+  ATANH: (x) => x.atanh(),
+  EXPM1: expm1,
+  LOG1P: log1p,
+  EXP: (x) => x.exp(),
+  LN: (x) => x.ln(),
+  LOG10: (x) => x.log(10),
+};
+
+/** Whether rounding moves the truncated quotient one step away from zero. */
+function stepsAway(
+  mode: RoundingMode,
+  { n, d, remainder }: { n: bigint; d: bigint; remainder: bigint },
+) {
+  if (remainder === 0n) return false;
+  if (mode === 'up') return true;
+  if (mode === 'floor') return n < 0n;
+  if (mode === 'ceil') return n > 0n;
+  return mode === 'nearest' && abs(remainder) * 2n >= d;
+}
+
+function numericLimits(options: NumericOptions) {
   const precision = options.precision ?? 80;
   const maxDigits = options.maxIntegerDigits ?? 10_000;
   if (
@@ -22,18 +107,11 @@ export function createArithmetic(options: NumericOptions = {}) {
     maxDigits > 100_000
   )
     throw new RangeError('Invalid numeric limits.');
-  const D = Decimal.clone({ precision, rounding: Decimal.ROUND_HALF_EVEN });
-  const abs = (n: bigint) => (n < 0n ? -n : n);
-  function gcd(a: bigint, b: bigint): bigint {
-    a = abs(a);
-    b = abs(b);
-    while (b) {
-      const remainder = a % b;
-      a = b;
-      b = remainder;
-    }
-    return a || 1n;
-  }
+  return { precision, maxDigits };
+}
+
+/** Exact rational operations on reduced numerator/denominator strings. */
+function createRationalCore({ precision, maxDigits }: { precision: number; maxDigits: number }) {
   function value(n: bigint, d = 1n, approximate = false): NumericValue {
     if (d === 0n) throw new CalculationError('#DIV/0!');
     if (d < 0n) {
@@ -63,33 +141,26 @@ export function createArithmetic(options: NumericOptions = {}) {
       ? value(coefficient, 10n ** BigInt(scale), approximate)
       : value(coefficient * 10n ** BigInt(-scale), 1n, approximate);
   }
-  function add(a: NumericValue, b: NumericValue): NumericValue {
-    return value(
+  const add = (a: NumericValue, b: NumericValue): NumericValue =>
+    value(
       BigInt(a.numerator) * BigInt(b.denominator) + BigInt(b.numerator) * BigInt(a.denominator),
       BigInt(a.denominator) * BigInt(b.denominator),
       a.approximate || b.approximate,
     );
-  }
-  function negate(a: NumericValue): NumericValue {
-    return value(-BigInt(a.numerator), BigInt(a.denominator), a.approximate);
-  }
-  function subtract(a: NumericValue, b: NumericValue): NumericValue {
-    return add(a, negate(b));
-  }
-  function multiply(a: NumericValue, b: NumericValue): NumericValue {
-    return value(
+  const negate = (a: NumericValue): NumericValue =>
+    value(-BigInt(a.numerator), BigInt(a.denominator), a.approximate);
+  const multiply = (a: NumericValue, b: NumericValue): NumericValue =>
+    value(
       BigInt(a.numerator) * BigInt(b.numerator),
       BigInt(a.denominator) * BigInt(b.denominator),
       a.approximate || b.approximate,
     );
-  }
-  function divide(a: NumericValue, b: NumericValue): NumericValue {
-    return value(
+  const divide = (a: NumericValue, b: NumericValue): NumericValue =>
+    value(
       BigInt(a.numerator) * BigInt(b.denominator),
       BigInt(a.denominator) * BigInt(b.numerator),
       a.approximate || b.approximate,
     );
-  }
   function compare(a: NumericValue, b: NumericValue): number {
     mergeNumericProvenance(a, b);
     const difference =
@@ -105,161 +176,93 @@ export function createArithmetic(options: NumericOptions = {}) {
       throw new CalculationError('#NUM!');
     return Number(a.numerator);
   }
+  const subtract = (a: NumericValue, b: NumericValue) => add(a, negate(b));
+  return { value, parse, add, negate, subtract, multiply, divide, compare, integer };
+}
+type RationalCore = ReturnType<typeof createRationalCore>;
+
+/** Powers, roots, rounding and the functions that are approximate outside exact cases. */
+function createApproximations(
+  core: RationalCore,
+  { precision, maxDigits }: { precision: number; maxDigits: number },
+) {
+  const D = Decimal.clone({ precision, rounding: Decimal.ROUND_HALF_EVEN });
   const decimal = (a: NumericValue) => new D(a.numerator).div(a.denominator);
-  function approximate(result: Decimal): NumericValue {
+  function approximate(result: DecimalType): NumericValue {
     if (!result.isFinite()) throw new CalculationError('#NUM!');
-    return parse(result.toString(), true);
+    return core.parse(result.toString(), true);
   }
   function power(a: NumericValue, b: NumericValue): NumericValue {
     if (a.numerator === '0' && b.numerator === '0') throw new CalculationError('#NUM!');
     if (b.denominator !== '1') return approximate(decimal(a).pow(decimal(b)));
-    const exponent = integer(b);
+    const exponent = core.integer(b);
     if (Math.abs(exponent) * Math.max(a.numerator.length - 1, a.denominator.length - 1) > maxDigits)
       throw new CalculationError('#LIMIT!');
-    return exponent >= 0
-      ? value(
-          BigInt(a.numerator) ** BigInt(exponent),
-          BigInt(a.denominator) ** BigInt(exponent),
-          a.approximate || b.approximate,
-        )
-      : value(
-          BigInt(a.denominator) ** BigInt(-exponent),
-          BigInt(a.numerator) ** BigInt(-exponent),
-          a.approximate || b.approximate,
-        );
-  }
-  function integerRoot(n: bigint): bigint {
-    if (n < 0n) throw new CalculationError('#NUM!');
-    if (n < 2n) return n;
-    let root = 1n << BigInt(Math.ceil(n.toString(2).length / 2));
-    for (;;) {
-      const next = (root + n / root) / 2n;
-      if (next >= root) return root;
-      root = next;
-    }
+    const [base, divisor] =
+      exponent >= 0 ? [a.numerator, a.denominator] : [a.denominator, a.numerator];
+    const e = BigInt(Math.abs(exponent));
+    return core.value(BigInt(base) ** e, BigInt(divisor) ** e, a.approximate || b.approximate);
   }
   function sqrt(a: NumericValue): NumericValue {
     const n = integerRoot(BigInt(a.numerator)),
       d = integerRoot(BigInt(a.denominator));
     return n * n === BigInt(a.numerator) && d * d === BigInt(a.denominator)
-      ? value(n, d, a.approximate)
+      ? core.value(n, d, a.approximate)
       : approximate(decimal(a).sqrt());
   }
   /** Explicit ROUND-family operations change a value; display formatting never does. */
-  function round(
-    a: NumericValue,
-    places: number,
-    mode: 'nearest' | 'down' | 'up' | 'floor' | 'ceil' = 'nearest',
-  ): NumericValue {
+  function round(a: NumericValue, places: number, mode: RoundingMode = 'nearest'): NumericValue {
     if (!Number.isSafeInteger(places) || Math.abs(places) > maxDigits)
       throw new CalculationError('#NUM!');
     const scale = 10n ** BigInt(Math.abs(places));
     const n = BigInt(a.numerator) * (places >= 0 ? scale : 1n);
     const d = BigInt(a.denominator) * (places >= 0 ? 1n : scale);
     let quotient = n / d;
-    const remainder = n % d,
-      sign = n < 0n ? -1n : 1n;
-    if (
-      remainder !== 0n &&
-      (mode === 'up' ||
-        (mode === 'floor' && n < 0n) ||
-        (mode === 'ceil' && n > 0n) ||
-        (mode === 'nearest' && abs(remainder) * 2n >= d))
-    )
-      quotient += sign;
+    if (stepsAway(mode, { n, d, remainder: n % d })) quotient += n < 0n ? -1n : 1n;
     return places >= 0
-      ? value(quotient, scale, a.approximate)
-      : value(quotient * scale, 1n, a.approximate);
+      ? core.value(quotient, scale, a.approximate)
+      : core.value(quotient * scale, 1n, a.approximate);
   }
   function unary(name: string, a: NumericValue): NumericValue {
-    const input = decimal(a);
-    switch (name) {
-      case 'SIN':
-        return approximate(input.sin());
-      case 'COS':
-        return approximate(input.cos());
-      case 'TAN':
-        return approximate(input.tan());
-      case 'ASIN':
-        return approximate(input.asin());
-      case 'ACOS':
-        return approximate(input.acos());
-      case 'ATAN':
-        return approximate(input.atan());
-      case 'SINH':
-        return approximate(input.sinh());
-      case 'COSH':
-        return approximate(input.cosh());
-      case 'TANH':
-        return approximate(input.tanh());
-      case 'ASINH':
-        return approximate(input.asinh());
-      case 'ACOSH':
-        return approximate(input.acosh());
-      case 'ATANH':
-        return approximate(input.atanh());
-      case 'EXPM1': {
-        if (input.abs().gte('0.1')) return approximate(input.exp().minus(1));
-        let term = input,
-          sum = input;
-        for (let k = 2; k <= 20000; k++) {
-          term = term.mul(input).div(k);
-          const next = sum.plus(term);
-          if (next.eq(sum)) return approximate(next);
-          sum = next;
-        }
-        throw new CalculationError('#LIMIT!');
-      }
-      case 'LOG1P': {
-        if (input.abs().gte('0.1')) return approximate(input.plus(1).ln());
-        const u = input.div(input.plus(2)),
-          squared = u.mul(u);
-        let power = u,
-          sum = u;
-        for (let k = 3; k <= 40001; k += 2) {
-          power = power.mul(squared);
-          const next = sum.plus(power.div(k));
-          if (next.eq(sum)) return approximate(next.mul(2));
-          sum = next;
-        }
-        throw new CalculationError('#LIMIT!');
-      }
-      case 'EXP':
-        return approximate(input.exp());
-      case 'LN':
-        return approximate(input.ln());
-      case 'LOG10':
-        return approximate(input.log(10));
-      default:
-        throw new CalculationError('#NAME?');
-    }
+    const operation = DECIMAL_FUNCTIONS[name];
+    if (!operation) throw new CalculationError('#NAME?');
+    return approximate(operation(decimal(a)));
   }
-  const carry =
-    <Args extends unknown[]>(operation: (...args: Args) => NumericValue) =>
-    (...args: Args): NumericValue => {
-      const inputs = args.filter((value): value is Args[number] & NumericValue =>
-        Boolean(value && typeof value === 'object' && 'kind' in value && value.kind === 'number'),
-      );
-      const provenance = mergeNumericProvenance(...inputs);
-      const result = operation(...args);
-      return provenance ? { ...result, provenance } : result;
-    };
+  return { power, sqrt, round, unary, pi: () => approximate(D.acos(-1)) };
+}
+
+/** Wraps an operation so its result carries the merged provenance of its numeric inputs. */
+const carry =
+  <Args extends unknown[]>(operation: (...args: Args) => NumericValue) =>
+  (...args: Args): NumericValue => {
+    const inputs = args.filter((value): value is Args[number] & NumericValue =>
+      Boolean(value && typeof value === 'object' && 'kind' in value && value.kind === 'number'),
+    );
+    const provenance = mergeNumericProvenance(...inputs);
+    const result = operation(...args);
+    return provenance ? { ...result, provenance } : result;
+  };
+
+export function createArithmetic(options: NumericOptions = {}) {
+  const limits = numericLimits(options);
+  const core = createRationalCore(limits),
+    approximations = createApproximations(core, limits);
   return {
-    parse,
-    value,
-    add: carry(add),
-    subtract: carry(subtract),
-    multiply: carry(multiply),
-    divide: carry(divide),
-    compare,
-    negate: carry(negate),
-    integer,
-    power: carry(power),
-    sqrt: carry(sqrt),
-    round: carry(round),
-    unary: carry(unary),
-    pi: () => approximate(D.acos(-1)),
-    precision,
+    parse: core.parse,
+    value: core.value,
+    add: carry(core.add),
+    subtract: carry(core.subtract),
+    multiply: carry(core.multiply),
+    divide: carry(core.divide),
+    compare: core.compare,
+    negate: carry(core.negate),
+    integer: core.integer,
+    power: carry(approximations.power),
+    sqrt: carry(approximations.sqrt),
+    round: carry(approximations.round),
+    unary: carry(approximations.unary),
+    pi: approximations.pi,
+    precision: limits.precision,
   };
 }
 

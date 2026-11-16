@@ -7,6 +7,68 @@ import type { SpreadsheetEditorProps } from './contracts.js';
 
 export type SheetCommand = 'add' | 'insert' | 'duplicate' | 'delete' | 'left' | 'right';
 
+/** The worksheet a tab command acts on, and the worksheet the editor shows. */
+interface SheetCommandTarget {
+  targetSheetId: string;
+  activeSheetId: string;
+  idFactory: SpreadsheetEditorProps['idFactory'];
+}
+
+interface SheetCommandResult {
+  workbook: Workbook;
+  activatedId?: string;
+}
+
+const indexOf = (workbook: Workbook, id: string) =>
+  workbook.worksheets.findIndex((value) => value.id === id);
+
+function addSheet(
+  base: Workbook,
+  command: 'add' | 'insert' | 'duplicate',
+  { targetSheetId, idFactory }: SheetCommandTarget,
+): SheetCommandResult {
+  const targetSheet = requireDefined(base.worksheets.find((value) => value.id === targetSheetId));
+  const next = appendWorksheet(base);
+  const added = requireDefined(next.worksheets.at(-1));
+  added.id = (idFactory ?? createWorkbookEntityId)('sheet');
+  if (command === 'insert') {
+    next.worksheets.pop();
+    next.worksheets.splice(indexOf(next, targetSheetId), 0, added);
+  }
+  if (command === 'duplicate')
+    next.worksheets[next.worksheets.length - 1] = {
+      ...structuredClone(targetSheet),
+      id: added.id,
+      name: added.name,
+    };
+  return { workbook: next, activatedId: added.id };
+}
+
+function deleteSheet(
+  base: Workbook,
+  { targetSheetId, activeSheetId }: SheetCommandTarget,
+): SheetCommandResult {
+  const index = indexOf(base, targetSheetId);
+  const next = deleteWorksheet(base, targetSheetId);
+  if (targetSheetId !== activeSheetId) return { workbook: next };
+  return {
+    workbook: next,
+    activatedId: next.worksheets[Math.min(index, next.worksheets.length - 1)].id,
+  };
+}
+
+function moveSheet(base: Workbook, command: 'left' | 'right', targetSheetId: string) {
+  const next = copyWorkbook(base);
+  const index = indexOf(next, targetSheetId),
+    target =
+      (index + (command === 'left' ? -1 : 1) + next.worksheets.length) % next.worksheets.length;
+  [next.worksheets[index], next.worksheets[target]] = [
+    next.worksheets[target],
+    next.worksheets[index],
+  ];
+  return { workbook: next };
+}
+
 /**
  * Applies a worksheet tab command to `base`. `activatedId` names the worksheet to show next: an
  * added one, or the neighbour of the deleted active worksheet.
@@ -14,58 +76,26 @@ export type SheetCommand = 'add' | 'insert' | 'duplicate' | 'delete' | 'left' | 
 export function applySheetCommand(
   base: Workbook,
   command: SheetCommand,
-  targetSheetId: string,
-  activeSheetId: string,
-  idFactory: SpreadsheetEditorProps['idFactory'],
-): { workbook: Workbook; activatedId?: string } {
-  let activatedId: string | undefined;
-  let next = copyWorkbook(base);
-  const targetSheet = requireDefined(next.worksheets.find((value) => value.id === targetSheetId));
-  if (command === 'add' || command === 'insert' || command === 'duplicate') {
-    next = appendWorksheet(base);
-    const added = requireDefined(next.worksheets.at(-1));
-    added.id = (idFactory ?? createWorkbookEntityId)('sheet');
-    if (command === 'insert') {
-      next.worksheets.pop();
-      next.worksheets.splice(
-        next.worksheets.findIndex((value) => value.id === targetSheetId),
-        0,
-        added,
-      );
-    }
-    if (command === 'duplicate')
-      next.worksheets[next.worksheets.length - 1] = {
-        ...structuredClone(targetSheet),
-        id: added.id,
-        name: added.name,
-      };
-    activatedId = added.id;
-  }
-  if (command === 'delete') {
-    const index = next.worksheets.findIndex((value) => value.id === targetSheetId);
-    next = deleteWorksheet(base, targetSheetId);
-    if (targetSheetId === activeSheetId)
-      activatedId = next.worksheets[Math.min(index, next.worksheets.length - 1)].id;
-  }
-  if (command === 'left' || command === 'right') {
-    const index = next.worksheets.findIndex((value) => value.id === targetSheetId),
-      target =
-        (index + (command === 'left' ? -1 : 1) + next.worksheets.length) % next.worksheets.length;
-    [next.worksheets[index], next.worksheets[target]] = [
-      next.worksheets[target],
-      next.worksheets[index],
-    ];
-  }
-  return { workbook: next, activatedId };
+  target: SheetCommandTarget,
+): SheetCommandResult {
+  requireDefined(base.worksheets.find((value) => value.id === target.targetSheetId));
+  if (command === 'delete') return deleteSheet(base, target);
+  if (command === 'left' || command === 'right')
+    return moveSheet(base, command, target.targetSheetId);
+  return addSheet(base, command, target);
+}
+
+/** A row height or column width applied to the selected lines. */
+interface SelectionResize {
+  dialog: 'row-height' | 'column-width';
+  measure: number;
 }
 
 /** Sets the height of the selected rows or the width of the selected columns to `measure`. */
 export function resizeSelection(
   base: Workbook,
-  sheetId: string,
-  selection: CellSelection,
-  dialog: 'row-height' | 'column-width',
-  measure: number,
+  { sheetId, selection }: { sheetId: string; selection: CellSelection },
+  { dialog, measure }: SelectionResize,
 ): Workbook {
   const next = copyWorkbook(base),
     target = requireDefined(next.worksheets.find((value) => value.id === sheetId));

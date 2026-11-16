@@ -1,8 +1,7 @@
-import type { CSSProperties } from 'react';
 import type { CellSelection } from '../model/editing.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { Worksheet } from '../model/workbook.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-host.js';
+import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { gridRowWindow, revealGridRows } from './row-window.js';
 
 /** Zoom is presentation state; all engine measurements are already CSS pixels. */
@@ -22,12 +21,62 @@ export function gridViewport(engine: JSpreadsheetWorksheetInstance): HTMLElement
 export function restoreGridScroll(
   viewport: HTMLElement | undefined,
   anchor: { left: number; top: number },
-  previousScale: number,
-  nextScale: number,
+  scale: { from: number; to: number },
 ) {
   if (!viewport) return;
-  viewport.scrollLeft = (anchor.left * nextScale) / previousScale;
-  viewport.scrollTop = (anchor.top * nextScale) / previousScale;
+  viewport.scrollLeft = (anchor.left * scale.to) / scale.from;
+  viewport.scrollTop = (anchor.top * scale.to) / scale.from;
+}
+
+/** A column's rendered width, or nothing while it is hidden. */
+function columnWidth(engine: JSpreadsheetWorksheetInstance, x: number): number {
+  const col = engine.cols?.[x]?.colElement;
+  if (col?.style.display === 'none') return 0;
+  return Number.parseFloat(col?.style.width || col?.getAttribute('width') || '0') || 0;
+}
+
+/** The engine's first-row cells of a column, each visited once across merged rows. */
+function* columnCells(
+  engine: JSpreadsheetWorksheetInstance,
+  x: number,
+  positioned: Set<HTMLElement>,
+): Generator<HTMLElement> {
+  for (const row of engine.records ?? []) {
+    const cell = row?.[x]?.element;
+    if (!(cell instanceof HTMLElement) || positioned.has(cell)) continue;
+    positioned.add(cell);
+    yield cell;
+  }
+}
+
+const cornerOf = (engine: JSpreadsheetWorksheetInstance) => engine.table?.tHead?.rows[0]?.cells[0];
+
+/** Sticky row headers and corner, so they stay over scrolled cells. */
+function pinHeaders(engine: JSpreadsheetWorksheetInstance, corner: HTMLElement | undefined) {
+  if (corner) position(corner, { position: 'sticky', left: '0px', zIndex: '4' });
+  for (const row of engine.rows ?? []) {
+    const header = row?.element?.firstElementChild;
+    if (header instanceof HTMLElement)
+      position(header, { position: 'sticky', left: '0px', zIndex: '2' });
+  }
+}
+
+/** Marks one column frozen or not, at the given sticky offset. */
+function freezeColumn(
+  engine: JSpreadsheetWorksheetInstance,
+  { x, frozen, left }: { x: number; frozen: boolean; left: number },
+  positioned: Set<HTMLElement>,
+) {
+  const offset = frozen ? `${left}px` : '';
+  const header = engine.headers?.[x];
+  if (header) {
+    header.classList.toggle('jss_freezed', frozen);
+    position(header, { position: header.style.position, left: offset, zIndex: frozen ? '3' : '' });
+  }
+  for (const cell of columnCells(engine, x, positioned)) {
+    cell.classList.toggle('jss_freezed', frozen);
+    position(cell, { position: frozen ? 'sticky' : '', left: offset, zIndex: frozen ? '1' : '' });
+  }
 }
 
 /** CE's freeze implementation rounds widths and offsets body cells relative to scrollLeft.
@@ -35,41 +84,26 @@ export function restoreGridScroll(
  */
 export function syncFrozenColumns(engine: JSpreadsheetWorksheetInstance) {
   const count = engine.options?.freezeColumns ?? 0;
-  const table = engine.table;
-  const corner = table?.tHead?.rows[0]?.cells[0];
+  const corner = cornerOf(engine);
   // Measuring forces layout; only frozen columns need the row header's width.
   const rowHeaderWidth =
     (count > 0 ? corner?.getBoundingClientRect().width : undefined) ?? DEFAULT_ROW_HEADER_WIDTH;
-  if (corner) position(corner, 'sticky', '0px', '4');
-  for (const row of engine.rows ?? []) {
-    const header = row?.element?.firstElementChild;
-    if (header instanceof HTMLElement) position(header, 'sticky', '0px', '2');
-  }
+  pinHeaders(engine, corner);
   let left = rowHeaderWidth;
   const positioned = new Set<HTMLElement>();
   for (let x = 0; x < (engine.cols?.length ?? 0); x++) {
     const frozen = x < count;
-    const header = engine.headers?.[x];
-    if (header) {
-      header.classList.toggle('jss_freezed', frozen);
-      position(header, header.style.position, frozen ? `${left}px` : '', frozen ? '3' : '');
-    }
-    for (const row of engine.records ?? []) {
-      const cell = row?.[x]?.element;
-      if (!(cell instanceof HTMLElement) || positioned.has(cell)) continue;
-      positioned.add(cell);
-      cell.classList.toggle('jss_freezed', frozen);
-      position(cell, frozen ? 'sticky' : '', frozen ? `${left}px` : '', frozen ? '1' : '');
-    }
-    const col = engine.cols?.[x]?.colElement;
-    if (frozen && col?.style.display !== 'none')
-      left += Number.parseFloat(col?.style.width || col?.getAttribute('width') || '0') || 0;
+    freezeColumn(engine, { x, frozen, left }, positioned);
+    if (frozen) left += columnWidth(engine, x);
   }
 }
 
 /** Write only changed values: every write is a mutation the engine's observers handle. */
-function position(element: HTMLElement, value: string, left: string, zIndex: string) {
-  if (element.style.position !== value) element.style.position = value;
+function position(
+  element: HTMLElement,
+  { position, left, zIndex }: { position: string; left: string; zIndex: string },
+) {
+  if (element.style.position !== position) element.style.position = position;
   if (element.style.left !== left) element.style.left = left;
   if (element.style.zIndex !== zIndex) element.style.zIndex = zIndex;
 }
@@ -78,23 +112,15 @@ function position(element: HTMLElement, value: string, left: string, zIndex: str
 export function syncFrozenColumnOffsets(engine: JSpreadsheetWorksheetInstance) {
   const count = engine.options?.freezeColumns ?? 0;
   if (!count) return;
-  let left =
-    engine.table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect().width ??
-    DEFAULT_ROW_HEADER_WIDTH;
+  let left = cornerOf(engine)?.getBoundingClientRect().width ?? DEFAULT_ROW_HEADER_WIDTH;
   const positioned = new Set<HTMLElement>();
   for (let x = 0; x < count; x++) {
     const offset = `${left}px`,
       header = engine.headers?.[x];
     if (header && header.style.left !== offset) header.style.left = offset;
-    for (const row of engine.records ?? []) {
-      const cell = row?.[x]?.element;
-      if (!(cell instanceof HTMLElement) || positioned.has(cell)) continue;
-      positioned.add(cell);
+    for (const cell of columnCells(engine, x, positioned))
       if (cell.style.left !== offset) cell.style.left = offset;
-    }
-    const col = engine.cols?.[x]?.colElement;
-    if (col?.style.display !== 'none')
-      left += Number.parseFloat(col?.style.width || col?.getAttribute('width') || '0') || 0;
+    left += columnWidth(engine, x);
   }
 }
 
@@ -142,13 +168,9 @@ interface Box {
   bottom: number;
 }
 
-/** The visible cell body excludes both sticky header bands and scrollbar gutters. */
-export function gridBodyBounds(engine: JSpreadsheetWorksheetInstance, viewport: HTMLElement) {
-  const bounds = viewport.getBoundingClientRect();
-  const origin = { left: bounds.left + viewport.clientLeft, top: bounds.top + viewport.clientTop };
-  const right = origin.left + viewport.clientWidth,
-    bottom = origin.top + viewport.clientHeight;
-  const corner = engine.table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect();
+/** The sticky corner, the first column header and the first attached row header. */
+function headerRects(engine: JSpreadsheetWorksheetInstance) {
+  const corner = cornerOf(engine)?.getBoundingClientRect();
   const column = engine.headers
     ?.find((header) => header?.getBoundingClientRect().height > 0)
     ?.getBoundingClientRect();
@@ -156,19 +178,19 @@ export function gridBodyBounds(engine: JSpreadsheetWorksheetInstance, viewport: 
     ?.slice(gridRowWindow(engine)?.start ?? 0)
     .find((row) => (row?.element?.firstElementChild?.getBoundingClientRect().width ?? 0) > 0)
     ?.element.firstElementChild?.getBoundingClientRect();
-  return {
-    origin,
-    left: Math.min(
-      right,
-      Math.max(origin.left, corner?.right ?? origin.left, row?.right ?? origin.left),
-    ),
-    top: Math.min(
-      bottom,
-      Math.max(origin.top, corner?.bottom ?? origin.top, column?.bottom ?? origin.top),
-    ),
-    right,
-    bottom,
-  };
+  return { corner, column, row };
+}
+
+/** The visible cell body excludes both sticky header bands and scrollbar gutters. */
+export function gridBodyBounds(engine: JSpreadsheetWorksheetInstance, viewport: HTMLElement) {
+  const bounds = viewport.getBoundingClientRect();
+  const origin = { left: bounds.left + viewport.clientLeft, top: bounds.top + viewport.clientTop };
+  const right = origin.left + viewport.clientWidth,
+    bottom = origin.top + viewport.clientHeight;
+  const { corner, column, row } = headerRects(engine);
+  const left = Math.max(origin.left, corner?.right ?? origin.left, row?.right ?? origin.left);
+  const top = Math.max(origin.top, corner?.bottom ?? origin.top, column?.bottom ?? origin.top);
+  return { origin, left: Math.min(right, left), top: Math.min(bottom, top), right, bottom };
 }
 
 /**
@@ -206,116 +228,19 @@ export function clipGridSelectionHandle(engine: JSpreadsheetWorksheetInstance, b
   if (handle.style.clipPath !== clip) handle.style.clipPath = clip;
 }
 
-/** CSS-pixel outline fragments, clipped behind headers and frozen cells.
- * Clipped edges carry no stroke: scrolling must not invent a selection edge.
- */
-export function measureGridSelection(
-  engine: JSpreadsheetWorksheetInstance,
-  sheet: Worksheet,
-  selection: CellSelection,
-  viewport: HTMLElement,
-): CSSProperties[] {
-  const range = expandMergedSelection(selection, sheet);
-  const body = gridBodyBounds(engine, viewport),
-    { origin } = body;
-  const viewportRight = body.right,
-    viewportBottom = body.bottom,
-    headerBottom = body.top,
-    cornerRight = body.left;
-  const frozenCount = sheet.freezeColumns ?? 0;
-  const frozenRight = frozenCount
-    ? Math.max(
-        cornerRight,
-        engine.headers?.[frozenCount - 1]?.getBoundingClientRect().right ?? cornerRight,
-      )
-    : cornerRight;
-  const boxes: [Box | undefined, Box | undefined] = [undefined, undefined];
-  const hasMerges = Object.entries(sheet.mergeCells ?? {}).some(([address, [width, height]]) => {
-    const start = parseSpreadsheetAddress(address);
-    return (
-      start &&
-      start.x <= range.x2 &&
-      start.x + width > range.x1 &&
-      start.y <= range.y2 &&
-      start.y + height > range.y1
-    );
-  });
-  const measured = new Map<HTMLElement, DOMRect | null>();
-  function cellRect(x: number, y: number) {
-    const cell = engine.getCellFromCoords?.(x, y);
-    if (!cell || cell.style.display === 'none') return null;
-    // A hidden cell is measured as null, so presence is read with has().
-    if (measured.has(cell)) return measured.get(cell) as DOMRect | null;
-    const rect = cell.getBoundingClientRect(),
-      visible = rect.width > 0 && rect.height > 0 ? rect : null;
-    measured.set(cell, visible);
-    return visible;
-  }
-  function include(rect: DOMRect, part: 0 | 1) {
-    const old = boxes[part];
-    boxes[part] = old
-      ? {
-          left: Math.min(old.left, rect.left),
-          top: Math.min(old.top, rect.top),
-          right: Math.max(old.right, rect.right),
-          bottom: Math.max(old.bottom, rect.bottom),
-        }
-      : { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
-  }
-  // Detached rows lie outside the viewport; the attached rows bound what can be seen.
-  const attached = gridRowWindow(engine);
-  const lastY = Math.min(
-    range.y2,
-    (engine.records?.length ?? range.y2 + 1) - 1,
-    (attached?.end ?? Infinity) - 1,
-  );
-  const firstY = Math.max(0, range.y1, attached?.start ?? 0),
-    lastX = Math.min(range.x2, (engine.cols?.length ?? range.x2 + 1) - 1);
-  for (const part of [0, 1] as const) {
-    const firstX = Math.max(0, range.x1, part === 1 ? frozenCount : 0),
-      endX = Math.min(lastX, part === 0 ? frozenCount - 1 : lastX);
-    if (endX < firstX || lastY < firstY) continue;
-    // Ordinary rectangular grids need only their corners, independent of selected area.
-    const corners = hasMerges
-      ? []
-      : [
-          [firstX, firstY],
-          [endX, firstY],
-          [firstX, lastY],
-          [endX, lastY],
-        ].map(([x, y]) => cellRect(x, y));
-    if (corners.length && corners.every((rect): rect is DOMRect => rect !== null)) {
-      for (const rect of corners) include(rect, part);
-    } else
-      for (let y = firstY; y <= lastY; y++)
-        for (let x = firstX; x <= endX; x++) {
-          const rect = cellRect(x, y);
-          if (rect) include(rect, part);
-        }
-  }
-  return boxes.flatMap((box, index) => {
-    if (!box) return [];
-    const left = Math.max(box.left, origin.left, index === 0 ? cornerRight : frozenRight),
-      right = Math.min(box.right, viewportRight),
-      top = Math.max(box.top, origin.top, headerBottom),
-      bottom = Math.min(box.bottom, viewportBottom);
-    if (right <= left || bottom <= top) return [];
-    return [
-      {
-        position: 'absolute' as const,
-        pointerEvents: 'none' as const,
-        boxSizing: 'border-box' as const,
-        left: left - origin.left,
-        top: top - origin.top,
-        width: right - left,
-        height: bottom - top,
-        ...(left > box.left + 0.1 || (index === 1 && boxes[0]) ? { borderLeftWidth: 0 } : {}),
-        ...(right < box.right - 0.1 || (index === 0 && boxes[1]) ? { borderRightWidth: 0 } : {}),
-        ...(top > box.top + 0.1 ? { borderTopWidth: 0 } : {}),
-        ...(bottom < box.bottom - 0.1 ? { borderBottomWidth: 0 } : {}),
-      },
-    ];
-  });
+/** Where cells stop being covered on the left: past the frozen columns, else the row headers. */
+function coveredLeft(engine: JSpreadsheetWorksheetInstance, bounds: DOMRect): number {
+  const frozen = engine.options?.freezeColumns ?? 0;
+  return frozen
+    ? (engine.headers?.[frozen - 1]?.getBoundingClientRect().right ?? bounds.left)
+    : (cornerOf(engine)?.getBoundingClientRect().right ?? bounds.left);
+}
+
+/** The scroll change that brings a span into view, or zero when it is already in view. */
+function scrollDelta(span: { start: number; end: number }, view: { start: number; end: number }) {
+  if (span.start < view.start) return span.start - view.start;
+  if (span.end > view.end) return span.end - view.end;
+  return 0;
 }
 
 export function scrollGridCellIntoView(
@@ -329,18 +254,18 @@ export function scrollGridCellIntoView(
   if (!viewport || !cell) return;
   const rect = cell.getBoundingClientRect(),
     bounds = viewport.getBoundingClientRect();
-  const headerBottom =
-    engine.table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect().bottom ?? bounds.top;
-  const frozen = engine.options?.freezeColumns ?? 0;
-  const left = frozen
-    ? (engine.headers?.[frozen - 1]?.getBoundingClientRect().right ?? bounds.left)
-    : (engine.table?.tHead?.rows[0]?.cells[0]?.getBoundingClientRect().right ?? bounds.left);
-  if (x >= frozen) {
-    if (rect.left < left) viewport.scrollLeft -= left - rect.left;
-    else if (rect.right > bounds.left + viewport.clientWidth)
-      viewport.scrollLeft += rect.right - bounds.left - viewport.clientWidth;
+  const headerBottom = cornerOf(engine)?.getBoundingClientRect().bottom ?? bounds.top;
+  const left = coveredLeft(engine, bounds);
+  if (x >= (engine.options?.freezeColumns ?? 0)) {
+    const delta = scrollDelta(
+      { start: rect.left, end: rect.right },
+      { start: left, end: bounds.left + viewport.clientWidth },
+    );
+    if (delta) viewport.scrollLeft += delta;
   }
-  if (rect.top < headerBottom) viewport.scrollTop -= headerBottom - rect.top;
-  else if (rect.bottom > bounds.top + viewport.clientHeight)
-    viewport.scrollTop += rect.bottom - bounds.top - viewport.clientHeight;
+  const delta = scrollDelta(
+    { start: rect.top, end: rect.bottom },
+    { start: headerBottom, end: bounds.top + viewport.clientHeight },
+  );
+  if (delta) viewport.scrollTop += delta;
 }

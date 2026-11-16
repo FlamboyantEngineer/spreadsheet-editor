@@ -5,25 +5,24 @@ import type { CompletionSource } from '@flamboyantengineer/ui-components/complet
 import { FormulaGlyph } from '@flamboyantengineer/ui-components/core';
 import { Icon } from '@flamboyantengineer/ui-components/icon';
 import { Cluster, Stack } from '@flamboyantengineer/ui-components/layout';
-import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
 import {
   type FocusEvent,
   type KeyboardEvent,
   type Ref,
+  type RefObject,
   useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react';
-import { type CellSelection, selectionAddress } from '../model/editing.js';
+import type { CellSelection } from '../model/editing.js';
 import {
   buildFormulaReferenceTokenSegments,
   parseFormulaReferenceHighlights,
 } from '../model/formula-reference-parser.js';
-import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
+import { AddressField, claimKey } from './editor-address-field.js';
 import { formulaFunctionCatalog, type FormulaFunctionDescriptor } from './public-host.js';
 
 /** Semantic tokens let the host use the same reference palette in the editor and grid. */
@@ -65,76 +64,50 @@ export interface EditorFormulaBarProps {
   keepsEditing?(target: EventTarget | null): boolean;
 }
 
-/** Address parsing must respect the workbook's selectable bounds, including during live input. */
-function addressSelection(value: string): CellSelection | null {
-  const range = parseSpreadsheetRange(value);
-  if (!range || range.end.x > 16_383 || range.end.y > 1_048_575) return null;
-  return { x1: range.start.x, y1: range.start.y, x2: range.end.x, y2: range.end.y };
+/** Completes function names from the host catalog while a formula is typed. */
+function formulaCompletions(catalog: ReturnType<typeof formulaFunctionCatalog>): CompletionSource {
+  return ({ value, query, isExplicit }) => {
+    if (!value.trimStart().startsWith('=')) return [];
+    if (!query && value.trim() !== '=' && !isExplicit) return [];
+    const search = query.toUpperCase();
+    return catalog
+      .flatMap((descriptor) =>
+        [descriptor.name, ...(descriptor.aliases ?? [])].map((name) => ({
+          label: name,
+          description: descriptor.description,
+          insertText: descriptor.insertText ?? `${name}(`,
+        })),
+      )
+      .filter((entry) => !search || entry.label.includes(search))
+      .sort(
+        (a, b) =>
+          Number(b.label === search) - Number(a.label === search) || a.label.localeCompare(b.label),
+      );
+  };
 }
 
-/** Caller-owned drafts and transactions with the base library's formula layout and code surface. */
-export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
-  const completeFormula = useMemo<CompletionSource>(() => {
-    const catalog = formulaFunctionCatalog(
-      props.formulaFunctions,
-      props.includeBuiltinFormulaFunctions,
-    );
-    return ({ value, query, isExplicit }) => {
-      if (!value.trimStart().startsWith('=')) return [];
-      if (!query && value.trim() !== '=' && !isExplicit) return [];
-      const search = query.toUpperCase();
-      return catalog
-        .flatMap((descriptor) =>
-          [descriptor.name, ...(descriptor.aliases ?? [])].map((name) => ({
-            label: name,
-            description: descriptor.description,
-            insertText: descriptor.insertText ?? `${name}(`,
-          })),
-        )
-        .filter((entry) => !search || entry.label.includes(search))
-        .sort(
-          (a, b) =>
-            Number(b.label === search) - Number(a.label === search) ||
-            a.label.localeCompare(b.label),
-        );
-    };
-  }, [props.formulaFunctions, props.includeBuiltinFormulaFunctions]);
-  const root = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
-  const editing = useRef(false);
-  const composing = useRef(false);
+const resultText = ({ draftDirty, pending, error, result }: EditorFormulaBarProps) =>
+  draftDirty ? 'Editing…' : pending ? 'Calculating…' : error ? 'Unavailable' : result;
+
+/** The bar's handle: reference insertion keeps the caller-owned draft and restores its caret. */
+function useFormulaHandle(
+  ref: Ref<EditorFormulaBarHandle> | undefined,
+  input: RefObject<HTMLTextAreaElement | null>,
+  { isReadOnly, draftValue, onDraftChange }: EditorFormulaBarProps,
+) {
   const pendingCaret = useRef<{ value: string; offset: number } | null>(null);
-  const [addressDraft, setAddressDraft] = useState<string | null>(null);
-  const [addressInvalid, setAddressInvalid] = useState(false);
-  const address = selectionAddress(props.selection);
-  const hintId = useId();
-  const resultId = useId();
-  const result = props.draftDirty
-    ? 'Editing…'
-    : props.pending
-      ? 'Calculating…'
-      : props.error
-        ? 'Unavailable'
-        : props.result;
-
-  const setEditing = (value: boolean) => {
-    if (editing.current === value) return;
-    editing.current = value;
-    props.onEditingChange?.(value);
-  };
-
   useImperativeHandle(ref, () => ({
     insertReference(range) {
-      if (props.isReadOnly || !range || !props.draftValue.trimStart().startsWith('=')) return;
-      const start = input.current?.selectionStart ?? props.draftValue.length;
+      if (isReadOnly || !range || !draftValue.trimStart().startsWith('=')) return;
+      const start = input.current?.selectionStart ?? draftValue.length;
       const end = input.current?.selectionEnd ?? start;
-      const value = props.draftValue.slice(0, start) + range + props.draftValue.slice(end);
+      const value = draftValue.slice(0, start) + range + draftValue.slice(end);
       pendingCaret.current = { value, offset: start + range.length };
-      props.onDraftChange(value);
+      onDraftChange(value);
       // A controlled parent may publish the draft later. Keep focus now and restore its caret
       // after that exact value arrives, rather than introducing an independent local draft.
       input.current?.focus();
-      if (value === props.draftValue) {
+      if (value === draftValue) {
         pendingCaret.current = null;
         input.current?.setSelectionRange(start + range.length, start + range.length);
       }
@@ -146,20 +119,35 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
 
   useLayoutEffect(() => {
     const caret = pendingCaret.current;
-    if (!caret || props.draftValue !== caret.value) return;
+    if (!caret || draftValue !== caret.value) return;
     pendingCaret.current = null;
     input.current?.focus();
     input.current?.setSelectionRange(caret.offset, caret.offset);
-  }, [props.draftValue]);
+  }, [draftValue, input]);
+}
 
+/** Editing state, composition tracking, and the bar's Enter, Escape and focus-leave handling. */
+function useFormulaEditing(
+  props: EditorFormulaBarProps,
+  {
+    root,
+    input,
+  }: { root: RefObject<HTMLDivElement | null>; input: RefObject<HTMLTextAreaElement | null> },
+) {
+  const editing = useRef(false);
+  const composing = useRef(false);
+  const setEditing = (value: boolean) => {
+    if (editing.current === value) return;
+    editing.current = value;
+    props.onEditingChange?.(value);
+  };
   const isComposing = (event: KeyboardEvent) =>
     composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
 
   const onFormulaKeyDown = (event: KeyboardEvent) => {
     if (isComposing(event)) return;
     if (event.key !== 'Enter' && event.key !== 'Escape') return;
-    event.preventDefault();
-    event.stopPropagation();
+    claimKey(event);
     if (props.isReadOnly) return;
     // CodeEditor handles its completion list before this callback. For a single-line surface
     // it also prevents the unhandled Enter's line break before calling us, so defaultPrevented
@@ -180,11 +168,32 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
     if (props.keepsEditing?.(target)) return;
     props.onLeaveEditor?.();
   };
-
-  const normalizeAddress = () => {
-    setAddressDraft(null);
-    setAddressInvalid(false);
+  const composition = {
+    onCompositionStartCapture: () => {
+      composing.current = true;
+    },
+    onCompositionEndCapture: () => {
+      composing.current = false;
+    },
   };
+  return { setEditing, isComposing, onFormulaKeyDown, onBlurCapture, composition };
+}
+
+/** Caller-owned drafts and transactions with the base library's formula layout and code surface. */
+export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
+  const { formulaFunctions, includeBuiltinFormulaFunctions } = props;
+  const completeFormula = useMemo(
+    () =>
+      formulaCompletions(formulaFunctionCatalog(formulaFunctions, includeBuiltinFormulaFunctions)),
+    [formulaFunctions, includeBuiltinFormulaFunctions],
+  );
+  const root = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const hintId = useId();
+  const resultId = useId();
+  useFormulaHandle(ref, input, props);
+  const { setEditing, isComposing, onFormulaKeyDown, onBlurCapture, composition } =
+    useFormulaEditing(props, { root, input });
 
   return (
     <Cluster
@@ -193,12 +202,7 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
       space="md"
       className="se-editor__formula-bar"
       onBlurCapture={onBlurCapture}
-      onCompositionStartCapture={() => {
-        composing.current = true;
-      }}
-      onCompositionEndCapture={() => {
-        composing.current = false;
-      }}
+      {...composition}
     >
       <Cluster
         className="se-editor__formula-widget"
@@ -209,43 +213,11 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
         wrap="nowrap"
         space="sm"
       >
-        <TextField
-          className="se-editor__address"
-          label="Selected cell or range"
-          density="compact"
-          labelLayout="control-only"
-          tracksChanges={false}
-          size="sm"
-          value={addressDraft ?? address}
-          errorMessage={addressInvalid ? 'Enter a cell or range from A1 to XFD1048576.' : undefined}
-          messageDisplay="tooltip"
+        <AddressField
+          selection={props.selection}
+          isComposing={isComposing}
           onFocus={() => setEditing(false)}
-          onChange={(value) => {
-            setAddressDraft(value);
-            const selection = addressSelection(value);
-            setAddressInvalid(!selection);
-            if (selection) props.onNavigate(selection);
-          }}
-          onBlur={normalizeAddress}
-          onKeyDown={(event) => {
-            if (isComposing(event)) return;
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              event.stopPropagation();
-              normalizeAddress();
-            } else if (event.key === 'Enter') {
-              event.preventDefault();
-              event.stopPropagation();
-              const selection = addressSelection(addressDraft ?? address);
-              if (!selection) {
-                setAddressInvalid(true);
-                return;
-              }
-              props.onNavigate(selection);
-              setAddressDraft(selectionAddress(selection));
-              setAddressInvalid(false);
-            }
-          }}
+          onNavigate={props.onNavigate}
         />
         <Icon icon={FormulaGlyph} />
         <Stack grow space="none">
@@ -275,7 +247,7 @@ export function EditorFormulaBar({ ref, ...props }: EditorFormulaBarProps) {
         </Stack>
       </Cluster>
       <output id={resultId} aria-label="Calculated cell value" title="Calculated value">
-        {result}
+        {resultText(props)}
       </output>
       <VisuallyHidden as="span" id={hintId}>
         {props.isReadOnly

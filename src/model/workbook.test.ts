@@ -6,7 +6,7 @@ import { assertWorkbook, createWorkbook } from './workbook.js';
 describe('SE-CALC-2.1: portable workbook and parser', () => {
   it('edits without mutating source input', () => {
     const original = createWorkbook([['1E-25']]);
-    const next = writeCells(original, 'sheet-1', 1, 0, [['=1-A1']]);
+    const next = writeCells(original, [['=1-A1']], { sheetId: 'sheet-1', x: 1, y: 0 });
     expect(original.worksheets[0].data).toEqual([['1E-25']]);
     expect(next.worksheets[0].data).toEqual([['1E-25', '=1-A1']]);
   });

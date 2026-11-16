@@ -29,6 +29,72 @@ interface SheetBarProps {
   children?: ReactNode;
 }
 
+interface WorksheetMenuContext {
+  canEdit: boolean;
+  sheetCount: number;
+  onCommand: (command: WorksheetCommand, id: string) => void;
+}
+
+interface WorksheetMenuCommand {
+  value: WorksheetCommand;
+  label: string;
+  icon: MenuItemEntry['icon'];
+  isDisabled?: boolean;
+}
+
+/** A worksheet tab's menu: its commands around the tab list's standard rename entry. */
+function worksheetMenu(
+  id: string,
+  standard: readonly MenuEntry[],
+  { canEdit, sheetCount, onCommand }: WorksheetMenuContext,
+): MenuEntry[] {
+  const command = ({
+    value,
+    label,
+    icon,
+    isDisabled = false,
+  }: WorksheetMenuCommand): MenuItemEntry => ({
+    id: value,
+    label,
+    icon,
+    isDisabled: !canEdit || isDisabled,
+    onAction: () => onCommand(value, id),
+  });
+  const single = sheetCount < 2;
+  const edits: MenuEntry[] = canEdit
+    ? standard.map((entry) =>
+        entry.id === 'rename' ? { ...entry, shortcut: 'F2', 'aria-label': 'Rename' } : entry,
+      )
+    : [
+        {
+          id: 'rename',
+          label: 'Rename',
+          'aria-label': 'Rename',
+          icon: EditGlyph,
+          isDisabled: true,
+          shortcut: 'F2',
+        },
+        command({ value: 'duplicate', label: 'Duplicate', icon: CopyGlyph }),
+      ];
+  return [
+    command({ value: 'insert', label: 'Insert worksheet before', icon: PlusGlyph }),
+    ...edits,
+    { id: 'worksheet-move-separator', type: 'separator' },
+    command({ value: 'left', label: 'Move left', icon: ArrowLeftGlyph, isDisabled: single }),
+    command({ value: 'right', label: 'Move right', icon: ArrowRightGlyph, isDisabled: single }),
+    { id: 'worksheet-delete-separator', type: 'separator' },
+    {
+      ...command({
+        value: 'delete',
+        label: 'Delete worksheet',
+        icon: DeleteGlyph,
+        isDisabled: single,
+      }),
+      tone: 'danger',
+    },
+  ];
+}
+
 /**
  * The worksheet list within its owner's controlled Tabs root. The same root pairs worksheet ids
  * with TabPanels around the grid; selection and pending grid drafts stay with that owner.
@@ -43,45 +109,8 @@ export function SheetBar({
   scrollButtons = true,
   children,
 }: SheetBarProps) {
-  const menuItems = (key: string | number, standard: readonly MenuEntry[]): MenuEntry[] => {
-    const id = String(key);
-    const command = (
-      value: WorksheetCommand,
-      label: string,
-      icon: MenuItemEntry['icon'],
-      isDisabled = false,
-    ): MenuItemEntry => ({
-      id: value,
-      label,
-      icon,
-      isDisabled: !canEdit || isDisabled,
-      onAction: () => onCommand(value, id),
-    });
-    const edits: MenuEntry[] = canEdit
-      ? standard.map((entry) =>
-          entry.id === 'rename' ? { ...entry, shortcut: 'F2', 'aria-label': 'Rename' } : entry,
-        )
-      : [
-          {
-            id: 'rename',
-            label: 'Rename',
-            'aria-label': 'Rename',
-            icon: EditGlyph,
-            isDisabled: true,
-            shortcut: 'F2',
-          },
-          command('duplicate', 'Duplicate', CopyGlyph),
-        ];
-    return [
-      command('insert', 'Insert worksheet before', PlusGlyph),
-      ...edits,
-      { id: 'worksheet-move-separator', type: 'separator' },
-      command('left', 'Move left', ArrowLeftGlyph, sheets.length < 2),
-      command('right', 'Move right', ArrowRightGlyph, sheets.length < 2),
-      { id: 'worksheet-delete-separator', type: 'separator' },
-      { ...command('delete', 'Delete worksheet', DeleteGlyph, sheets.length < 2), tone: 'danger' },
-    ];
-  };
+  const menuItems = (key: string | number, standard: readonly MenuEntry[]) =>
+    worksheetMenu(String(key), standard, { canEdit, sheetCount: sheets.length, onCommand });
   return (
     <div className="se-editor__sheets">
       <TabList

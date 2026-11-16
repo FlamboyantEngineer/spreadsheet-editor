@@ -19,6 +19,38 @@ const OMIT = new Set([
   'input',
   'button',
 ]);
+type Node = DefaultTreeAdapterMap['node'];
+
+/** The text of an HTML fragment, with line breaks for `br` and without inert or form content. */
+function htmlText(value: string): string {
+  const stack: { node: Node; depth: number }[] = [{ node: parseFragment(value), depth: 0 }];
+  const parts: string[] = [];
+  let visited = 0;
+  while (stack.length) {
+    const { node, depth } = requireDefined(stack.pop());
+    if (++visited > 8192 || depth > 128)
+      throw new RangeError('Captured HTML exceeds its tree limit.');
+    if (node.nodeName === '#text') parts.push((node as DefaultTreeAdapterMap['textNode']).value);
+    else if ('tagName' in node && node.tagName === 'br') parts.push('\n');
+    else if ('childNodes' in node && !('tagName' in node && OMIT.has(node.tagName)))
+      stack.push(
+        ...[...node.childNodes].reverse().map((child) => ({ node: child, depth: depth + 1 })),
+      );
+  }
+  return parts.join('');
+}
+
+/** Control characters, noncharacters and lone surrogates, which XML cannot carry. */
+function unrepresentable(character: string): boolean {
+  const code = requireDefined(character.codePointAt(0));
+  return (
+    (code < 32 && ![9, 10, 13].includes(code)) ||
+    code === 0xfffe ||
+    code === 0xffff ||
+    (code >= 0xd800 && code <= 0xdfff)
+  );
+}
+
 /** parse5 decodes HTML entities without executing markup; work and output remain explicitly bounded. */
 export function capturedText(
   value: string,
@@ -26,38 +58,9 @@ export function capturedText(
   maxLength: 255 | 32767 = 255,
 ): string {
   if (value.length > 65_536) throw new RangeError('Captured text exceeds the HTML input limit.');
-  let output = value;
-  if (policy === 'html-to-text') {
-    const root = parseFragment(value);
-    const stack: { node: DefaultTreeAdapterMap['node']; depth: number }[] = [
-      { node: root, depth: 0 },
-    ];
-    const parts: string[] = [];
-    let visited = 0;
-    while (stack.length) {
-      const { node, depth } = requireDefined(stack.pop());
-      if (++visited > 8192 || depth > 128)
-        throw new RangeError('Captured HTML exceeds its tree limit.');
-      if (node.nodeName === '#text') parts.push((node as DefaultTreeAdapterMap['textNode']).value);
-      else if ('tagName' in node && node.tagName === 'br') parts.push('\n');
-      else if ('childNodes' in node && !('tagName' in node && OMIT.has(node.tagName)))
-        for (let i = node.childNodes.length - 1; i >= 0; i--)
-          stack.push({ node: node.childNodes[i], depth: depth + 1 });
-    }
-    output = parts.join('');
-  }
+  const output = policy === 'html-to-text' ? htmlText(value) : value;
   // XML/Excel cannot preserve these control characters; never silently alter an operand.
-  if (
-    [...output].some((character) => {
-      const code = requireDefined(character.codePointAt(0));
-      return (
-        (code < 32 && ![9, 10, 13].includes(code)) ||
-        code === 0xfffe ||
-        code === 0xffff ||
-        (code >= 0xd800 && code <= 0xdfff)
-      );
-    })
-  )
+  if ([...output].some(unrepresentable))
     throw new TypeError('Captured text contains characters Excel cannot represent.');
   if (output.length > maxLength)
     throw new RangeError(
