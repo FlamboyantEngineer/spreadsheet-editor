@@ -18,7 +18,7 @@ const WorkbookGrid = lazy(() =>
 );
 
 /** Formula reference picking: the draft's references and where a picked reference goes. */
-export interface ReferencePicking {
+interface ReferencePicking {
   picking: boolean;
   references: FormulaReferenceHighlight[];
   onFormulaReference(range: string): void;

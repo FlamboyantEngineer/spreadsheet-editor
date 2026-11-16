@@ -50,13 +50,13 @@ export type JSpreadsheetVendorCallback = {
   bivarianceHack(...args: unknown[]): unknown;
 }['bivarianceHack'];
 
-export type JSpreadsheetContextMenuHost = Partial<HTMLDivElement> & {
+type JSpreadsheetContextMenuHost = Partial<HTMLDivElement> & {
   contextmenu?: {
     close?: (focus?: boolean) => void;
   };
 };
 
-export type JSpreadsheetStyleMap = Record<string, string | string[]>;
+type JSpreadsheetStyleMap = Record<string, string | string[]>;
 
 /**
  * Configuration passed straight through to the vendor `<Spreadsheet>` wrapper.

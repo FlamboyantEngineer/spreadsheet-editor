@@ -126,7 +126,7 @@ export function combineKinds(
 }
 
 /** What a quantity carries besides its magnitude. */
-export interface QuantityParts {
+interface QuantityParts {
   dimension: Dimension;
   quantityKind?: string;
   temperature?: NumericValue['temperature'];

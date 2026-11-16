@@ -12,7 +12,7 @@ npm run check:references && npm run check:specs && npm run check:structure && np
 npm run test:changed   # unit tests related to your changes since origin/dev
 ```
 
-The reference, spec, structure and export checks and the shared ESLint and Prettier configuration come from ui-components' tooling (its `specs/TOOLING.md`), at the pinned commit; `tooling.config.mjs` holds this repository's settings. The shared size limits (complexity, depth, parameters, function and file length) are being adopted one area at a time: `SIZE_LIMITS_PENDING` in `eslint.config.js` lists the areas still to refactor, and a change only ever removes entries from it.
+The reference, spec, structure and export checks and the shared ESLint and Prettier configuration come from ui-components' tooling (its `specs/TOOLING.md`), at the pinned commit; `tooling.config.mjs` holds this repository's settings. The shared size limits (complexity, depth, parameters, function and file length) apply to every area.
 
 - `npm run test:changed` runs `vitest --changed` against `origin/dev`. A change to `package.json` or the Vitest config reruns everything; for those changes run the tests of what you touched by path instead (`npx vitest run src/model/workbook.test.ts`).
 - Changes to exports, public types, entry points or package contents also run `npm run build && npm run check:package`.

@@ -12,7 +12,7 @@ export class WorkbookOperationConflict extends Error {
 export const equal = (a: unknown, b: unknown) => orderedJson(a) === orderedJson(b);
 
 /** The state an operation saw before it ran, and the state it left. */
-export interface DeltaSides {
+interface DeltaSides {
   before: unknown;
   after: unknown;
 }

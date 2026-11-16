@@ -18,7 +18,7 @@ import type { DraftText, EditorCore } from './editor-core.js';
 import { historyEntry } from './history.js';
 
 /** A structure command's line change, which a review proposal records. */
-export type StructureOperation = { sheetId: string; change: StructureChange };
+type StructureOperation = { sheetId: string; change: StructureChange };
 
 /** Operations a command already knows, and the cells it wrote, so it needs no workbook diff. */
 export interface CommitOptions {

@@ -19,7 +19,7 @@ export interface FindMatch {
 }
 
 /** What the find pane searches besides authored input: the values the grid shows. */
-export interface FindSources {
+interface FindSources {
   result: CalculationResult | null | undefined;
   readyCells: ReadonlySet<string>;
   presentation: CellPresentationSnapshot | undefined;

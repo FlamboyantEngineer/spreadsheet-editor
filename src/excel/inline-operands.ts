@@ -6,7 +6,7 @@ import type { ExcelHostFunction } from './contracts.js';
 import { EXCEL_ERRORS, operandText } from './export-values.js';
 
 /** What inlining one formula needs: where it is, the captured results and how to report a loss. */
-export interface InlineRequest {
+interface InlineRequest {
   formula: string;
   sheetId: string;
   x: number;

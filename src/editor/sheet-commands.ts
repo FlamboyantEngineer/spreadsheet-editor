@@ -8,7 +8,7 @@ import type { SpreadsheetEditorProps } from './contracts.js';
 export type SheetCommand = 'add' | 'insert' | 'duplicate' | 'delete' | 'left' | 'right';
 
 /** The worksheet a tab command acts on, and the worksheet the editor shows. */
-export interface SheetCommandTarget {
+interface SheetCommandTarget {
   targetSheetId: string;
   activeSheetId: string;
   idFactory: SpreadsheetEditorProps['idFactory'];
@@ -86,7 +86,7 @@ export function applySheetCommand(
 }
 
 /** A row height or column width applied to the selected lines. */
-export interface SelectionResize {
+interface SelectionResize {
   dialog: 'row-height' | 'column-width';
   measure: number;
 }

@@ -11,7 +11,7 @@ import type { DraftText, EditorCore } from './editor-core.js';
 import { mutateWithDraftChange } from './editor-transactions.js';
 
 /** The host's clipboard, or the browser's. */
-export function editorClipboard(clipboard: SpreadsheetClipboard | undefined): SpreadsheetClipboard {
+function editorClipboard(clipboard: SpreadsheetClipboard | undefined): SpreadsheetClipboard {
   return (
     clipboard ?? {
       async readText() {

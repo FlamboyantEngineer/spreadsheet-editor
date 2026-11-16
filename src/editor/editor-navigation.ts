@@ -17,7 +17,7 @@ const sameSelection = (a: CellSelection, b: CellSelection) =>
   a.x1 === b.x1 && a.x2 === b.x2 && a.y1 === b.y1 && a.y2 === b.y2;
 
 /** Keeps the active worksheet's selection and scroll position for when the reader returns. */
-export function rememberSheetView({ sheetViews, sheet, selection, grid }: EditorCore) {
+function rememberSheetView({ sheetViews, sheet, selection, grid }: EditorCore) {
   sheetViews.current.set(sheet.id, {
     selection: { ...selection },
     viewport: grid.current?.getViewport?.() ?? { left: 0, top: 0 },

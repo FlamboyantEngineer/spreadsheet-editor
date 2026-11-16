@@ -22,7 +22,7 @@ import { deliveredHeader } from './header-resize.js';
 
 type Surface = HTMLDivElement;
 /** What the surface shows now: its outlines and the clip box they are drawn in. */
-export interface SurfaceView {
+interface SurfaceView {
   props: WorkbookGridProps;
   frames: GridFrame[];
   clip: CSSProperties;

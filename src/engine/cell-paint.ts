@@ -82,7 +82,7 @@ const paintedCells = new WeakMap<HTMLElement, PaintedCell>();
 const formula = (input: unknown): input is string =>
   typeof input === 'string' && input.trimStart().startsWith('=');
 
-export function clearCellPresentation(cell: HTMLElement) {
+function clearCellPresentation(cell: HTMLElement) {
   if (cell.dataset.sePresentation !== undefined) {
     if (cell.title === presentationTitles.get(cell)) cell.removeAttribute('title');
     presentationTitles.delete(cell);

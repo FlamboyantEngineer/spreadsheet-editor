@@ -5,7 +5,7 @@ import { parseSpreadsheetAddress, parseSpreadsheetRange } from './spreadsheet-ad
 import type { Workbook, Worksheet } from './workbook.js';
 
 /** Validates a structural suggestion's before or after worksheets as a workbook of their own. */
-export type SnapshotCheck = (snapshot: { schemaVersion: 1; worksheets: Worksheet[] }) => void;
+type SnapshotCheck = (snapshot: { schemaVersion: 1; worksheets: Worksheet[] }) => void;
 
 type Thread = SpreadsheetComment;
 type Post = Thread['entries'][number];

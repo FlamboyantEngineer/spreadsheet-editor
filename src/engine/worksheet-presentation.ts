@@ -47,12 +47,12 @@ const deferredCells = new WeakMap<JSpreadsheetWorksheetInstance, Set<HTMLElement
 
 type EngineOptions = NonNullable<JSpreadsheetWorksheetInstance['options']>;
 /** The two versions of a worksheet a presentation pass moves between. */
-export interface WorksheetVersions {
+interface WorksheetVersions {
   previous: Worksheet | null;
   next: Worksheet;
 }
 /** How the grid is viewed: editable or not, at a zoom, over the logical extent. */
-export interface WorksheetView {
+interface WorksheetView {
   readOnly: boolean;
   zoom?: number | undefined;
   logicalExtent?: WorksheetExtent | undefined;

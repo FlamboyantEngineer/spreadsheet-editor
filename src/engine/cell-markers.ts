@@ -15,12 +15,12 @@ import type {
 type MarkedWorksheet = JSpreadsheetWorksheetInstance &
   Required<Pick<JSpreadsheetWorksheetInstance, 'getCellFromCoords'>>;
 /** The review items a grid marks. */
-export interface ReviewMarks {
+interface ReviewMarks {
   comments?: SpreadsheetComment[] | undefined;
   suggestions?: SpreadsheetSuggestion[] | undefined;
 }
 /** Whether contributor colours show, and the cell being edited, which is skipped. */
-export interface ContributorPaint {
+interface ContributorPaint {
   visible: boolean;
   editing?: CellSelection | undefined;
 }

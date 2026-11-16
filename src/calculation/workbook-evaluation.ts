@@ -32,13 +32,13 @@ export interface Frame extends CellPosition {
   depth: number;
 }
 /** How many cells one formula has addressed; a formula may address 10,000 in all. */
-export interface ReadBudget {
+interface ReadBudget {
   used: number;
   charged: WeakSet<FormulaNode>;
   exhausted: boolean;
 }
 /** How far a formula has read a range, so a suspended read resumes where it stopped. */
-export interface RangeState {
+interface RangeState {
   rows: CellValue[][];
   index: number;
 }

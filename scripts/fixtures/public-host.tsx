@@ -200,9 +200,8 @@ export const table: DocumentInsertion = createDocumentInsertion(workbook, result
 export const extent = worksheetExtent(workbook.worksheets[0], workbook);
 export const structure = changeWorkbookStructureWithOperations(
   workbook,
-  'sheet-1',
+  { sheetId: 'sheet-1', idFactory },
   { axis: 'row', kind: 'insert', index: 1, count: 1 },
-  idFactory,
 );
 export const inverse: WorkbookOperation[] = invertWorkbookOperations(structure.operations);
 export const capabilities: ExcelFormulaCapabilities = {

@@ -8,13 +8,13 @@ import { editorCommandMetadata } from './editor-commands.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
 
 /** What a menu command runs, and whether it is unavailable. */
-export interface MenuCommand {
+interface MenuCommand {
   action: () => unknown;
   isDisabled?: boolean | undefined;
 }
 
 /** Builds a command entry with its shared shortcut and icon metadata. */
-export type MenuItemFactory = (id: string, label: string, command: MenuCommand) => MenuItemEntry;
+type MenuItemFactory = (id: string, label: string, command: MenuCommand) => MenuItemEntry;
 
 /** The editor and the availability flags every menu reads. */
 export interface MenuContext {

@@ -23,7 +23,7 @@ import { fitNativeCellEditor } from './native-cell-editor.js';
 type FormulaInput = HTMLInputElement | HTMLTextAreaElement;
 type References = ReturnType<typeof parseFormulaReferenceHighlights>;
 /** Where the native formula editor reports its drafts and which functions it completes. */
-export interface NativeFormulaOptions {
+interface NativeFormulaOptions {
   onDraft: (value: string | null) => void;
   root: RefObject<HTMLDivElement | null>;
   functions?: readonly FormulaFunctionDescriptor[] | undefined;

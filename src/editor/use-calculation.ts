@@ -19,7 +19,7 @@ export function acceptedCalculationKey(workbook: Workbook): string {
 }
 
 /** How a calculation runs: its options, whether it runs at all, and whether to re-validate it. */
-export interface CalculationRun {
+interface CalculationRun {
   options?: CalculationOptions | undefined;
   enabled?: boolean | undefined;
   /** The built-in client calculator's own results are not re-validated (SE-PERF-2.1). */

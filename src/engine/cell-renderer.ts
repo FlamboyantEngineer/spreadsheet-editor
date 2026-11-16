@@ -67,7 +67,7 @@ const hasCellLookup = (
   worksheet: JSpreadsheetWorksheetInstance | undefined,
 ): worksheet is JSpreadsheetWorksheetInstance & CellLookup => !!worksheet?.getCellFromCoords;
 /** How calculated cells are painted; every field is optional. */
-export interface CellPaintOptions {
+interface CellPaintOptions {
   display?: DisplayOptions | undefined;
   raw?: CellInput[][] | undefined;
   unavailableText?: string | undefined;

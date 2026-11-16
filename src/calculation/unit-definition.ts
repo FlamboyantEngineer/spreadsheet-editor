@@ -18,7 +18,7 @@ export interface UnitConversionDefinition {
   readonly requiresWordSize?: boolean;
 }
 
-export interface UnitDefinition {
+interface UnitDefinition {
   name: string;
   input: readonly string[];
   display: string;
@@ -39,7 +39,7 @@ export const freezePrefix = (prefix: UnitPrefixDefinition): Readonly<UnitPrefixD
     input: Object.freeze([...prefix.input]),
   });
 
-export const freezeUnit = (unit: UnitDefinition): Readonly<UnitDefinition> =>
+const freezeUnit = (unit: UnitDefinition): Readonly<UnitDefinition> =>
   Object.freeze({
     ...unit,
     conversion: Object.freeze({ ...unit.conversion }),

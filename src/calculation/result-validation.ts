@@ -14,7 +14,7 @@ import {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-export function validateCell(value: CellValue): void {
+function validateCell(value: CellValue): void {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
   if (!value || typeof value !== 'object') throw new TypeError('Invalid calculated cell.');
   if (value.kind === 'error' && (FORMULA_ERROR_CODES as readonly string[]).includes(value.code))

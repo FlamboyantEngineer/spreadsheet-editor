@@ -16,7 +16,7 @@ import type { CellPresentationSnapshot } from './public-host.js';
 import { acceptedCalculationKey, useCalculation } from './use-calculation.js';
 
 /** Where a publication's calculation comes from. */
-export interface PublicationSources {
+interface PublicationSources {
   mode: CalculationMode | undefined;
   provider: CalculationProvider;
   options: CalculationOptions;
