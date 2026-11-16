@@ -145,6 +145,6 @@ export function appendLine(e: SpreadsheetEditorController, axis: 'row' | 'column
         change,
       ),
     axis === 'row' ? 'Add row' : 'Add column',
-    { sheetId: e.sheet.id, change },
+    { operation: { sheetId: e.sheet.id, change } },
   );
 }

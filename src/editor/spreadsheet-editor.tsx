@@ -38,14 +38,14 @@ import { parseFormulaReferenceHighlights } from '../model/formula-reference-pars
 import { requireDefined } from '../model/require-defined.js';
 import { findOpenComment } from '../model/review.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
+import { CommentsPanel } from './comments-panel.js';
 import type { SpreadsheetEditorProps } from './contracts.js';
 import { EditorFormulaBar, type EditorFormulaBarHandle } from './editor-formula-bar.js';
 import { editorMenus } from './editor-menus.js';
 import { EditorToolbar } from './editor-toolbar.js';
-import { CommentsPanel } from './comments-panel.js';
 import { HistoryPanel, PropertiesPanel } from './review-panels.js';
-import { SuggestionsPanel } from './suggestions-panel.js';
 import { SheetBar } from './sheet-bar.js';
+import { SuggestionsPanel } from './suggestions-panel.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 import { useSessionState } from './use-session-state.js';
 
