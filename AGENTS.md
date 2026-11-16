@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This repository is a standalone, embeddable React spreadsheet editor with exact arithmetic, built on `@flamboyantengineer/ui-components`. Read [README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the specs of the area you change before changing it.
+This repository is a standalone, embeddable React spreadsheet editor with exact arithmetic, built on `@flamboyantengineer/ui-components`. Read [README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), [docs/CODING-GUIDELINES.md](docs/CODING-GUIDELINES.md) and the specs of the area you change before changing it.
 
 ## Gates
 
@@ -23,6 +23,7 @@ Run `npm run format` to fix formatting. Never weaken a lint rule, the denylist o
 
 ## Rules
 
+- Follow [docs/CODING-GUIDELINES.md](docs/CODING-GUIDELINES.md) and [docs/TESTING-GUIDELINES.md](docs/TESTING-GUIDELINES.md). `npm run check` enforces the rules it can; review enforces the rest.
 - Work on a short-lived branch from `dev` and open a pull request to `dev`. Merge it once CI passes and the branch is up to date with `dev`.
 - Generic controls come from `@flamboyantengineer/ui-components`. A control it lacks is requested there, not built here. React owns the editor chrome; imperative grid DOM belongs only in `src/engine/`.
 - Components emit hooks only: `se-` hook classes, data attributes and the properties documented in `specs/HOOK-CONTRACT.md`. Package source loads no CSS, fixed application URLs, global storage or application services. Reference presentation lives in `labs/`.
