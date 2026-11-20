@@ -10,7 +10,7 @@ import {
   PlusGlyph,
 } from '@flamboyantengineer/ui-components/core';
 import type { MenuEntry, MenuItemEntry } from '@flamboyantengineer/ui-components/menu';
-import { Tab, TabList } from '@flamboyantengineer/ui-components/tabs';
+import { TabsList, TabsTrigger } from '@flamboyantengineer/ui-components/tabs';
 import type { ReactNode } from 'react';
 import type { Worksheet } from '../model/workbook.js';
 
@@ -113,7 +113,7 @@ export function SheetBar({
     worksheetMenu(String(key), standard, { canEdit, sheetCount: sheets.length, onCommand });
   return (
     <div className="se-editor__sheets">
-      <TabList
+      <TabsList
         className="se-editor__sheet-tabs"
         aria-label="Worksheets"
         overflow="scroll"
@@ -136,11 +136,11 @@ export function SheetBar({
         }
       >
         {sheets.map((sheet) => (
-          <Tab key={sheet.id} id={sheet.id} textValue={sheet.name}>
+          <TabsTrigger key={sheet.id} id={sheet.id} textValue={sheet.name}>
             {sheet.name}
-          </Tab>
+          </TabsTrigger>
         ))}
-      </TabList>
+      </TabsList>
       {children}
     </div>
   );
