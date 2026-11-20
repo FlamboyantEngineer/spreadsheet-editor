@@ -1,6 +1,6 @@
 'use client';
 
-import { TabPanel, Tabs } from '@flamboyantengineer/ui-components/tabs';
+import { Tabs, TabsContent } from '@flamboyantengineer/ui-components/tabs';
 import { ZoomControl } from '@flamboyantengineer/ui-components/zoom-control';
 import { lazy, Suspense, useState } from 'react';
 import type {
@@ -105,7 +105,7 @@ export function EditorWorkspace(props: GridProps) {
       onSelectionChange={(id) => e.attempt(() => e.activateSheet(String(id)))}
       keyboardActivation="manual"
     >
-      <TabPanel id={e.sheet.id} className="se-editor__worksheet-panel">
+      <TabsContent id={e.sheet.id} className="se-editor__worksheet-panel">
         <div
           className="se-editor__grid"
           role="group"
@@ -117,7 +117,7 @@ export function EditorWorkspace(props: GridProps) {
             <EditorGrid {...props} />
           </Suspense>
         </div>
-      </TabPanel>
+      </TabsContent>
       <SheetBar
         sheets={e.workbook.worksheets}
         selectedId={e.sheet.id}

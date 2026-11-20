@@ -1,6 +1,6 @@
 'use client';
 
-import { Modal } from '@flamboyantengineer/ui-components/modal';
+import { Dialog } from '@flamboyantengineer/ui-components/dialog';
 import { TextField } from '@flamboyantengineer/ui-components/text-field';
 import type { EditorDialog } from './editor-core.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
@@ -33,7 +33,7 @@ const fieldLabel = (dialog: EditorDialog) =>
 export function EditorDialogModal({ editor: e }: { editor: SpreadsheetEditorController }) {
   const { dialog } = e;
   return (
-    <Modal
+    <Dialog
       isOpen={dialog !== null}
       onOpenChange={(open) => {
         if (!open) e.setDialog(null);
@@ -72,6 +72,6 @@ export function EditorDialogModal({ editor: e }: { editor: SpreadsheetEditorCont
         )}
         {e.dialogError && <p role="alert">{e.dialogError}</p>}
       </div>
-    </Modal>
+    </Dialog>
   );
 }

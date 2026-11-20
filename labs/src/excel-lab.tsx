@@ -1,5 +1,5 @@
+import { Dialog } from '@flamboyantengineer/ui-components/dialog';
 import { FileField } from '@flamboyantengineer/ui-components/file-field';
-import { Modal } from '@flamboyantengineer/ui-components/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CalculationResult } from '../../src/calculation/index.js';
 import type { XlsxImport } from '../../src/excel/contracts.js';
@@ -96,7 +96,7 @@ export function useExcelLab() {
       </p>
     ),
     dialog: (
-      <Modal
+      <Dialog
         title="Import Excel workbook"
         size="lg"
         isOpen={open}
@@ -161,7 +161,7 @@ export function useExcelLab() {
             )}
           </>
         )}
-      </Modal>
+      </Dialog>
     ),
   };
 }
