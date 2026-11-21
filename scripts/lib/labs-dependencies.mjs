@@ -12,6 +12,7 @@ const requiredEntries = [
   'jspreadsheet-ce/dist/jspreadsheet.css',
   'jsuites/dist/jsuites.css',
   '@flamboyantengineer/ui-components/reference.css',
+  '@flamboyantengineer/ui-components/shadcn.css',
   '@flamboyantengineer/ui-components/labs',
   'decimal.js',
   'exceljs',

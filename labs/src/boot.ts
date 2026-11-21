@@ -7,4 +7,8 @@ if (url.searchParams.get('stylesheet') === 'unstyled') {
   url.searchParams.set('stylesheet', 'none');
   history.replaceState(null, '', url);
 }
-bootLabSettings({ storage: labStorage(), referenceStylesheet: '/reference.css' });
+bootLabSettings({
+  storage: labStorage(),
+  referenceStylesheet: '/reference.css',
+  shadcnStylesheet: '/shadcn.css',
+});

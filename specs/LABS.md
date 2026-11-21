@@ -45,3 +45,11 @@ The lab host supplies a safe, namespaced storage adapter. Missing or refused bro
 Implementation: `labs/src/main.tsx`, `labs/src/boot.ts`, `labs/src/settings.ts`, `scripts/build-labs.mjs`, `scripts/lib/labs-dependencies.mjs`.
 
 Verification: `e2e/labs.spec.ts` (SE-LABS-4.1), `src/tooling/labs-startup.test.ts`.
+
+### SE-LABS-4.2 - shadcn/ui stylesheet
+
+The labs shall offer the shared settings' shadcn/ui stylesheet beside the reference one (`?stylesheet=shadcn`). It loads the package's `shadcn.css`: ui-components' shadcn/ui sheet, the editor's own rules (`labs/src/editor.css`, the same file the reference presentation loads after ui-components' reference sheet) unchanged on the tokens that sheet's bridge points at shadcn/ui's, then a short retouch of the editor chrome (`labs/src/shadcn-retouch.css`): the editor frame as a rounded hairline card on the page background, a hairline under the chrome, the worksheet tabs as a pill list without a rule under them, side panels on the sidebar color and suggestion cards on the shadcn/ui radius. Light and dark follow `data-theme` and shadcn/ui's `.dark` class. Every lab page carries `data-ui-scale="compact"` on its root element, so the editor chrome and its menus, popovers and dialogs take the compact control scale under the shadcn/ui sheet; the reference sheet ignores the attribute. The retouch never sizes grid cells, rows or columns: the engine's measurements are the same under both sheets.
+
+Implementation: `labs/src/shadcn.css`, `labs/src/shadcn-retouch.css`, `labs/src/editor.css`, `labs/src/reference.css`, `labs/src/boot.ts`, `labs/src/main.tsx`, `scripts/build-labs.mjs`, `scripts/build.mjs`.
+
+Verification: `e2e/labs.spec.ts` (SE-LABS-4.2); the package check imports and bundles the shadcn/ui stylesheet from the packed package.

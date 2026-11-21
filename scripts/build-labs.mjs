@@ -22,7 +22,11 @@ export async function buildLabs() {
   });
   await build({
     absWorkingDir: root,
-    entryPoints: { labs: 'labs/src/main.tsx', reference: 'labs/src/reference.css' },
+    entryPoints: {
+      labs: 'labs/src/main.tsx',
+      reference: 'labs/src/reference.css',
+      shadcn: 'labs/src/shadcn.css',
+    },
     outdir: output,
     bundle: true,
     splitting: true,
@@ -79,7 +83,7 @@ export async function buildLabs() {
   })) {
     await writeFile(
       resolve(output, `${page}.html`),
-      `<!doctype html><html lang="en" data-reference-document><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Labs</title><link rel="icon" href="data:,"><script src="/boot.js"></script><link rel="stylesheet" href="/labs.css"></head><body><header id="lab-chrome"></header><div id="root"></div><script type="module" src="/labs.js"></script></body></html>`,
+      `<!doctype html><html lang="en" data-reference-document data-ui-scale="compact"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Labs</title><link rel="icon" href="data:,"><script src="/boot.js"></script><link rel="stylesheet" href="/labs.css"></head><body><header id="lab-chrome"></header><div id="root"></div><script type="module" src="/labs.js"></script></body></html>`,
     );
   }
 }

@@ -194,7 +194,7 @@ describe('SE-LABS-2.1: self-bootstrapping portable startup', () => {
     expect(result.stderr).toContain('Fixture build failure');
     expect(result.stderr).not.toContain('Wrong-platform binary');
   });
-  it.each(['reference.css', 'labs.js'])(
+  it.each(['reference.css', 'shadcn.css', 'labs.js'])(
     'repairs missing prepared UI asset %s even if package versions match',
     (asset) => {
       const directory = checkout(true),
@@ -209,9 +209,14 @@ describe('SE-LABS-2.1: self-bootstrapping portable startup', () => {
       writeJson(join(ui, 'package.json'), {
         name,
         version: '0.1.0',
-        exports: { './reference.css': './reference.css', './labs': './labs.js' },
+        exports: {
+          './reference.css': './reference.css',
+          './shadcn.css': './shadcn.css',
+          './labs': './labs.js',
+        },
       });
       writeFileSync(join(ui, 'reference.css'), '/* prepared */');
+      writeFileSync(join(ui, 'shadcn.css'), '/* prepared */');
       writeFileSync(join(ui, 'labs.js'), 'export {};');
       cpSync(join(directory, 'healthy/node_modules'), join(directory, 'node_modules'), {
         recursive: true,
