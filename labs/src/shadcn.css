@@ -1,0 +1,10 @@
+/*
+ * shadcn/ui presentation: the library's shadcn/ui sheet, the editor's own rules unchanged on the
+ * tokens its bridge points at shadcn/ui's, then the retouch of the editor chrome. Load it instead
+ * of reference.css. The editor's chrome reads best in the compact scale: put
+ * data-ui-scale="compact" on a container that holds the editor and its overlays, as the labs do
+ * on the root element.
+ */
+@import '@flamboyantengineer/ui-components/shadcn.css';
+@import './editor.css';
+@import './shadcn-retouch.css';

@@ -14,7 +14,10 @@ execFileSync(
   { cwd: root, stdio: 'inherit' },
 );
 
-await copyFile(
-  new URL('../labs/src/reference.css', import.meta.url),
-  new URL('../dist/reference.css', import.meta.url),
-);
+// The two opt-in stylesheets and the parts they import, side by side as in labs/src.
+for (const sheet of ['reference.css', 'shadcn.css', 'editor.css', 'shadcn-retouch.css']) {
+  await copyFile(
+    new URL(`../labs/src/${sheet}`, import.meta.url),
+    new URL(`../dist/${sheet}`, import.meta.url),
+  );
+}

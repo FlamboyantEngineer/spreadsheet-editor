@@ -72,6 +72,7 @@ mountLabBar({
   indexHref: current ? '/' : null,
   storage: labStorage(),
   referenceStylesheet: '/reference.css',
+  shadcnStylesheet: '/shadcn.css',
   onSettingsChange(_settings, search) {
     navigationSearch = search;
     for (const listener of navigationListeners) listener();

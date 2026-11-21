@@ -1,0 +1,55 @@
+/*
+ * shadcn/ui retouch of the editor chrome. The library's sheet already redraws the controls (buttons,
+ * fields, tabs, menus, popovers, dialogs); these rules draw the editor's own frame around them the
+ * way shadcn/ui draws a card: a rounded hairline border on the page background, chrome rows split by
+ * hairlines, the worksheet tabs as a pill list without the reference sheet's rule under it, and the
+ * side panels' cards on the same radius. The grid keeps the engine's measurements: nothing here
+ * sizes cells, rows or columns.
+ */
+
+.se-editor {
+  border-color: var(--border);
+  border-radius: var(--ref-radius-lg);
+  background: var(--background);
+}
+
+.se-editor__chrome {
+  border-bottom: 1px solid var(--border);
+}
+
+.se-editor__formula-bar .ui-text-field__input,
+.se-editor__address {
+  font-family: var(--ref-mono);
+}
+
+.se-editor__sheets {
+  background: var(--background);
+}
+
+.se-editor__sheets > .ui-tabs__bar {
+  border-bottom: 0;
+}
+
+.se-editor__sheet-tabs .ui-tabs__indicator {
+  display: none;
+}
+
+.se-editor__notice {
+  background: color-mix(in oklab, var(--ref-warning) 12%, var(--background));
+}
+
+.se-suggestion {
+  border-radius: var(--ref-radius);
+  border-color: var(--border);
+  box-shadow: var(--ref-shadcn-shadow-sm);
+}
+
+.se-editor__historical {
+  background: var(--muted);
+}
+
+/* Side panels sit on shadcn/ui's sidebar color (the card color where a theme defines none), not on
+   the muted fill, so the secondary buttons inside them keep their grey fill. */
+.se-editor__sidebar .ui-dock-panel {
+  --ref-surface: var(--sidebar, var(--card));
+}

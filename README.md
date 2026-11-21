@@ -98,7 +98,7 @@ import 'jspreadsheet-ce/dist/jspreadsheet.css';
 
 Hosts can constrain stored format capabilities with `formatting={{ kinds, decimalPlaces }}` and keep creation/import in their application by setting `features={{ newWorkbook: false, import: false }}`.
 
-The editor loads no CSS or application URLs itself. Style its documented [`se-*` hooks](specs/HOOK-CONTRACT.md), and the base components' public hooks, in your own stylesheet. An opt-in `@flamboyantengineer/spreadsheet-editor/reference.css` export provides the lab reference presentation (including the UI library reference stylesheet). Import it explicitly in your host; editor JavaScript still imports no CSS. The grid loads lazily; headless entry points and the root import are safe in Node without a DOM.
+The editor loads no CSS or application URLs itself. Style its documented [`se-*` hooks](specs/HOOK-CONTRACT.md), and the base components' public hooks, in your own stylesheet. An opt-in `@flamboyantengineer/spreadsheet-editor/reference.css` export provides the lab reference presentation (including the UI library reference stylesheet), and `@flamboyantengineer/spreadsheet-editor/shadcn.css` a shadcn/ui-styled one to load instead (including the UI library's shadcn/ui stylesheet; put `data-ui-scale="compact"` on the root element for the editor's dense chrome). Import it explicitly in your host; editor JavaScript still imports no CSS. The grid loads lazily; headless entry points and the root import are safe in Node without a DOM.
 
 ## Choose the calculation location
 

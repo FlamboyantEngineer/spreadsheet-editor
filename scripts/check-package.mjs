@@ -193,9 +193,14 @@ try {
     assert.equal(receipts.acknowledge(accepted.transactionId), 1);
     assert.equal(typeof createLinkedSpreadsheetInsertion, 'function');
     assert.equal(typeof SpreadsheetEditor, 'function');
-    const css = await readFile(new URL(import.meta.resolve('@flamboyantengineer/spreadsheet-editor/reference.css')), 'utf8');
-    assert.ok(css.includes('.se-editor'));
+    const referenceUrl = new URL(import.meta.resolve('@flamboyantengineer/spreadsheet-editor/reference.css'));
+    const css = await readFile(referenceUrl, 'utf8');
     assert.ok(css.includes('@flamboyantengineer/ui-components/reference.css'));
+    assert.ok(css.includes("@import './editor.css'"));
+    assert.ok((await readFile(new URL('editor.css', referenceUrl), 'utf8')).includes('.se-editor'));
+    const shadcn = await readFile(new URL(import.meta.resolve('@flamboyantengineer/spreadsheet-editor/shadcn.css')), 'utf8');
+    assert.ok(shadcn.includes('@flamboyantengineer/ui-components/shadcn.css'));
+    assert.ok(shadcn.includes("@import './editor.css'"));
   `,
   );
   execFileSync(process.execPath, [join(consumer, 'consumer.mjs')], {
@@ -228,19 +233,24 @@ try {
     { cwd: consumer, stdio: 'inherit' },
   );
   const { build } = await import('esbuild');
-  await writeFile(
-    join(consumer, 'reference.css'),
-    "@import '@flamboyantengineer/spreadsheet-editor/reference.css';",
-  );
-  const stylesheet = await build({
-    absWorkingDir: consumer,
-    entryPoints: ['reference.css'],
-    bundle: true,
-    write: false,
-  });
-  assert.ok(stylesheet.outputFiles[0].text.includes('.se-editor'));
-  assert.ok(stylesheet.outputFiles[0].text.includes('--ref-'));
-  console.log('Packed public consumer imports, declarations and opt-in stylesheet passed.');
+  for (const [sheet, marker] of [
+    ['reference.css', '--ref-'],
+    ['shadcn.css', '--primary-foreground'],
+  ]) {
+    await writeFile(
+      join(consumer, sheet),
+      `@import '@flamboyantengineer/spreadsheet-editor/${sheet}';`,
+    );
+    const stylesheet = await build({
+      absWorkingDir: consumer,
+      entryPoints: [sheet],
+      bundle: true,
+      write: false,
+    });
+    assert.ok(stylesheet.outputFiles[0].text.includes('.se-editor'), sheet);
+    assert.ok(stylesheet.outputFiles[0].text.includes(marker), sheet);
+  }
+  console.log('Packed public consumer imports, declarations and opt-in stylesheets passed.');
 } finally {
   await rm(consumer, { recursive: true, force: true });
 }

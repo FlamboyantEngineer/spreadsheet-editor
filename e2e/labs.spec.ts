@@ -69,6 +69,48 @@ test('SE-LABS-4.1: shared shadow-root bar applies and remembers custom styles an
   await expect(bar.getByRole('textbox', { name: 'Theme value', exact: true })).toHaveValue('night');
 });
 
+test('SE-LABS-4.2: the shadcn/ui stylesheet redraws the chrome and keeps the grid measurements', async ({
+  page,
+}) => {
+  const measure = async () => {
+    const editor = page.locator('.se-editor').first();
+    await expect(editor.locator('td[data-x="1"][data-y="1"]').first()).toBeVisible();
+    return editor.evaluate((root) => {
+      const box = (selector: string) => {
+        const element = root.querySelector(selector);
+        if (!element) throw new Error(`No ${selector}`);
+        const { width, height } = element.getBoundingClientRect();
+        return { width, height };
+      };
+      const style = getComputedStyle(root);
+      return {
+        cell: box('td[data-x="1"][data-y="1"]'),
+        header: box('thead td[data-x="1"]'),
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+      };
+    });
+  };
+  await page.goto('/full.html?theme=light');
+  await expect(page.locator('html')).toHaveAttribute('data-ui-scale', 'compact');
+  const reference = await measure();
+  await page
+    .locator('#lab-chrome')
+    .getByRole('combobox', { name: 'Stylesheet', exact: true })
+    .selectOption('shadcn');
+  await expect(page.locator('html')).toHaveAttribute('data-lab-stylesheet-state', 'loaded');
+  await expect(page.locator('#ui-lab-stylesheet')).toHaveAttribute('href', '/shadcn.css');
+  const shadcn = await measure();
+  expect(shadcn.cell).toEqual(reference.cell);
+  expect(shadcn.header).toEqual(reference.header);
+  expect(shadcn.radius).not.toBe(reference.radius);
+  await page.getByRole('radio', { name: 'Dark', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const dark = await measure();
+  expect(dark.background).not.toBe(shadcn.background);
+  expect(dark.cell).toEqual(reference.cell);
+});
+
 test('SE-LABS-4.1: system theme follows browser changes and labs work when storage is refused', async ({
   page,
 }) => {
