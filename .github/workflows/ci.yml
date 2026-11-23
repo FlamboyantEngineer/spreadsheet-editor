@@ -8,17 +8,65 @@ permissions:
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+# `npm run check` split across runners that start together: the gates, the packed consumer and the
+# browser tests in shards. The `check` job at the end is the status the branch rules require.
 jobs:
-  check:
+  gates:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/install
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          modules: 'false'
+      # The labs launcher installs the locked dependencies itself when they are missing; this job
+      # keeps no installed tree so that path runs on every change.
       - name: Bootstrap labs from a clean checkout
         run: npm run build:labs
+      - run: npm run check:gates
+
+  consumer:
+    # Installs the packed package beside the tested set twice (install, then `npm ci`), preparing the
+    # ui-components git pin each time: the longest part of the checks, so it runs beside them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: ./.github/actions/install
+      - run: npm run build
+      - run: npm run check:consumer
+
+  labs:
+    # `npm run test:labs` in shards, each with its own lab server; one worker per shard, as locally.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    name: labs (${{ matrix.shard }} of 3)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: ./.github/actions/install
+      - id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # Downloads Chromium on a cache miss; the system libraries it needs are installed every time.
       - run: npx playwright install --with-deps chromium
-      - run: npm run check
+      - run: npm run build:labs
+      - run: npx playwright test --shard=${{ matrix.shard }}/3
+
+  check:
+    # Passes only when every job above passed, so a failed, cancelled or skipped job fails it.
+    if: ${{ !cancelled() }}
+    needs: [gates, consumer, labs]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Gates, packed consumer and browser tests passed
+        env:
+          RESULTS: ${{ needs.gates.result }} ${{ needs.consumer.result }} ${{ needs.labs.result }}
+        run: for result in $RESULTS; do test "$result" = success || exit 1; done

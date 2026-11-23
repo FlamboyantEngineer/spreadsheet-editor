@@ -72,7 +72,8 @@
     "check:exports": "ui-components-tooling check-exports",
     "check:consumer": "node scripts/check-consumer.mjs",
     "changeset": "changeset",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm run check:references && npm run check:specs && npm run check:structure && npm run check:exports && npm test && npm run build && npm run check:package && npm run check:consumer && npm run test:labs"
+    "check:gates": "npm run lint && npm run format:check && npm run typecheck && npm run check:references && npm run check:specs && npm run check:structure && npm run check:exports && npm test && npm run build && npm run check:package",
+    "check": "npm run check:gates && npm run check:consumer && npm run test:labs"
   },
   "peerDependencies": {
     "@flamboyantengineer/ui-components": "~0.1.0",
