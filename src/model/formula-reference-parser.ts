@@ -1,8 +1,6 @@
-import {
-  buildReferenceCandidate,
-  type ParsedReferenceCandidate,
-} from './formula-reference-candidates.js';
-import { FORMULA_WORD_CHARACTER } from './spreadsheet-addressing.js';
+import { formulaReferenceTokens, type ReferenceCoordinates } from './formula-reference-token.js';
+import { formatSpreadsheetAddress, formatSpreadsheetColumnName } from './spreadsheet-addressing.js';
+
 export type FormulaReferenceTarget =
   | {
       kind: 'cell';
@@ -46,9 +44,6 @@ export type FormulaReferenceTokenSegment = {
   text: string;
 };
 
-const FORMULA_REFERENCE_BOUNDARY_PATTERN = FORMULA_WORD_CHARACTER;
-const FORMULA_REFERENCE_TOKEN_STOP_PATTERN = /[\s,;()+\-*/^&=<>{}]/;
-
 export const FORMULA_REFERENCE_HIGHLIGHT_COLORS = [
   '#2563eb',
   '#dc2626',
@@ -60,114 +55,53 @@ export const FORMULA_REFERENCE_HIGHLIGHT_COLORS = [
   '#4d7c0f',
 ] as const;
 
-function skipQuotedText(source: string, index: number, quote: string): number {
-  let cursor = index + 1;
-  while (cursor < source.length) {
-    if (source[cursor] === '\\' && cursor + 1 < source.length) {
-      cursor += 2;
-      continue;
-    }
-    if (source[cursor] === quote && source[cursor + 1] === quote) {
-      cursor += 2;
-      continue;
-    }
-    if (source[cursor] === quote) return cursor + 1;
-    cursor += 1;
+function highlightTarget(reference: ReferenceCoordinates): FormulaReferenceTarget {
+  if (reference.kind === 'lines') {
+    const start = Math.min(reference.start, reference.end);
+    const end = Math.max(reference.start, reference.end);
+    return reference.axis === 'column'
+      ? { kind: 'column-range', startColumn: start, endColumn: end }
+      : { kind: 'row-range', startRow: start, endRow: end };
   }
-  return source.length;
+  const { start, end } = reference;
+  return {
+    kind: end ? 'range' : 'cell',
+    startColumn: Math.min(start.x, end?.x ?? start.x),
+    startRow: Math.min(start.y, end?.y ?? start.y),
+    endColumn: Math.max(start.x, end?.x ?? start.x),
+    endRow: Math.max(start.y, end?.y ?? start.y),
+  };
 }
 
-function skipBracketedText(source: string, index: number): number {
-  let depth = 1;
-  let cursor = index + 1;
-  while (cursor < source.length) {
-    const character = source[cursor];
-    if (character === '"' || character === "'") {
-      cursor = skipQuotedText(source, cursor, character);
-      continue;
-    }
-    if (character === '[') depth += 1;
-    if (character === ']') {
-      depth -= 1;
-      if (depth <= 0) return cursor + 1;
-    }
-    cursor += 1;
-  }
-  return source.length;
+function referenceKey(target: FormulaReferenceTarget): string {
+  if (target.kind === 'column-range')
+    return `column:${formatSpreadsheetColumnName(target.startColumn)}:${formatSpreadsheetColumnName(target.endColumn)}`;
+  if (target.kind === 'row-range') return `row:${target.startRow + 1}:${target.endRow + 1}`;
+  const start = formatSpreadsheetAddress(target.startColumn, target.startRow);
+  return target.kind === 'cell'
+    ? `cell:${start}`
+    : `range:${start}:${formatSpreadsheetAddress(target.endColumn, target.endRow)}`;
 }
 
-function hasReferenceBoundaryBefore(source: string, index: number): boolean {
-  const previous = index > 0 ? source[index - 1] : '';
-  return !previous || !FORMULA_REFERENCE_BOUNDARY_PATTERN.test(previous);
-}
-
-function hasReferenceBoundaryAfter(source: string, index: number): boolean {
-  const next = source[index] || '';
-  return !next || !FORMULA_REFERENCE_BOUNDARY_PATTERN.test(next);
-}
-
-function hasCrossSheetBangBeforeReference(source: string, index: number): boolean {
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const character = source[cursor] || '';
-    if (character === '!') return true;
-    if (FORMULA_REFERENCE_TOKEN_STOP_PATTERN.test(character)) return false;
-  }
-  return false;
-}
-
-function shouldIgnoreCandidate(source: string, candidate: ParsedReferenceCandidate): boolean {
-  if (!hasReferenceBoundaryBefore(source, candidate.startIndex)) return true;
-  if (!hasReferenceBoundaryAfter(source, candidate.endIndex)) return true;
-  if (hasCrossSheetBangBeforeReference(source, candidate.startIndex)) return true;
-  const nextCharacter = source[candidate.endIndex] || '';
-  if (
-    nextCharacter === '!' ||
-    nextCharacter === '(' ||
-    nextCharacter === '[' ||
-    nextCharacter === ']'
-  )
-    return true;
-  return false;
-}
-
-export function parseFormulaReferenceHighlights(formulaText: string): FormulaReferenceHighlight[] {
-  const source = String(formulaText ?? '');
-  const colorByNormalizedKey = new Map<string, number>();
+export function parseFormulaReferenceHighlights(source: string): FormulaReferenceHighlight[] {
+  const colorByKey = new Map<string, number>();
   const references: FormulaReferenceHighlight[] = [];
-  let index = 0;
-
-  while (index < source.length) {
-    const character = source[index];
-    if (character === '"' || character === "'") {
-      index = skipQuotedText(source, index, character);
-      continue;
-    }
-    if (character === '[') {
-      index = skipBracketedText(source, index);
-      continue;
-    }
-
-    const candidate = buildReferenceCandidate(source, index);
-    if (!candidate) {
-      index += 1;
-      continue;
-    }
-    if (shouldIgnoreCandidate(source, candidate)) {
-      index = Math.max(candidate.endIndex, index + 1);
-      continue;
-    }
-    if (!colorByNormalizedKey.has(candidate.normalizedKey)) {
-      colorByNormalizedKey.set(candidate.normalizedKey, colorByNormalizedKey.size);
-    }
-    const colorIndex = colorByNormalizedKey.get(candidate.normalizedKey) || 0;
+  for (const { startIndex, endIndex, coordinates, sheetName } of formulaReferenceTokens(source)) {
+    if (sheetName !== null || !coordinates) continue;
+    const target = highlightTarget(coordinates);
+    const normalizedKey = referenceKey(target);
+    const colorIndex = colorByKey.get(normalizedKey) ?? colorByKey.size;
+    colorByKey.set(normalizedKey, colorIndex);
     references.push({
-      ...candidate,
-      id: `${candidate.normalizedKey}:${candidate.startIndex}-${candidate.endIndex}`,
+      id: `${normalizedKey}:${startIndex}-${endIndex}`,
+      originalText: source.slice(startIndex, endIndex),
+      normalizedKey,
+      startIndex,
+      endIndex,
+      target,
       colorIndex,
     });
-    index = candidate.endIndex;
   }
-
   return references;
 }
 

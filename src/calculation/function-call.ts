@@ -3,6 +3,7 @@ import type { createQuantityArithmetic } from './units.js';
 import {
   CalculationError,
   type CellValue,
+  type ErrorValue,
   isError,
   isNumeric,
   type NumericValue,
@@ -30,7 +31,7 @@ export const fail = (
 ): never => {
   throw new CalculationError(code);
 };
-export function checked(value: CellValue): CellValue {
+export function checked(value: CellValue): Exclude<CellValue, ErrorValue> {
   if (isError(value)) throw new CalculationError(value.code);
   return value;
 }

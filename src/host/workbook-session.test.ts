@@ -239,6 +239,70 @@ describe('SE-SESSION-1.2: causal save coverage', () => {
 });
 
 describe('SE-SESSION-1.3: drafts across a reload', () => {
+  it('keeps the recovery draft after an immediate failed flush and uses the actual edit base', async () => {
+    vi.useFakeTimers();
+    const memory = host();
+    const session = createWorkbookSession({
+      workbooks: memory.workbooks,
+      drafts: memory.drafts,
+      workbookId: 'book',
+      autosaveDelay: Infinity,
+      draftDelay: 5,
+    });
+    await session.ready;
+    change(session, 'unsaved');
+    memory.memory.failNext('save', { kind: 'unavailable', message: 'Offline' });
+    await expect(session.flush()).rejects.toThrow('Offline');
+    await vi.advanceTimersByTimeAsync(5);
+    expect(await memory.drafts.get('book')).toMatchObject({
+      ok: true,
+      value: { baseRevision: 'r1', content: createWorkbook([['unsaved']]) },
+    });
+    await memory.workbooks.save('book', {
+      content: createWorkbook([['remote']]),
+      baseRevision: 'r1',
+    });
+    await expect(session.save()).rejects.toThrow('changed');
+    change(session, 'newer');
+    await vi.advanceTimersByTimeAsync(5);
+    expect(await memory.drafts.get('book')).toMatchObject({
+      ok: true,
+      value: { baseRevision: 'r1', content: createWorkbook([['newer']]) },
+    });
+    session.close();
+  });
+
+  it('orders clearing behind a pending draft write', async () => {
+    vi.useFakeTimers();
+    const memory = host();
+    let finish!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const put = vi.fn(async (...args: Parameters<typeof memory.drafts.put>) => {
+      await waiting;
+      return memory.drafts.put(...args);
+    });
+    const clear = vi.fn(memory.drafts.clear);
+    const session = createWorkbookSession({
+      workbooks: memory.workbooks,
+      drafts: { ...memory.drafts, put, clear },
+      workbookId: 'book',
+      autosaveDelay: Infinity,
+      draftDelay: 5,
+    });
+    await session.ready;
+    change(session, 'unsaved');
+    await vi.advanceTimersByTimeAsync(5);
+    expect(put).toHaveBeenCalledOnce();
+    await session.flush();
+    expect(clear).not.toHaveBeenCalled();
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await memory.drafts.get('book')).toEqual({ ok: true, value: null });
+    session.close();
+  });
+
   it('keeps unsaved content, offers it to the next session and clears it once saved', async () => {
     vi.useFakeTimers();
     const memory = host();

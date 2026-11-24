@@ -16,7 +16,7 @@ import {
   gridViewport,
   syncFrozenColumnOffsets,
 } from './grid-geometry.js';
-import { measureGridSelection } from './grid-selection.js';
+import { gridSelectionGeometry, measureGridSelection } from './grid-selection.js';
 
 type FrameBase = Omit<
   GridContext,
@@ -42,21 +42,15 @@ function clipStyle(root: HTMLDivElement, body: Body): CSSProperties {
 }
 
 /** A reference's cells; a whole row or column reaches the end of the sheet's extent. */
-function referenceRange(ref: FormulaReferenceHighlight, worksheet: Worksheet): CellSelection {
+function referenceRange(
+  ref: FormulaReferenceHighlight,
+  extent: { columns: number; rows: number },
+): CellSelection {
   const r = ref.target;
   const x1 = 'startColumn' in r ? r.startColumn : 0,
     y1 = 'startRow' in r ? r.startRow : 0;
-  const x2 =
-    'endColumn' in r
-      ? r.endColumn
-      : Math.max(
-          (worksheet.minDimensions?.[0] ?? 26) - 1,
-          ...worksheet.data.map((row) => row.length - 1),
-        );
-  const y2 =
-    'endRow' in r
-      ? r.endRow
-      : Math.max((worksheet.minDimensions?.[1] ?? 100) - 1, worksheet.data.length - 1);
+  const x2 = 'endColumn' in r ? r.endColumn : extent.columns - 1;
+  const y2 = 'endRow' in r ? r.endRow : extent.rows - 1;
   return { x1, y1, x2, y2 };
 }
 
@@ -66,13 +60,17 @@ function referenceColor(colorIndex: number): string {
 }
 
 /** One frame per distinct formula reference, in its colour. */
-function referenceFrames(current: WorkbookGridProps, selectionStyles: SelectionStyles) {
+function referenceFrames(
+  current: WorkbookGridProps,
+  selectionStyles: SelectionStyles,
+  extent: { columns: number; rows: number },
+) {
   const frames: GridFrame[] = [];
   const seen = new Set<string>();
   for (const ref of current.formulaReferences ?? []) {
     if (seen.has(ref.normalizedKey)) continue;
     seen.add(ref.normalizedKey);
-    selectionStyles(referenceRange(ref, current.worksheet)).forEach((style, index) =>
+    selectionStyles(referenceRange(ref, extent)).forEach((style, index) =>
       frames.push({
         key: `${ref.normalizedKey}:${index}`,
         style: { ...style, borderColor: referenceColor(ref.colorIndex) },
@@ -110,12 +108,15 @@ function selectionStylesOf(
   { worksheet, viewport, body }: { worksheet: Worksheet; viewport: HTMLElement; body: Body },
 ): SelectionStyles {
   const offset = { left: body.left - body.origin.left, top: body.top - body.origin.top };
+  const geometry = gridSelectionGeometry(sheet, body, worksheet.freezeColumns ?? 0);
   return (range) =>
-    measureGridSelection(sheet, { sheet: worksheet, selection: range }, viewport).map((style) => ({
-      ...style,
-      left: Number(style.left ?? 0) - offset.left,
-      top: Number(style.top ?? 0) - offset.top,
-    }));
+    measureGridSelection(sheet, { sheet: worksheet, selection: range, geometry }, viewport).map(
+      (style) => ({
+        ...style,
+        left: Number(style.left ?? 0) - offset.left,
+        top: Number(style.top ?? 0) - offset.top,
+      }),
+    );
 }
 
 /** Measures every outline the grid draws, and the clip box they are drawn in. */
@@ -156,7 +157,10 @@ function measureFrames(
   }));
   setFrames([
     ...local,
-    ...referenceFrames(current, selectionStyles),
+    ...referenceFrames(current, selectionStyles, {
+      columns: sheet.cols?.length ?? 1,
+      rows: sheet.rows?.length ?? 1,
+    }),
     ...peerFrames(current, selectionStyles),
   ]);
   clipGridSelectionHandle(sheet, body);

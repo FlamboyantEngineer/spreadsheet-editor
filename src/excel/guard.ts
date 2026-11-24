@@ -1,4 +1,6 @@
 import { unzipSync } from 'fflate';
+import { readWorksheetXml, type WorksheetXml } from './worksheet-xml.js';
+import { readXlsxXml } from './xlsx-xml.js';
 
 export interface XlsxLimits {
   maxBytes?: number;
@@ -105,22 +107,9 @@ function directory(zip: Archive, bounds: Bounds): Map<string, number> {
   return entries;
 }
 
-/** Rejects XML whose element nesting is unbalanced or deeper than 128. */
-function checkNesting(xml: string) {
-  let depth = 0;
-  for (const token of xml.matchAll(/<([^>]+)>/g)) {
-    const value = token[1];
-    if (value.startsWith('?') || value.startsWith('!')) continue;
-    if (value.startsWith('/')) depth--;
-    else if (!value.endsWith('/')) depth++;
-    if (depth < 0 || depth > 128) reject();
-  }
-  if (depth !== 0) reject();
-}
-
 /** Rejects a content-types part that is not an ordinary, macro-free workbook. */
-function checkContentTypes(name: string, xml: string) {
-  if (name !== '[Content_Types].xml') return;
+function checkContentTypes(bytes: Uint8Array) {
+  const xml = decoder.decode(bytes);
   if (
     !xml.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml') ||
     /macroEnabled|vbaProject|spreadsheetml\.sheet\.binary/i.test(xml)
@@ -135,21 +124,23 @@ export function inspectXlsx(input: Uint8Array, limits: XlsxLimits = {}) {
   const entries = directory(archive(input), bounds);
   if (['[Content_Types].xml', 'xl/workbook.xml', '_rels/.rels'].some((name) => !entries.has(name)))
     reject();
-  const worksheets = [...entries.keys()].filter((name) =>
+  const worksheetNames = [...entries.keys()].filter((name) =>
     /^xl\/worksheets\/sheet[1-9]\d*\.xml$/.test(name),
   );
-  if (!worksheets.length || worksheets.length > bounds.maxWorksheets) reject();
-  const parts = unzipSync(input);
+  if (!worksheetNames.length || worksheetNames.length > bounds.maxWorksheets) reject();
+  const parts = unzipSync(input),
+    worksheetPaths = new Set(worksheetNames);
+  const worksheets = new Map<string, WorksheetXml>();
   let cells = 0;
   for (const [name, bytes] of Object.entries(parts)) {
     if (entries.get(name) !== bytes.length) reject();
     if (!/\.(xml|rels)$/.test(name)) continue;
-    const xml = decoder.decode(bytes);
-    if (/<!DOCTYPE|<!ENTITY/i.test(xml)) reject();
-    checkNesting(xml);
-    if (worksheets.includes(name)) cells += [...xml.matchAll(/<(?:\w+:)?c(?:\s|>)/g)].length;
-    if (cells > bounds.maxCells) reject();
-    checkContentTypes(name, xml);
+    if (name === '[Content_Types].xml') checkContentTypes(bytes);
+    if (worksheetPaths.has(name)) {
+      const worksheet = readWorksheetXml(bytes, bounds.maxCells - cells);
+      worksheets.set(name, worksheet);
+      cells += worksheet.cells.size;
+    } else readXlsxXml(bytes);
   }
-  return { parts, worksheets: worksheets.length, cells };
+  return { parts, worksheets };
 }

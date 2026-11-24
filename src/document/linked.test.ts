@@ -8,6 +8,24 @@ import { createWorkbook } from '../model/workbook.js';
 import { createLinkedSpreadsheetInsertion, updateLinkedSpreadsheetInsertion } from './linked.js';
 
 describe('SE-DOC-3.1: linked authoritative captures', () => {
+  it('captures a clipped merge and detaches the publication from its source', () => {
+    const workbook = createWorkbook([['Title']]);
+    workbook.worksheets[0].mergeCells = { A1: [2, 2] };
+    const result = calculateWorkbook(workbook);
+    const publication: ExternalCalculationSnapshot = {
+      inputKey: workbookCalculationKey(workbook),
+      revision: 1,
+      status: 'ready',
+      result,
+    };
+    const captured = createLinkedSpreadsheetInsertion(workbook, publication, {
+      source: { id: 'source', revision: 'r1' },
+      range: 'B1:B2',
+    });
+    result.worksheets[0].values[0][0] = 'Changed';
+    expect(captured.table.rows).toEqual([[{ text: 'Title', colspan: 1, rowspan: 2 }], []]);
+    expect(captured.publication.result?.worksheets[0].values[0][0]).toBe('Title');
+  });
   it('captures detached exact results and refreshes through source/revision checks', () => {
     const workbook = createWorkbook([['=1/3']]);
     const publication: ExternalCalculationSnapshot = {

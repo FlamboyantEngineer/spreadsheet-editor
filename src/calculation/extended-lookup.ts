@@ -9,12 +9,12 @@ import {
   matrix,
   number,
   scalar,
-  text,
   truth,
   type Value,
+  zeroOf,
 } from './function-call.js';
 import type { CellValue } from './values.js';
-import { wildcard } from './wildcard.js';
+import { compileWildcard, hasWildcard } from './wildcard.js';
 
 function transpose(call: FunctionCall) {
   arity(call, 1);
@@ -69,16 +69,32 @@ function lookupMode(call: FunctionCall): number {
   return name === 'LOOKUP' || args[3] === undefined || truth(args[3]) ? 1 : 0;
 }
 
-interface Probe {
-  entry: CellValue;
-  order: number;
-  mode: number;
+function lookupMatcher(call: FunctionCall, target: CellValue, mode: number) {
+  if (mode === 1) return (entry: CellValue) => call.compare(entry, target) <= 0;
+  if (mode === -1) return (entry: CellValue) => call.compare(entry, target) >= 0;
+  if (typeof target !== 'string') return (entry: CellValue) => call.compare(entry, target) === 0;
+  const pattern = hasWildcard(target) ? compileWildcard(target) : null;
+  return (entry: CellValue) => {
+    const value = checked(entry);
+    return (
+      typeof value === 'string' &&
+      (pattern ? pattern(value) >= 0 : call.compare(value, target) === 0)
+    );
+  };
 }
 
-function matched(target: CellValue, { entry, order, mode }: Probe): boolean {
-  if (mode === 1) return order <= 0;
-  if (mode !== 0) return order >= 0;
-  return typeof target === 'string' ? wildcard(target, text(entry)) === 0 : order === 0;
+function lookupOutput(call: FunctionCall, rows: CellValue[][], found: number): CellValue {
+  const { name, args } = call;
+  if (name === 'MATCH') return call.math.parse(String(found + 1));
+  if (name === 'LOOKUP') {
+    const result = flat(args[2] ?? args[1])[found];
+    if (result === undefined) fail('#N/A');
+    return result ?? zeroOf(call);
+  }
+  const output = integer(call, args[2], [1, 16384]) - 1;
+  const result = name === 'VLOOKUP' ? rows[found]?.[output] : rows[output]?.[found];
+  if (result === undefined) fail('#REF!');
+  return result ?? zeroOf(call);
 }
 
 function lookup(call: FunctionCall) {
@@ -88,20 +104,15 @@ function lookup(call: FunctionCall) {
     rows = matrix(args[1]);
   const entries = lookupEntries(call, rows),
     mode = lookupMode(call);
+  const matches = lookupMatcher(call, target, mode);
   let found = -1;
   for (let i = 0; i < entries.length; i++) {
-    const order = call.compare(entries[i], target);
-    if (!matched(target, { entry: entries[i], order, mode })) continue;
+    if (!matches(entries[i])) continue;
     found = i;
     if (mode === 0) break;
   }
   if (found < 0) fail('#N/A');
-  if (name === 'MATCH') return call.math.parse(String(found + 1));
-  if (name === 'LOOKUP') return flat(args[2] ?? args[1])[found] ?? fail('#N/A');
-  const output = integer(call, args[2], [1, 16384]) - 1;
-  return name === 'VLOOKUP'
-    ? (rows[found]?.[output] ?? fail('#REF!'))
-    : (rows[output]?.[found] ?? fail('#REF!'));
+  return lookupOutput(call, rows, found);
 }
 
 export const LOOKUP_FUNCTIONS: Readonly<Record<string, FunctionImpl>> = {

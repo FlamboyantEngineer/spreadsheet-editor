@@ -1,14 +1,13 @@
 'use client';
 
 import { useMemo } from 'react';
-import { parseDelimited } from '../model/delimited.js';
 import { writeCells } from '../model/editing.js';
+import { gridWorksheetExtent } from '../model/extent.js';
 import { selectionLock } from '../model/presence.js';
-import { requireDefined } from '../model/require-defined.js';
-import { type CellInput, createWorkbook, type Worksheet } from '../model/workbook.js';
+import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
+import { type CellInput, createWorkbook } from '../model/workbook.js';
 import type { GridContext, WorkbookGridProps } from './grid-context.js';
-import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
-import { captureWorksheetCellChanges, gridWorksheetExtent, sameCapture } from './worksheet-data.js';
+import { captureWorksheetCellChanges } from './worksheet-data.js';
 
 type CellChange = { x: number; y: number; value: CellInput | undefined };
 type ConfigContext = Pick<
@@ -17,36 +16,9 @@ type ConfigContext = Pick<
 >;
 
 /** Whether an engine change may become a workbook change now. */
-function capturing({ latest, suppress }: ConfigContext, allowReview: boolean): boolean {
+function capturing({ latest, suppress }: ConfigContext): boolean {
   const current = latest.current;
-  return !(
-    suppress.current ||
-    current.readOnly ||
-    (current.reviewMode && !allowReview && !current.onReviewChange)
-  );
-}
-
-/** The worksheet after the engine's changes, or after its whole data when it names none. */
-function capturedWorksheet(
-  context: ConfigContext,
-  engine: JSpreadsheetWorksheetInstance,
-  changes: readonly CellChange[] | undefined,
-): Worksheet | undefined {
-  const current = context.latest.current.worksheet;
-  const data = changes ? undefined : engine?.getData?.();
-  if (!changes && !data) return undefined;
-  const merge = changes ? undefined : engine.getMerge?.();
-  return {
-    ...(changes
-      ? captureWorksheetCellChanges(current, changes, context.latest.current.idFactory)
-      : {
-          ...current,
-          data: requireDefined(data).map((row) =>
-            row.map((cell) => (cell === undefined ? null : (cell as CellInput))),
-          ),
-        }),
-    ...(merge && !Array.isArray(merge) ? { mergeCells: structuredClone(merge) } : {}),
-  };
+  return !(suppress.current || current.readOnly || (current.reviewMode && !current.onReviewChange));
 }
 
 /**
@@ -64,21 +36,20 @@ function refuseCapture(context: ConfigContext, error: unknown) {
   context.setRevision((value) => value + 1);
 }
 
-function capture(
-  context: ConfigContext,
-  engine: unknown,
-  { allowReview = false, changes }: { allowReview?: boolean; changes?: readonly CellChange[] },
-) {
+function capture(context: ConfigContext, changes: readonly CellChange[]) {
   if (context.handledNativeChange.current) {
     context.handledNativeChange.current = false;
     return;
   }
-  if (!capturing(context, allowReview)) return;
-  const current = context.latest.current.worksheet;
+  if (!capturing(context)) return;
+  const current = context.latest.current;
   try {
-    const next = capturedWorksheet(context, engine as JSpreadsheetWorksheetInstance, changes);
-    // Native data edits must never capture zoomed presentation measures as authored sizes.
-    if (next && !sameCapture(current, next)) context.latest.current.onChange(next);
+    const next = captureWorksheetCellChanges(current.worksheet, changes, current.idFactory);
+    if (next !== current.worksheet)
+      current.onChange(next, {
+        kind: 'cells',
+        addresses: changes.map(({ x, y }) => formatSpreadsheetAddress(Number(x), Number(y))),
+      });
   } catch (error) {
     refuseCapture(context, error);
   }
@@ -101,6 +72,7 @@ function propose(context: ConfigContext, values: CellInput[][], at: { x: number;
       y: Number(at.y),
       idFactory: latest.idFactory,
     }).worksheets[0],
+    { kind: 'cells' },
   );
 }
 
@@ -161,33 +133,6 @@ function beforeChange(context: ConfigContext, args: readonly unknown[]): CellInp
   return editedValue(context, { x, y, value });
 }
 
-/** Pasted engine data as cell inputs: delimited text, or rows of values or cell objects. */
-function pastedValues(data: unknown): CellInput[][] {
-  if (typeof data === 'string') return parseDelimited(data);
-  if (!Array.isArray(data)) return [];
-  return data.map((row: unknown) =>
-    Array.isArray(row)
-      ? row.map((cell: unknown) =>
-          cell && typeof cell === 'object' && 'value' in cell
-            ? (cell.value as CellInput)
-            : (cell as CellInput),
-        )
-      : [],
-  );
-}
-
-/** The engine's `onbeforepaste`. Vendor arguments: (worksheet, data, x, y). */
-function beforePaste(context: ConfigContext, args: readonly unknown[]): false | undefined {
-  const [, data, x, y] = args as [unknown, unknown, number, number];
-  const current = context.latest.current;
-  if (current.readOnly) return false;
-  if (!current.reviewMode && !current.onPasteCells) return undefined;
-  const values = pastedValues(data);
-  if (current.onPasteCells) current.onPasteCells(values, Number(x), Number(y));
-  else propose(context, values, { x, y });
-  return false;
-}
-
 /** The worksheet the engine mounts with; later changes reach it through the sync effects. */
 function mountedWorksheet(props: WorkbookGridProps) {
   const { worksheet } = props;
@@ -227,12 +172,9 @@ export function useGridConfig(context: ConfigContext, props: WorkbookGridProps) 
       parseFormulas: false,
       contextMenu: () => false,
       onbeforechange: (...args: unknown[]) => beforeChange(context, args),
-      onbeforepaste: (...args: unknown[]) => beforePaste(context, args),
+      onbeforepaste: () => false,
       worksheets: [mountedWorksheet(props)],
-      onafterchanges: (worksheet: unknown, changes: CellChange[]) =>
-        capture(context, worksheet, { changes }),
-      onresizecolumn: (worksheet: unknown) => capture(context, worksheet, { allowReview: true }),
-      onresizerow: (worksheet: unknown) => capture(context, worksheet, { allowReview: true }),
+      onafterchanges: (_worksheet: unknown, changes: CellChange[]) => capture(context, changes),
       // Canonical React history includes cell data, formatting and review state.
       onundo: () => false,
       onredo: () => false,

@@ -2,6 +2,7 @@ import type { ReactNode, Ref } from 'react';
 import type { ExternalCalculationSnapshot } from '../calculation/publication.js';
 import type { WorkbookIdFactory } from '../model/extent.js';
 import type { WorkbookChangeContext } from '../model/operations.js';
+import type { SpreadsheetClipboardData } from './clipboard-payload.js';
 import type {
   CellPresentationSnapshot,
   FormulaFunctionDescriptor,
@@ -34,6 +35,10 @@ export type CalculationMode =
 export interface SpreadsheetClipboard {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
+  rich?: {
+    read(): Promise<SpreadsheetClipboardData>;
+    write(data: SpreadsheetClipboardData): Promise<void>;
+  };
 }
 export interface SpreadsheetHostPanel {
   id: string;
@@ -49,7 +54,33 @@ export interface SpreadsheetFeatures {
   panels?: boolean;
   modeControl?: boolean;
 }
-export interface SpreadsheetEditorProps {
+type ChangeHandler = (workbook: Workbook, context: WorkbookChangeContext) => void;
+
+type WorkbookSource =
+  | {
+      value?: Workbook;
+      defaultValue?: Workbook;
+      session?: undefined;
+      onChange?: ChangeHandler;
+      acceptChange?: never;
+    }
+  | {
+      value?: undefined;
+      defaultValue?: undefined;
+      session: WorkbookSession | null;
+      onChange?: ChangeHandler;
+      acceptChange?: never;
+    }
+  | {
+      value: Workbook;
+      defaultValue?: undefined;
+      session: WorkbookSession | null;
+      onChange?: never;
+      /** Accept a transaction synchronously and return the exact workbook the session will save. */
+      acceptChange(workbook: Workbook, context: WorkbookChangeContext): Workbook;
+    };
+
+interface EditorOptions {
   editorRef?: Ref<SpreadsheetEditorHandle>;
   idFactory?: WorkbookIdFactory;
   undo?: {
@@ -76,12 +107,6 @@ export interface SpreadsheetEditorProps {
    * starts a new editor session, as a new `sessionKey` does.
    */
   workbookId?: string;
-  /**
-   * The stored workbook's session (`createWorkbookSession`): the editor shows its workbook,
-   * records each accepted change in it, and saves and flushes through it (SE-SESSION-1.4). Null
-   * shows the editor as opening, as `useWorkbookSession` returns before its session exists.
-   */
-  session?: WorkbookSession | null;
   /** Shares the reader's place with the other people in the workbook, given a `workbookId`. */
   presence?: PresenceAdapter;
   /**
@@ -91,9 +116,6 @@ export interface SpreadsheetEditorProps {
    * (SE-ADAPTERS-5.1).
    */
   versions?: VersionStoreAdapter;
-  value?: Workbook;
-  defaultValue?: Workbook;
-  onChange?(workbook: Workbook, context: WorkbookChangeContext): void;
   calculation?: CalculationMode;
   /** Authoritative results for this actor's suggestion projection, with its own input key. */
   reviewCalculation?: ExternalCalculationSnapshot | null;
@@ -126,6 +148,9 @@ export interface SpreadsheetEditorProps {
   onInsert?(insertion: DocumentInsertion): void;
   initialSheetId?: string;
 }
+
+/** Editor options with local, session-backed, or host-controlled workbook ownership. */
+export type SpreadsheetEditorProps = EditorOptions & WorkbookSource;
 export interface GridController {
   commitDraft?(): void;
   cancelDraft?(): void;

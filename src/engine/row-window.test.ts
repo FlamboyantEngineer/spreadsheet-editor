@@ -5,6 +5,7 @@ import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import {
   GRID_SPACER_CLASS,
   gridRowWindow,
+  invalidateGridRowHeights,
   revealGridRows,
   windowGridRows,
   withLazyRebuild,
@@ -119,5 +120,24 @@ describe('SE-PERF-1.1: the grid attaches only the rows near the viewport', () =>
     (requireDefined(engine.rows)[299].element as HTMLElement).style.display = 'none';
     windowGridRows(engine, () => {});
     expect(layout(engine).below).toBe(279 * 24);
+  });
+
+  it('reads row styles again only after their geometry changes', () => {
+    const { engine } = engineRows(300);
+    const stop = windowGridRows(engine, () => {});
+    const lastRow = requireDefined(engine.rows)[299].element;
+    const readStyle = vi.spyOn(lastRow, 'style', 'get');
+    const content = requireDefined(engine.content);
+    content.scrollTop = 3_600;
+    content.dispatchEvent(new Event('scroll'));
+    expect(readStyle).not.toHaveBeenCalled();
+    lastRow.style.height = '32.5px';
+    invalidateGridRowHeights(engine);
+    readStyle.mockClear();
+    content.scrollTop = 3_624;
+    content.dispatchEvent(new Event('scroll'));
+    expect(readStyle).toHaveBeenCalledTimes(1);
+    expect(layout(engine).below % 24).toBeCloseTo(8.5);
+    stop();
   });
 });

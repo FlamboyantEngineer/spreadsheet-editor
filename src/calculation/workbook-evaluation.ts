@@ -1,8 +1,13 @@
 import { worksheetCalculationExtent } from '../model/extent.js';
 import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
 import { requireDefined } from '../model/require-defined.js';
-import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
-import type { CellInput, Workbook } from '../model/workbook.js';
+import {
+  formatSpreadsheetAddress,
+  MAX_COLUMN_INDEX,
+  MAX_ROW_INDEX,
+} from '../model/spreadsheet-addressing.js';
+import { type CellInput, type Workbook, worksheetNameKey } from '../model/workbook.js';
+import { calculationCellKey } from './calculation-cell-key.js';
 import {
   authoredValue,
   type CellContext,
@@ -51,15 +56,13 @@ class NeedCell {
   constructor(readonly cell: CellPosition) {}
 }
 
-const MAX_COLUMN = 16383,
-  MAX_ROW = 1048575;
 const outOfGrid = ({ x, y }: CellPosition) =>
   !Number.isSafeInteger(x) ||
   !Number.isSafeInteger(y) ||
   x < 0 ||
   y < 0 ||
-  x > MAX_COLUMN ||
-  y > MAX_ROW;
+  x > MAX_COLUMN_INDEX ||
+  y > MAX_ROW_INDEX;
 
 function calculationLimits(options: CalculationOptions) {
   const maxOperations = options.maxOperations ?? 2_000_000,
@@ -94,6 +97,7 @@ export class WorkbookEvaluation implements CellContext {
   private readonly parsed = new Map<string, FormulaNode>();
   private readonly cellMemos = new Map<string, WeakMap<FormulaNode, Value>>();
   private readonly extents = new Map<number, { columns: number; rows: number }>();
+  private readonly sheetIndexes: Map<string, number>;
 
   constructor(
     readonly workbook: Workbook,
@@ -102,6 +106,9 @@ export class WorkbookEvaluation implements CellContext {
   ) {
     this.math = createQuantityArithmetic(options);
     this.values = createCoercion(this.math);
+    this.sheetIndexes = new Map(
+      workbook.worksheets.map((sheet, index) => [worksheetNameKey(sheet.name), index]),
+    );
     ({ maxOperations: this.maxOperations, maxDepth: this.maxDepth } = calculationLimits(options));
   }
 
@@ -112,6 +119,13 @@ export class WorkbookEvaluation implements CellContext {
 
   cellInput({ sheet, x, y }: CellPosition): CellInput {
     return this.workbook.worksheets[sheet]?.data[y]?.[x] ?? null;
+  }
+
+  resolveSheet(name: string | null, current: number): number {
+    if (name === null) return current;
+    const target = this.sheetIndexes.get(worksheetNameKey(name));
+    if (target === undefined) throw new CalculationError('#REF!');
+    return target;
   }
 
   formulaContext(cell: CellPosition): FormulaCellContext {
@@ -173,6 +187,9 @@ export class WorkbookEvaluation implements CellContext {
       try {
         if (!this.cache.has(key)) this.evaluateCell(current, 0);
         this.visiting.delete(key);
+        this.cellMemos.delete(key);
+        this.rangeMemos.delete(key);
+        this.readBudgets.delete(key);
         stack.pop();
       } catch (error) {
         if (!(error instanceof NeedCell)) throw error;
@@ -188,7 +205,11 @@ export class WorkbookEvaluation implements CellContext {
     const key = keyFor(cell);
     let result: CellValue;
     try {
-      result = withUnitFormat(this, cell, this.inputValue(cell, depth));
+      const input = this.cellInput(cell);
+      const value = this.inputValue(cell, { input, depth });
+      const literalText =
+        typeof input === 'string' && input.startsWith("'") && typeof value === 'string';
+      result = literalText ? value : withUnitFormat(this, cell, value);
     } catch (error) {
       if (error instanceof NeedCell) throw error;
       result = errorValueOf(error);
@@ -227,7 +248,7 @@ export class WorkbookEvaluation implements CellContext {
   dependencies(): CalculationDependencies {
     const publicKey = (key: string) => {
       const [sheet, x, y] = key.split(':').map(Number);
-      return JSON.stringify([this.workbook.worksheets[sheet].id, x, y]);
+      return calculationCellKey(this.workbook.worksheets[sheet].id, x, y);
     };
     const extents = [...this.extentDependencies];
     return {
@@ -248,8 +269,10 @@ export class WorkbookEvaluation implements CellContext {
     };
   }
 
-  private inputValue(cell: CellPosition, depth: number): CellValue {
-    const input = this.cellInput(cell);
+  private inputValue(
+    cell: CellPosition,
+    { input, depth }: { input: CellInput; depth: number },
+  ): CellValue {
     if (isFormula(input)) return this.formulaValue(cell, { input, depth });
     const canonical =
       this.workbook.worksheets[cell.sheet].inputValues?.[formatSpreadsheetAddress(cell.x, cell.y)];

@@ -56,7 +56,7 @@ export interface EditorFormulaBarProps {
   /** The host commits and moves in a single transaction, avoiding a draft/navigation race. */
   onCommit(move: 'down' | 'stay'): void;
   onCancel(): void;
-  onNavigate(selection: CellSelection): void;
+  onNavigate(selection: CellSelection): boolean | void;
   onEditingChange?(editing: boolean): void;
   /** Called only when focus leaves the bar and the host's editing scope. */
   onLeaveEditor?(): void;

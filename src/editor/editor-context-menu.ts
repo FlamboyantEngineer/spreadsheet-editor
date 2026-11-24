@@ -7,6 +7,7 @@ import type {
   JSpreadsheetCellCoords,
 } from '../engine/jspreadsheet-types.js';
 import type { CellSelection } from '../model/editing.js';
+import { gridWorksheetExtent, worksheetExtent } from '../model/extent.js';
 import { editorMenus } from './editor-menus.js';
 import type { SpreadsheetEditorController } from './use-editor.js';
 
@@ -16,30 +17,31 @@ const outside = (value: number, start: number, end: number) => value < start || 
 
 /** The selection a context click makes: its row, column or cell unless already selected. */
 function contextSelection(
-  { selection, sheet }: SpreadsheetEditorController,
+  { selection, previewSheet, workbook }: SpreadsheetEditorController,
   { x, y }: JSpreadsheetCellCoords,
 ): CellSelection | null {
-  if (x < 0 && y >= 0)
+  if (x < 0 && y >= 0) {
+    const [columns] = gridWorksheetExtent(previewSheet, worksheetExtent(previewSheet, workbook));
     return outside(y, selection.y1, selection.y2)
       ? {
           x1: 0,
-          x2: Math.max(
-            (sheet.minDimensions?.[0] ?? 26) - 1,
-            ...sheet.data.map((row) => row.length - 1),
-          ),
+          x2: columns - 1,
           y1: y,
           y2: y,
         }
       : null;
-  if (y < 0 && x >= 0)
+  }
+  if (y < 0 && x >= 0) {
+    const [, rows] = gridWorksheetExtent(previewSheet, worksheetExtent(previewSheet, workbook));
     return outside(x, selection.x1, selection.x2)
       ? {
           x1: x,
           x2: x,
           y1: 0,
-          y2: Math.max((sheet.minDimensions?.[1] ?? 100) - 1, sheet.data.length - 1),
+          y2: rows - 1,
         }
       : null;
+  }
   const outsideCell =
     outside(x, selection.x1, selection.x2) || outside(y, selection.y1, selection.y2);
   return x >= 0 && y >= 0 && outsideCell ? { x1: x, x2: x, y1: y, y2: y } : null;
@@ -59,11 +61,13 @@ export function useEditorContextMenu(e: SpreadsheetEditorController) {
         : menus.context;
   };
   function openContext(coords: JSpreadsheetCellCoords, rect: JSpreadsheetAnchorRect) {
-    setContextKind(coords.x < 0 ? 'row' : coords.y < 0 ? 'column' : 'cell');
     const next = contextSelection(e, coords);
-    if (next) e.select(next);
-    e.grid.current?.releaseKeyboard();
-    setContextPoint({ x: rect.left + 10, y: rect.bottom });
+    e.attempt(() => {
+      if (next && !e.select(next)) return;
+      setContextKind(coords.x < 0 ? 'row' : coords.y < 0 ? 'column' : 'cell');
+      e.grid.current?.releaseKeyboard();
+      setContextPoint({ x: rect.left + 10, y: rect.bottom });
+    });
   }
   function openCellMenu() {
     setContextKind('cell');

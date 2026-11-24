@@ -1,13 +1,7 @@
+import { applyCells, lineIndex } from './operation-cells.js';
 import { delta, equal, sheetOf, WorkbookOperationConflict } from './operation-delta.js';
-import {
-  type AuthoredCellState,
-  authoredCellState,
-  type WorkbookCellChange,
-  type WorkbookOperation,
-  type WorksheetGeometry,
-} from './operations.js';
+import type { LinePreparation, WorkbookOperation, WorksheetGeometry } from './operations.js';
 import { requireDefined } from './require-defined.js';
-import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 import { changeWorkbookStructure } from './structure.js';
 import { assertWorkbook, copyWorkbook, type Workbook, type Worksheet } from './workbook.js';
 
@@ -25,49 +19,20 @@ interface ApplyState {
   lineLayouts: Map<string, LineLayout>;
 }
 
-const CELL_FIELDS = [
-  ['style', 'style'],
-  ['formats', 'format'],
-  ['inputValues', 'inputValue'],
-  ['cellProvenance', 'provenance'],
-] as const;
-
-function writeState(sheet: Worksheet, address: string, state: AuthoredCellState): void {
-  const cell = requireDefined(parseSpreadsheetAddress(address));
-  while (sheet.data.length <= cell.y) sheet.data.push([]);
-  while (sheet.data[cell.y].length <= cell.x) sheet.data[cell.y].push(null);
-  sheet.data[cell.y][cell.x] = state.value;
-  for (const [field, key] of CELL_FIELDS) {
-    const value = state[key];
-    if (value === undefined) delete sheet[field]?.[address];
-    else
-      Object.assign((sheet[field] ??= {}) as Record<string, unknown>, {
-        [address]: structuredClone(value),
-      });
-  }
-}
-
-/** Where a change lands now: its row and column identities win over its recorded address. */
-function changeAddress(sheet: Worksheet, change: WorkbookCellChange, sheetId: string): string {
-  const position = requireDefined(parseSpreadsheetAddress(change.address));
-  const y = change.rowId ? (sheet.rowIds?.indexOf(change.rowId) ?? -1) : position.y;
-  const x = change.columnId ? (sheet.columnIds?.indexOf(change.columnId) ?? -1) : position.x;
-  if (x < 0 || y < 0) throw new WorkbookOperationConflict(`cells/${sheetId}/${change.address}`);
-  return formatSpreadsheetAddress(x, y);
-}
-
-function applyCells(state: ApplyState, operation: Operation<'cells'>) {
-  const sheet = sheetOf(state.next, operation.sheetId);
-  for (const change of operation.changes) {
-    const address = changeAddress(sheet, change, operation.sheetId);
-    const merged = delta(authoredCellState(sheet, address), change, `cells/${sheet.id}/${address}`);
-    writeState(sheet, address, merged as AuthoredCellState);
+function applyLineFrame(sheet: Worksheet, frame: LinePreparation) {
+  const fields = ['minDimensions', 'rowIds', 'columnIds'] as const;
+  const next = structuredClone(frame.after);
+  for (const field of fields) {
+    if (!equal(sheet[field], frame.before[field]))
+      throw new WorkbookOperationConflict(`line-extent/${sheet.id}/${field}`);
+    if (next[field] === undefined) delete sheet[field];
+    else Object.assign(sheet, { [field]: next[field] });
   }
 }
 
 /** Replays the line command on the recorded layout, for the geometry and merge patches after it. */
 function recordLineLayout(state: ApplyState, sheet: Worksheet, operation: Operation<'lines'>) {
-  if (!operation.beforeGeometry) return;
+  if (!operation.restoreLayout || !operation.beforeGeometry) return;
   const frame: Workbook = {
     schemaVersion: 1,
     worksheets: [
@@ -102,12 +67,17 @@ function recordLineLayout(state: ApplyState, sheet: Worksheet, operation: Operat
 
 /** Inserts the lines beside their recorded neighbours, else at the recorded index. */
 function insertLines(state: ApplyState, ids: string[], operation: Operation<'lines'>) {
-  if (operation.ids.some((id) => ids.includes(id)))
+  const positions = requireDefined(lineIndex(ids));
+  if (operation.ids.some((id) => positions.has(id)))
     throw new WorkbookOperationConflict(`lines/${operation.sheetId}`);
-  const after = operation.afterId ? ids.indexOf(operation.afterId) : -1;
-  const before = operation.beforeId ? ids.indexOf(operation.beforeId) : -1;
+  if (operation.extentOnly) {
+    for (const id of operation.ids) ids.push(id);
+    return;
+  }
+  const after = operation.afterId ? positions.get(operation.afterId) : undefined;
+  const before = operation.beforeId ? positions.get(operation.beforeId) : undefined;
   const index =
-    after >= 0 ? after : before >= 0 ? before + 1 : Math.min(operation.index, ids.length);
+    after ?? (before === undefined ? Math.min(operation.index, ids.length) : before + 1);
   state.next = changeWorkbookStructure(state.next, operation.sheetId, {
     axis: operation.axis,
     kind: 'insert',
@@ -117,28 +87,47 @@ function insertLines(state: ApplyState, ids: string[], operation: Operation<'lin
   });
 }
 
-/** Deletes the lines that still exist, from the last one back. */
+/** Deletes contiguous runs from the end to avoid copying the workbook for each line. */
 function deleteLines(state: ApplyState, ids: string[], operation: Operation<'lines'>) {
-  const positions = operation.ids
-    .map((id) => ids.indexOf(id))
-    .filter((index) => index >= 0)
-    .sort((a, b) => b - a);
-  for (const index of positions)
+  const targets = new Set(operation.ids);
+  if (operation.extentOnly) {
+    const remaining = ids.filter((id) => !targets.has(id));
+    if (!remaining.every((id, index) => id === ids[index]))
+      throw new WorkbookOperationConflict(`line-extent/${operation.sheetId}`);
+    ids.length = remaining.length;
+    return;
+  }
+  let end = ids.length;
+  while (end > 0) {
+    if (!targets.has(ids[end - 1])) {
+      end--;
+      continue;
+    }
+    let index = end - 1;
+    while (index > 0 && targets.has(ids[index - 1])) index--;
     state.next = changeWorkbookStructure(state.next, operation.sheetId, {
       axis: operation.axis,
       kind: 'delete',
       index,
-      count: 1,
+      count: end - index,
     });
+    end = index;
+  }
 }
 
 function applyLines(state: ApplyState, operation: Operation<'lines'>) {
   const sheet = sheetOf(state.next, operation.sheetId);
+  if (operation.preparation) applyLineFrame(sheet, operation.preparation);
   const ids = operation.axis === 'row' ? sheet.rowIds : sheet.columnIds;
+  const rowCount = sheet.data.length;
   recordLineLayout(state, sheet, operation);
   if (!ids) throw new WorkbookOperationConflict(`lines/${sheet.id}`);
   if (operation.action === 'insert') insertLines(state, ids, operation);
   else deleteLines(state, ids, operation);
+  if (operation.dataRows?.before === rowCount) {
+    const { data } = sheetOf(state.next, sheet.id);
+    while (data.length < operation.dataRows.after) data.push([]);
+  }
 }
 
 const reviewLists = (value: Pick<Workbook, 'comments' | 'suggestions'>) => ({
@@ -152,10 +141,10 @@ function applyAnnotations({ next }: ApplyState, operation: Operation<'annotation
     { before: reviewLists(operation.before), after: reviewLists(operation.after) },
     'annotations',
   ) as Pick<Workbook, 'comments' | 'suggestions'>;
-  // A list neither side had stays absent, so an inverse restores the workbook exactly.
-  for (const key of ['comments', 'suggestions'] as const)
-    if (next[key] !== undefined || operation.after[key] !== undefined || value[key]?.length)
-      next[key] = value[key] as never;
+  for (const key of ['comments', 'suggestions'] as const) {
+    if (operation.after[key] !== undefined || value[key]?.length) next[key] = value[key] as never;
+    else if (operation.before[key] !== undefined) delete next[key];
+  }
 }
 
 function applyMerges(state: ApplyState, operation: Operation<'merges'>) {
@@ -165,11 +154,13 @@ function applyMerges(state: ApplyState, operation: Operation<'merges'>) {
     layout && equal(operation.before, layout.beforeMerges)
       ? (layout.merges ?? {})
       : operation.before;
-  sheet.mergeCells = delta(
+  const merges = delta(
     sheet.mergeCells ?? {},
-    { before, after: operation.after },
+    { before: before ?? {}, after: operation.after ?? {} },
     `merges/${sheet.id}`,
-  ) as Worksheet['mergeCells'];
+  ) as NonNullable<Worksheet['mergeCells']>;
+  if (operation.after || Object.keys(merges).length) sheet.mergeCells = merges;
+  else delete sheet.mergeCells;
 }
 
 function applyGeometry(state: ApplyState, operation: Operation<'geometry'>) {
@@ -183,7 +174,15 @@ function applyGeometry(state: ApplyState, operation: Operation<'geometry'>) {
   };
   const before =
     layout && equal(operation.before, layout.beforeGeometry) ? layout.geometry : operation.before;
-  Object.assign(sheet, delta(geometry, { before, after: operation.after }, `geometry/${sheet.id}`));
+  const merged = delta(
+    geometry,
+    { before, after: operation.after },
+    `geometry/${sheet.id}`,
+  ) as WorksheetGeometry;
+  for (const field of ['minDimensions', 'columns', 'rows', 'freezeColumns'] as const) {
+    if (merged[field] === undefined) delete sheet[field];
+    else Object.assign(sheet, { [field]: merged[field] });
+  }
 }
 
 function applyRename({ next }: ApplyState, operation: Operation<'sheet-rename'>) {
@@ -235,12 +234,20 @@ function applyReplace(state: ApplyState, operation: Operation<'replace'>) {
   state.next = copyWorkbook(operation.after);
 }
 
+function applyName(workbook: Workbook, operation: Operation<'workbook-metadata'>) {
+  const { name } = delta({ name: workbook.name }, operation, 'workbook') as Pick<Workbook, 'name'>;
+  if (name === undefined) delete workbook.name;
+  else workbook.name = name;
+}
+
 function applyOperation(state: ApplyState, operation: WorkbookOperation) {
   switch (operation.kind) {
     case 'cells':
-      return applyCells(state, operation);
+      return applyCells(sheetOf(state.next, operation.sheetId), operation);
     case 'lines':
       return applyLines(state, operation);
+    case 'line-frame':
+      return applyLineFrame(sheetOf(state.next, operation.sheetId), operation);
     case 'annotations':
       return applyAnnotations(state, operation);
     case 'geometry':
@@ -248,10 +255,7 @@ function applyOperation(state: ApplyState, operation: WorkbookOperation) {
     case 'merges':
       return applyMerges(state, operation);
     case 'workbook-metadata':
-      return void Object.assign(
-        state.next,
-        delta({ name: state.next.name }, operation, 'workbook'),
-      );
+      return applyName(state.next, operation);
     case 'sheet-rename':
       return applyRename(state, operation);
     case 'sheet-add':

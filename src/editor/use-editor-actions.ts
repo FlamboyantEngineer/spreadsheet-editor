@@ -16,8 +16,15 @@ import {
   proposeCells,
   structureChange,
   updateSheet,
+  type WorksheetEdit,
 } from './editor-cell-commands.js';
-import { copyCells, pasteFromClipboard, pasteValues } from './editor-clipboard.js';
+import {
+  copyCells,
+  copyToClipboardEvent,
+  pasteFromClipboard,
+  pasteFromClipboardEvent,
+  pasteValues,
+} from './editor-clipboard.js';
 import type { EditorCore, EditorDialog } from './editor-core.js';
 import { exportExcel, importExcel, insertSelection, refreshData } from './editor-host-commands.js';
 import {
@@ -75,10 +82,9 @@ export function useEditorEditActions(core: EditorCore) {
       replaceWorkbookChange(core, next, { label, reason }),
     attempt: (action: () => unknown) => attemptAction(core, action),
     applyFormula: () => applyFormula(core),
-    flushDraft: () => applyFormula(core),
     cancelFormula: () => core.setDraft(null),
     setDraftValue: (value: string) => core.setDraft({ key: core.display.draftKey, value }),
-    updateSheet: (next: Worksheet) => updateSheet(core, next),
+    updateSheet: (next: Worksheet, change?: WorksheetEdit) => updateSheet(core, next, change),
     proposeCells: (values: CellInput[][], x: number, y: number) =>
       proposeCells(core, values, { x, y }),
     format: (properties: Record<string, string | null>, format?: CellFormat | null) =>
@@ -94,6 +100,10 @@ export function useEditorEditActions(core: EditorCore) {
     redo: () => historyStep(core, 'redo'),
     copy: (cut = false) => copyCells(core, cut),
     paste: () => pasteFromClipboard(core),
+    transferCopy: (transfer: DataTransfer, cut: boolean) =>
+      attemptAction(core, () => copyToClipboardEvent(core, transfer, cut)),
+    transferPaste: (transfer: DataTransfer) =>
+      attemptAction(core, () => pasteFromClipboardEvent(core, transfer)),
     pasteCells: (values: CellInput[][], x = core.selection.x1, y = core.selection.y1) =>
       pasteValues(core, values, { x, y }),
   };

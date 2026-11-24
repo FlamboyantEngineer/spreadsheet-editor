@@ -198,26 +198,7 @@ export type JSpreadsheetSpreadsheetInstance = Partial<
 export type JSpreadsheetInstance =
   JSpreadsheetSpreadsheetInstance | JSpreadsheetWorksheetInstance | JSpreadsheetWorksheetInstance[];
 
-/**
- * Imperative API exposed via `ref` for surrounding chrome / commands. These
- * methods are the only way for the editor to drive the engine from outside the
- * host. Anything else should be expressed as new props/events.
- */
+/** The instance mounted by the vendor wrapper. */
 export interface JSpreadsheetHostHandle {
-  /** Write `value` to the cell at `(row, col)` using the active worksheet. */
-  setCellValue(row: number, col: number, value: JSpreadsheetCellValue): void;
-  /** Read the current value at `(row, col)` from the active worksheet. */
-  getCellValue(row: number, col: number): JSpreadsheetCellValue;
-  /**
-   * Replace the active worksheet dataset without re-instantiating the engine.
-   * Falls back to a full re-mount if the engine cannot mutate the dataset in
-   * place.
-   */
-  setData(data: ReadonlyArray<ReadonlyArray<JSpreadsheetCellValue>>): void;
-  /** Return the current selection range, or `null` if nothing is selected. */
-  getCurrentSelection(): JSpreadsheetSelectionRange | null;
-  /** Ask jspreadsheet to refresh the rendered grid. */
-  refresh(): void;
-  /** Return the raw jspreadsheet instance for advanced commands. */
   getInstance(): JSpreadsheetInstance | null;
 }

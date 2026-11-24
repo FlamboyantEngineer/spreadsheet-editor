@@ -19,7 +19,7 @@ export function useSessionActions({
   setNotice: (message: string | null) => void;
   warn: (message: string) => void;
 }) {
-  const [flushing, setFlushing] = useState(false);
+  const [flushes, setFlushes] = useState(0);
   /** Saves through the workbook session now (SE-SESSION-1.4). */
   async function save() {
     if (!alive.current) throw new Error('The editor session has ended.');
@@ -44,7 +44,7 @@ export function useSessionActions({
     commitDraft();
     const current = live.current.props.session;
     if (!current) return;
-    setFlushing(true);
+    setFlushes((count) => count + 1);
     try {
       await current.flush();
       if (alive.current) setNotice(null);
@@ -52,7 +52,7 @@ export function useSessionActions({
       if (alive.current) setNotice(saveFailure(error, current));
       throw error;
     } finally {
-      if (alive.current) setFlushing(false);
+      if (alive.current) setFlushes((count) => count - 1);
     }
   }
   async function resolveConflict(choice: 'mine' | 'stored') {
@@ -65,5 +65,5 @@ export function useSessionActions({
       if (alive.current) setNotice(saveFailure(error, current));
     }
   }
-  return { flushing, save, flush, resolveConflict };
+  return { flushing: flushes > 0, save, flush, resolveConflict };
 }

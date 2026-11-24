@@ -1,42 +1,45 @@
 import { calculationCellKey } from '../calculation/publication.js';
 import { createDocumentInsertion } from '../document/insertion.js';
-import { selectionAddress, selectionCells } from '../model/editing.js';
+import { createDocumentTable } from '../document/table-capture.js';
+import { selectionAddress } from '../model/editing.js';
 import { assertWorkbook, copyWorkbook, type Workbook } from '../model/workbook.js';
 import type { EditorCore } from './editor-core.js';
 import { replaceWorkbookChange } from './editor-transactions.js';
 
-/** Refuses a document table while any selected cell lacks a current ready result. */
-function assertReadyTable(core: EditorCore) {
-  const { props, sheet, selection, display } = core;
-  const { calculation, readyCells } = display;
+/** Captures the canonical publication and checks each source cell as it is projected. */
+function insertTable({ props, workbook, sheet, selection, display }: EditorCore) {
+  const { calculation } = display;
   if (!calculation.result || display.draftCell)
     throw new Error('A document table needs current calculation results.');
-  for (const { x, y } of selectionCells(selection)) {
-    const input = sheet.data[y]?.[x],
-      key = calculationCellKey(sheet.id, x, y);
-    const explicit =
-      props.calculation?.mode === 'external'
-        ? props.calculation.snapshot?.cellStates?.[key]
-        : undefined;
-    if (
-      !readyCells.has(key) &&
-      ((input != null && input !== '') || (explicit ?? calculation.status) !== 'ready')
-    )
-      throw new Error('Every inserted cell must have a current ready result.');
-  }
+  const cellStates =
+    props.calculation?.mode === 'external' ? props.calculation.snapshot?.cellStates : undefined;
+  return createDocumentTable(workbook, calculation.result, {
+    sheetId: sheet.id,
+    range: selectionAddress(selection),
+    display: props.display,
+    assertReady(x, y) {
+      const input = sheet.data[y]?.[x],
+        key = calculationCellKey(sheet.id, x, y);
+      if (
+        !calculation.readyCells.has(key) &&
+        ((input != null && input !== '') || (cellStates?.[key] ?? calculation.status) !== 'ready')
+      )
+        throw new Error('Every inserted cell must have a current ready result.');
+    },
+  });
 }
 
 /** Hands the selection to the host's document as a table or a live spreadsheet. */
 export function insertSelection(core: EditorCore, kind: 'table' | 'spreadsheet') {
-  if (kind === 'table') assertReadyTable(core);
-  const { props, workbook, sheet, selection, display } = core;
+  const { props, workbook, sheet, selection } = core;
   props.onInsert?.(
-    createDocumentInsertion(workbook, display.calculation.result, {
-      mode: kind,
-      sheetId: sheet.id,
-      range: selectionAddress(selection),
-      display: props.display,
-    }),
+    kind === 'table'
+      ? insertTable(core)
+      : createDocumentInsertion(workbook, null, {
+          mode: kind,
+          sheetId: sheet.id,
+          range: selectionAddress(selection),
+        }),
   );
 }
 

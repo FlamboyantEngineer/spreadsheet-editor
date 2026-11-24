@@ -2,30 +2,22 @@
 
 import { useSyncExternalStore } from 'react';
 import type {
-  WorkbookDraftOffer,
   WorkbookSession,
+  WorkbookSessionSnapshot,
   WorkbookSessionStatus,
 } from '../host/workbook-session.js';
-import type { Workbook } from '../model/workbook.js';
 
 const NO_SUBSCRIPTION = () => () => {};
-const NOTHING = () => null;
+const empty = { workbook: null, status: null, draft: null, localRevision: 0 } as const;
+const emptySnapshot = () => empty;
 
 /** The session's workbook, status and draft offer, or nulls without a session. */
-export function useSessionState(session: WorkbookSession | undefined): {
-  workbook: Workbook | null;
-  status: WorkbookSessionStatus | null;
-  draft: WorkbookDraftOffer | null;
-} {
-  const subscribe = session ? session.subscribe : NO_SUBSCRIPTION;
-  const workbook = useSyncExternalStore(subscribe, session ? session.workbook : NOTHING);
-  const status = useSyncExternalStore(subscribe, session ? session.status : NOTHING);
-  const draftKey = useSyncExternalStore(subscribe, () => {
-    const draft = session?.draft();
-    return draft ? `${draft.baseRevision}\n${draft.savedAt}\n${draft.stale}` : '';
-  });
-  const draft = draftKey ? (session?.draft() ?? null) : null;
-  return { workbook, status, draft };
+export function useSessionState(session: WorkbookSession | undefined) {
+  return useSyncExternalStore<WorkbookSessionSnapshot | typeof empty>(
+    session?.subscribe ?? NO_SUBSCRIPTION,
+    session?.getSnapshot ?? emptySnapshot,
+    emptySnapshot,
+  );
 }
 
 /** The save status the toolbar shows for a session's phase. */

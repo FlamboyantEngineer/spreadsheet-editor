@@ -177,12 +177,13 @@ export function HostLab() {
           aria-label="Host spreadsheet"
           editorRef={setHandle}
           value={workbook}
-          onChange={(next) => {
+          acceptChange={(next) => {
             if (rejectChanges) throw new Error('Host workbook change was rejected.');
             current.current = next;
             setWorkbook(next);
             setTransactions((count) => count + 1);
             if (external) setSnapshot(null);
+            return next;
           }}
           calculation={calculation}
           formulaFunctions={descriptors}

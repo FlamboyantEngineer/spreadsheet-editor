@@ -1,29 +1,15 @@
-import { formatWorksheetCell } from '../calculation/cell-format.js';
 import type { CalculationResult } from '../calculation/evaluator.js';
 import type { DisplayOptions } from '../calculation/format.js';
-import { assertCalculationResult } from '../calculation/http.js';
-import { requireDefined } from '../model/require-defined.js';
+import { assertCalculationResult } from '../calculation/result-validation.js';
+import { assertWorkbook, type Workbook } from '../model/workbook.js';
 import {
-  formatSpreadsheetAddress,
-  parseSpreadsheetRange,
-  type SpreadsheetRange,
-} from '../model/spreadsheet-addressing.js';
-import { copyWorkbook, type Workbook } from '../model/workbook.js';
+  createDocumentTable,
+  type DocumentTableInsertion,
+  resolveDocumentSelection,
+} from './table-capture.js';
 
-export interface DocumentTableCell {
-  text: string;
-  colspan: number;
-  rowspan: number;
-}
-export interface DocumentTableInsertion {
-  kind: 'table';
-  schemaVersion: 1;
-  sheetId: string;
-  range: string;
-  /** Calculated text cells; the document editor's `tableFromRows` turns them into its table. */
-  rows: DocumentTableCell[][];
-  html: string;
-}
+export type { DocumentTableCell, DocumentTableInsertion } from './table-capture.js';
+
 export interface LiveSpreadsheetInsertion {
   kind: 'spreadsheet';
   schemaVersion: 1;
@@ -40,118 +26,24 @@ export interface InsertionOptions {
   display?: DisplayOptions;
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) =>
-    requireDefined(
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character],
-    ),
-  );
-}
-
-type Worksheet = Workbook['worksheets'][number];
-
-/** The selected range, or the sheet's used area; ranges past the grid or 50,000 cells reject. */
-function insertionRange(sheet: Worksheet, address: string | undefined): SpreadsheetRange {
-  const width = Math.max(1, ...sheet.data.map((row) => row.length)),
-    height = Math.max(1, sheet.data.length);
-  const range = parseSpreadsheetRange(
-    address ?? `A1:${formatSpreadsheetAddress(width - 1, height - 1)}`,
-  );
-  if (
-    !range ||
-    range.end.x > 16_383 ||
-    range.end.y > 1_048_575 ||
-    (range.end.x - range.start.x + 1) * (range.end.y - range.start.y + 1) > 50_000
-  )
-    throw new RangeError('Invalid insertion range.');
-  return range;
-}
-
-/** The part of a valid merge inside the range, as its inclusive bounds. */
-function clippedMerge(address: string, [colspan, rowspan]: number[], range: SpreadsheetRange) {
-  const merge = parseSpreadsheetRange(address);
-  if (
-    !merge ||
-    !Number.isSafeInteger(colspan) ||
-    !Number.isSafeInteger(rowspan) ||
-    colspan < 1 ||
-    rowspan < 1
-  )
-    return undefined;
-  const left = Math.max(merge.start.x, range.start.x),
-    top = Math.max(merge.start.y, range.start.y);
-  const right = Math.min(merge.start.x + colspan - 1, range.end.x),
-    bottom = Math.min(merge.start.y + rowspan - 1, range.end.y);
-  return left > right || top > bottom ? undefined : { left, top, right, bottom };
-}
-
-/** Marks every cell of a merge except its anchor as covered. */
-function coverMerge(
-  covered: Set<string>,
-  { left, top, right, bottom }: { left: number; top: number; right: number; bottom: number },
-) {
-  for (let y = top; y <= bottom; y++)
-    for (let x = left; x <= right; x++) if (x !== left || y !== top) covered.add(`${x}:${y}`);
-}
-
-/** Spans of merged cells that start in the range, and the cells those merges cover. */
-function mergeLayout(sheet: Worksheet, range: SpreadsheetRange) {
-  const covered = new Set<string>(),
-    spans = new Map<string, [number, number]>();
-  for (const [address, size] of Object.entries(sheet.mergeCells ?? {})) {
-    const merge = clippedMerge(address, size, range);
-    if (!merge) continue;
-    const { left, top, right, bottom } = merge;
-    spans.set(`${left}:${top}`, [right - left + 1, bottom - top + 1]);
-    coverMerge(covered, merge);
-  }
-  return { covered, spans };
-}
-
-function tableRows(
-  sheet: Worksheet,
-  values: CalculationResult['worksheets'][number]['values'],
-  { range, display }: { range: SpreadsheetRange; display?: DisplayOptions },
-): DocumentTableCell[][] {
-  const { covered, spans } = mergeLayout(sheet, range);
-  const rows: DocumentTableCell[][] = [];
-  for (let y = range.start.y; y <= range.end.y; y++) {
-    const row: DocumentTableCell[] = [];
-    for (let x = range.start.x; x <= range.end.x; x++) {
-      if (covered.has(`${x}:${y}`)) continue;
-      const [colspan, rowspan] = spans.get(`${x}:${y}`) ?? [1, 1];
-      const format = sheet.formats?.[formatSpreadsheetAddress(x, y)];
-      row.push({
-        text: formatWorksheetCell(values[y]?.[x] ?? null, format, display),
-        colspan,
-        rowspan,
-      });
-    }
-    rows.push(row);
-  }
-  return rows;
-}
-
-const tableHtml = (rows: DocumentTableCell[][]) =>
-  `<table><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td colspan="${cell.colspan}" rowspan="${cell.rowspan}">${escapeHtml(cell.text)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-
+/** Captures a calculated table or an independent, editable workbook. */
 export function createDocumentInsertion(
   workbook: Workbook,
   result: CalculationResult | null,
   options: InsertionOptions,
 ): DocumentInsertion {
-  const snapshot = copyWorkbook(workbook);
-  const sheet = snapshot.worksheets.find(
-    (sheet) => sheet.id === (options.sheetId ?? snapshot.worksheets[0].id),
-  );
-  if (!sheet) throw new RangeError('Unknown worksheet.');
-  const range = insertionRange(sheet, options.range);
-  const placement = { schemaVersion: 1, sheetId: sheet.id, range: range.address } as const;
-  if (options.mode === 'spreadsheet')
-    return { kind: 'spreadsheet', ...placement, workbook: snapshot };
+  assertWorkbook(workbook);
+  if (options.mode === 'spreadsheet') {
+    const { sheet, range } = resolveDocumentSelection(workbook, options);
+    return {
+      kind: 'spreadsheet',
+      schemaVersion: 1,
+      sheetId: sheet.id,
+      range: range.address,
+      workbook: structuredClone(workbook),
+    };
+  }
   if (!result) throw new Error('A document table needs current calculation results.');
-  assertCalculationResult(result, snapshot);
-  const values = requireDefined(result.worksheets.find((output) => output.id === sheet.id)).values;
-  const rows = tableRows(sheet, values, { range, display: options.display });
-  return { kind: 'table', ...placement, rows, html: tableHtml(rows) };
+  assertCalculationResult(result, workbook);
+  return createDocumentTable(workbook, result, options);
 }

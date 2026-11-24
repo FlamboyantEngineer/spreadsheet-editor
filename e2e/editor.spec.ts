@@ -28,14 +28,17 @@ test('SE-UI-2.1: server mode posts edits and preserves exact values', async ({ p
   await editor
     .getByRole('textbox', { name: 'Cell value or formula', exact: true })
     .fill('=1-(1-1E-25)');
-  const posted = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/api/calculate') && response.request().method() === 'POST',
-  );
+  const posted = page.waitForEvent('requestfinished', {
+    predicate: (request) =>
+      request.url().endsWith('/api/calculate') &&
+      request.method() === 'POST' &&
+      request.postDataJSON().workbook.worksheets[0].data[0][0] === '=1-(1-1E-25)',
+  });
   await editor
     .getByRole('textbox', { name: 'Cell value or formula', exact: true })
     .press('Control+Enter');
-  const response = await posted;
+  const response = await (await posted).response();
+  if (!response) throw new Error('The committed calculation did not return a response.');
   expect(response.ok()).toBe(true);
   const body = await response.json();
   expect(body.result.worksheets[0].values[0][0]).toMatchObject({

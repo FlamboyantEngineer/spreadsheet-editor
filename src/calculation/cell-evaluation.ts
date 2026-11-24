@@ -1,4 +1,4 @@
-import type { FormulaNode } from '../model/formula-parser.js';
+import { type FormulaNode, FormulaSyntaxError } from '../model/formula-parser.js';
 import type { CellFormat } from '../model/review.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { CellInput, Workbook } from '../model/workbook.js';
@@ -48,9 +48,13 @@ export function memoFor<V>(map: Map<string, WeakMap<FormulaNode, V>>, key: strin
 const NUMBER_TEXT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 const QUANTITY_TEXT = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+(.+)$/;
 
+export const isNumericInputText = (text: string) => NUMBER_TEXT.test(text.trim());
+
 /** The error value a failed calculation step yields. */
-export const errorValueOf = (error: unknown) =>
-  errorValue(error instanceof CalculationError ? error.code : '#ERROR!');
+export function errorValueOf(error: unknown) {
+  if (error instanceof CalculationError) return errorValue(error.code);
+  return errorValue(error instanceof FormulaSyntaxError ? error.token : '#ERROR!');
+}
 
 export const isFormula = (input: CellInput): input is string =>
   typeof input === 'string' && input.trimStart().startsWith('=');
@@ -67,7 +71,7 @@ export function authoredValue(
   }
   if (typeof input === 'number') return context.math.parse(String(input));
   if (typeof input === 'string' && input.startsWith("'")) return input.slice(1);
-  if (typeof input === 'string' && NUMBER_TEXT.test(input.trim())) return context.math.parse(input);
+  if (typeof input === 'string' && isNumericInputText(input)) return context.math.parse(input);
   return input === '' ? null : input;
 }
 

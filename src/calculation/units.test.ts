@@ -7,6 +7,14 @@ import { calculateWorkbook } from './evaluator.js';
 import { formatCellValue } from './format.js';
 
 describe('SE-CALC-4.1: exact engineering quantities', () => {
+  it('distinguishes formula operands from unit suffixes and keeps escaped unit-formatted text literal', () => {
+    const workbook = createWorkbook([["'3 m", '=1 m*A2', '=1 m*ABS(A2)'], ['2']]);
+    workbook.worksheets[0].formats = { A1: { kind: 'unit', unit: 'm' } };
+    const [text, reference, call] = calculateWorkbook(workbook).worksheets[0].values[0];
+    expect(text).toBe('3 m');
+    expect(formatWorksheetCell(reference, { kind: 'unit', unit: 'm' })).toBe('2 m');
+    expect(call).toEqual(reference);
+  });
   it('converts tiny authored inputs to SI exactly and preserves their input unit when display changes', () => {
     const workbook = createWorkbook([['1E-25', '=A1*2', '=A1+A2'], ['3 mm']]);
     workbook.worksheets[0].formats = {

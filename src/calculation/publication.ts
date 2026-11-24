@@ -1,8 +1,12 @@
 import { calculationFormats, worksheetCalculationExtent } from '../model/extent.js';
 import { assertWorkbook, type Workbook } from '../model/workbook.js';
+import { calculationCellKey, parseCalculationCellKey } from './calculation-cell-key.js';
+import { isFormula } from './cell-evaluation.js';
 import type { CalculationResult } from './evaluator.js';
-import { assertCalculationResult } from './http.js';
+import { assertCalculationResult } from './result-validation.js';
 import { assertJsonValue, type JsonValue } from './values.js';
+
+export { calculationCellKey } from './calculation-cell-key.js';
 
 export type CalculationCellState = 'pending' | 'ready' | 'unavailable';
 export interface ExternalCalculationSnapshot {
@@ -14,9 +18,6 @@ export interface ExternalCalculationSnapshot {
   hostContext?: JsonValue;
   error?: string;
 }
-export const calculationCellKey = (sheetId: string, x: number, y: number) =>
-  JSON.stringify([sheetId, x, y]);
-
 /** Sorted object fields make equivalent JSON inputs share an identity across transports. */
 export function orderedJson(value: unknown): string {
   if (value === undefined) return 'null';
@@ -106,32 +107,17 @@ function assertSnapshotFields(snapshot: ExternalCalculationSnapshot, workbook: W
   if (snapshot.hostContext !== undefined) assertJsonValue(snapshot.hostContext);
 }
 
-/** A `[sheetId, x, y]` key in canonical form, naming a cell of one of the workbook's sheets. */
-function isCellStateKey(key: string, workbook: Workbook): boolean {
-  const tuple: unknown = JSON.parse(key);
-  return (
-    Array.isArray(tuple) &&
-    tuple.length === 3 &&
-    typeof tuple[0] === 'string' &&
-    Number.isSafeInteger(tuple[1]) &&
-    Number.isSafeInteger(tuple[2]) &&
-    tuple[1] >= 0 &&
-    tuple[2] >= 0 &&
-    tuple[1] <= 16_383 &&
-    tuple[2] <= 1_048_575 &&
-    calculationCellKey(tuple[0], tuple[1], tuple[2]) === key &&
-    workbook.worksheets.some((sheet) => sheet.id === tuple[0])
-  );
-}
-
 function assertCellStates(cellStates: unknown, workbook: Workbook): void {
   if (!isPlainObject(cellStates) || Array.isArray(cellStates))
     throw new TypeError('Invalid calculation cell states.');
   if (Object.keys(cellStates).length > 250_000)
     throw new RangeError('Too many calculation cell states.');
-  for (const [key, state] of Object.entries(cellStates))
-    if (!isCellStateKey(key, workbook) || !states.has(state))
+  const sheetIds = new Set(workbook.worksheets.map((sheet) => sheet.id));
+  for (const [key, state] of Object.entries(cellStates)) {
+    const cell = parseCalculationCellKey(key);
+    if (!cell || !sheetIds.has(cell[0]) || !states.has(state))
       throw new TypeError('Invalid calculation cell state.');
+  }
 }
 
 /** Ready cells with authored input publish a value; pending or unavailable cells publish none. */
@@ -142,7 +128,8 @@ function assertPublishedCells(snapshot: ExternalCalculationSnapshot, workbook: W
       row.forEach((input, x) => {
         const state = snapshot.cellStates?.[calculationCellKey(sheet.id, x, y)] ?? snapshot.status;
         const result = values?.[y]?.[x];
-        if (state === 'ready' && input !== null && input !== '' && result == null)
+        const missing = result === undefined || (result === null && !isFormula(input));
+        if (state === 'ready' && input !== null && input !== '' && missing)
           throw new TypeError('Ready authored cells require calculated values.');
         if (state !== 'ready' && result != null)
           throw new TypeError('Pending or unavailable cells cannot publish cached values.');
@@ -222,8 +209,9 @@ export function pendingCalculationCells(
   const { unrecorded, extentReaders, dependents } = dependencyIndex(result);
   for (const key of unrecorded) pending.add(key);
   if (!result.dependencies) return pending;
-  for (const [key, sheets] of extentReaders)
-    if (sheets.some((sheet) => extentChanges.includes(sheet))) pending.add(key);
+  if (extentChanges.length)
+    for (const [key, sheets] of extentReaders)
+      if (sheets.some((sheet) => extentChanges.includes(sheet))) pending.add(key);
   const queue = [...pending];
   for (let index = 0; index < queue.length; index++)
     for (const dependent of dependents.get(queue[index]) ?? [])

@@ -1,4 +1,5 @@
 import { type CellPlacement, writeCells } from './editing.js';
+import { collectCellShape } from './operation-cell-shape.js';
 import type {
   AuthoredCellState,
   WorkbookCellChange,
@@ -27,10 +28,13 @@ export function authoredCellState(sheet: Worksheet, address: string): AuthoredCe
 export function equal(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
-export function authoredAddresses(sheet: Worksheet): Set<string> {
+export function authoredAddresses(sheet: Worksheet, includeBlanks = false): Set<string> {
   const addresses = new Set<string>();
   sheet.data.forEach((row, y) =>
-    row.forEach((_value, x) => addresses.add(formatSpreadsheetAddress(x, y))),
+    row.forEach((value, x) => {
+      if (includeBlanks || (value !== null && value !== ''))
+        addresses.add(formatSpreadsheetAddress(x, y));
+    }),
   );
   for (const map of [sheet.style, sheet.formats, sheet.inputValues, sheet.cellProvenance])
     for (const address of Object.keys(map ?? {})) addresses.add(address);
@@ -57,6 +61,7 @@ export function collectLineGrowthOperations(
       sheetId: before.id,
       axis,
       action: 'insert',
+      extentOnly: true,
       index: previous.length,
       count: current.length - previous.length,
       ids: current.slice(previous.length),
@@ -105,14 +110,14 @@ function changedAddresses(sheet: Worksheet, next: Worksheet): Set<string> {
   for (const field of METADATA) changedInMap(addresses, sheet[field] ?? {}, next[field] ?? {});
   return addresses;
 }
-/** The cell changes between two versions of a sheet at the given or the differing addresses. */
+/** The cell changes between two versions of a sheet at the given addresses. */
 function sheetCellChanges(
   sheet: Worksheet,
   next: Worksheet,
-  targets: Iterable<string> | undefined,
+  targets: Iterable<string>,
 ): WorkbookCellChange[] {
   const changes: WorkbookCellChange[] = [];
-  for (const address of targets ?? changedAddresses(sheet, next)) {
+  for (const address of targets) {
     const previous = authoredCellState(sheet, address),
       current = authoredCellState(next, address);
     if (equal(previous, current)) continue;
@@ -126,6 +131,22 @@ function sheetCellChanges(
     });
   }
   return changes;
+}
+
+function sheetOperations(sheet: Worksheet, next: Worksheet, targets?: Iterable<string>) {
+  const addresses = targets ? new Set(targets) : changedAddresses(sheet, next);
+  const changes = sheetCellChanges(sheet, next, addresses);
+  const rows = targets
+    ? [
+        ...new Set(
+          [...addresses].map((address) => requireDefined(parseSpreadsheetAddress(address)).y),
+        ),
+      ]
+    : Array.from({ length: Math.max(sheet.data.length, next.data.length) }, (_, index) => index);
+  const shape = collectCellShape(sheet, next, { rows, addresses: targets ? addresses : undefined });
+  return changes.length || shape
+    ? { kind: 'cells' as const, sheetId: sheet.id, changes, ...(shape && { shape }) }
+    : undefined;
 }
 /**
  * Cell patches between two workbooks. `targets` limits the comparison to the addresses a command
@@ -142,8 +163,8 @@ export function collectCellOperations(
     if (targets && !targets.has(sheet.id)) continue;
     const next = after.worksheets.find((candidate) => candidate.id === sheet.id);
     if (!next || next === sheet) continue;
-    const changes = sheetCellChanges(sheet, next, targets?.get(sheet.id));
-    if (changes.length) operations.push({ kind: 'cells', sheetId: sheet.id, changes });
+    const operation = sheetOperations(sheet, next, targets?.get(sheet.id));
+    if (operation) operations.push(operation);
   }
   return operations;
 }

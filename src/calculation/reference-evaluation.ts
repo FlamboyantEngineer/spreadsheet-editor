@@ -1,6 +1,5 @@
-import type { CellCoords, FormulaNode } from '../model/formula-parser.js';
-import { requireDefined } from '../model/require-defined.js';
-import { worksheetNameKey } from '../model/workbook.js';
+import type { FormulaNode } from '../model/formula-parser.js';
+import type { CellCoords } from '../model/formula-reference-token.js';
 import { type CellPosition, keyFor, memoFor } from './cell-evaluation.js';
 import type { Value } from './function-call.js';
 import { CalculationError } from './values.js';
@@ -13,16 +12,6 @@ interface Bounds {
 }
 /** A formula may address at most this many cells in all its references. */
 const READ_BUDGET = 10000;
-
-function targetSheet(evaluation: WorkbookEvaluation, node: ReferenceNode, frame: Frame): number {
-  if (node.sheetName === null) return frame.sheet;
-  const name = worksheetNameKey(requireDefined(node.sheetName));
-  const target = evaluation.workbook.worksheets.findIndex(
-    (sheet) => worksheetNameKey(sheet.name) === name,
-  );
-  if (target < 0) throw new CalculationError('#REF!');
-  return target;
-}
 
 /** The cells of whole rows or columns, bounded by the sheet's calculation extent. */
 function lineBounds(
@@ -67,10 +56,10 @@ function readRange(
     top = Math.min(bounds.start.y, bounds.end.y),
     width = Math.max(bounds.start.x, bounds.end.x) - left + 1,
     total = width * (Math.max(bounds.start.y, bounds.end.y) - top + 1);
-  if (total > evaluation.maxOperations - evaluation.operations)
-    throw new CalculationError('#LIMIT!');
   const states = memoFor(evaluation.rangeMemos, keyFor(frame));
   let state = states.get(node);
+  if (total - (state?.index ?? 0) > evaluation.maxOperations - evaluation.operations)
+    throw new CalculationError('#LIMIT!');
   if (!state) {
     state = { rows: [], index: 0 };
     states.set(node, state);
@@ -91,7 +80,7 @@ export function evaluateReference(
   node: ReferenceNode,
   frame: Frame,
 ): Value {
-  const sheet = targetSheet(evaluation, node, frame);
+  const sheet = evaluation.resolveSheet(node.sheetName, frame.sheet);
   let bounds: Bounds;
   if (node.kind === 'lines') {
     evaluation.rememberExtent(frame, evaluation.workbook.worksheets[sheet].id);

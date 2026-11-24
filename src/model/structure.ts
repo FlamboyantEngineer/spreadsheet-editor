@@ -199,8 +199,6 @@ export function changeWorkbookStructure(
   resize(sheet, extent, change);
   changeLineIds(sheet, change, axisExtent);
   changeLines(sheet, change);
-  if (!sheet.data.length) sheet.data = [['']];
-  if (!sheet.data.some((row) => row.length)) sheet.data[0].push(null);
   moveCellMaps(sheet, change);
   followChange(next, sheet, change);
   assertWorkbook(next);
@@ -233,7 +231,7 @@ export function renameWorksheet(workbook: Workbook, sheetId: string, name: strin
   const rename = (formula: string) =>
     mapReferences(formula, (reference, target, prefix) =>
       target !== null && worksheetNameKey(target) === previous
-        ? `'${normalized.replace(/'/g, "''")}'!${reference}`
+        ? `'${normalized.replace(/'/g, "''")}'!${prefix.slice(prefix.lastIndexOf('!') + 1)}${reference}`
         : prefix + reference,
     );
   rewriteFormulas(next, rename);

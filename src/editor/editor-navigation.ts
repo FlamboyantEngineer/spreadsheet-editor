@@ -2,19 +2,25 @@ import {
   type CellSelection,
   INITIAL_SELECTION,
   normalizeSelection,
-  selectionCells,
+  selectionFitsCellLimit,
 } from '../model/editing.js';
+import { gridWorksheetExtent, worksheetExtent } from '../model/extent.js';
 import { collaboratorSheet } from '../model/presence.js';
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
 import type { SpreadsheetMode } from './contracts.js';
 import type { EditorCore } from './editor-core.js';
 import { applyFormula, attemptAction } from './editor-transactions.js';
 
-const hasSheet = (core: EditorCore, id: string) =>
-  core.workbook.worksheets.some((value) => value.id === id);
-
 const sameSelection = (a: CellSelection, b: CellSelection) =>
   a.x1 === b.x1 && a.x2 === b.x2 && a.y1 === b.y1 && a.y2 === b.y2;
+
+/** Go To and worksheet view restoration can only select a cell the grid can show. */
+function canSelect(core: EditorCore, id: string, range: CellSelection) {
+  const target = core.workbook.worksheets.find((sheet) => sheet.id === id);
+  if (!target || !selectionFitsCellLimit(range)) return false;
+  const [columns, rows] = gridWorksheetExtent(target, worksheetExtent(target, core.workbook));
+  return range.x2 < columns && range.y2 < rows;
+}
 
 /** Keeps the active worksheet's selection and scroll position for when the reader returns. */
 function rememberSheetView({ sheetViews, sheet, selection, grid }: EditorCore) {
@@ -29,8 +35,7 @@ function rememberSheetView({ sheetViews, sheet, selection, grid }: EditorCore) {
 export function selectRange(core: EditorCore, range: CellSelection, targetSheetId = core.sheet.id) {
   const { sheet, grid } = core;
   const normalized = normalizeSelection(range);
-  selectionCells(normalized);
-  if (!hasSheet(core, targetSheetId)) return false;
+  if (!canSelect(core, targetSheetId, normalized)) return false;
   grid.current?.commitDraft?.();
   if (!applyFormula(core)) return false;
   if (targetSheetId !== sheet.id) rememberSheetView(core);
@@ -44,12 +49,13 @@ export function selectRange(core: EditorCore, range: CellSelection, targetSheetI
 /** Shows worksheet `id` with the selection the reader left there. */
 export function activateSheet(core: EditorCore, id: string) {
   if (id === core.sheet.id) return true;
-  if (!hasSheet(core, id)) return false;
+  if (!core.workbook.worksheets.some((sheet) => sheet.id === id)) return false;
   core.grid.current?.commitDraft?.();
   if (!applyFormula(core)) return false;
   rememberSheetView(core);
   core.setSheetId(id);
-  core.setSelection(core.sheetViews.current.get(id)?.selection ?? INITIAL_SELECTION);
+  const saved = core.sheetViews.current.get(id)?.selection;
+  core.setSelection(saved && canSelect(core, id, saved) ? saved : INITIAL_SELECTION);
   core.setDraft(null);
   return true;
 }
@@ -72,7 +78,11 @@ export function cancelDraftNow(core: EditorCore) {
 export function gridSelection(core: EditorCore, range: CellSelection) {
   attemptAction(core, () => {
     const normalized = normalizeSelection(range);
-    selectionCells(normalized);
+    if (!selectionFitsCellLimit(normalized)) {
+      core.warn('Selection exceeds the cell limit.');
+      core.grid.current?.select(core.selection);
+      return;
+    }
     if (sameSelection(core.selection, normalized)) return;
     if (!applyFormula(core)) {
       core.grid.current?.select(core.selection);

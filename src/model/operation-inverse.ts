@@ -1,3 +1,4 @@
+import { invertCellShape } from './operation-cell-shape.js';
 import type { WorkbookOperation } from './operations.js';
 
 type CellsOperation = Extract<WorkbookOperation, { kind: 'cells' }>;
@@ -8,7 +9,8 @@ type InsertedLines = Map<string, { row: Set<string>; column: Set<string> }>;
 function insertedLines(operations: readonly WorkbookOperation[]): InsertedLines {
   const inserted: InsertedLines = new Map();
   for (const operation of operations) {
-    if (operation.kind !== 'lines' || operation.action !== 'insert') continue;
+    if (operation.kind !== 'lines' || operation.extentOnly || operation.action !== 'insert')
+      continue;
     let axes = inserted.get(operation.sheetId);
     if (!axes) {
       axes = { row: new Set(), column: new Set() };
@@ -39,7 +41,8 @@ function invertCells(
       before: structuredClone(change.after),
       after: structuredClone(change.before),
     }));
-  return changes.length ? { ...operation, changes } : undefined;
+  const shape = operation.shape && invertCellShape(operation.shape);
+  return changes.length || shape ? { ...operation, changes, ...(shape && { shape }) } : undefined;
 }
 
 /** The inverse line command, then the cells, geometry and merges it restores. */
@@ -48,6 +51,12 @@ function invertLines(operation: LinesOperation): WorkbookOperation[] {
   const inverse: WorkbookOperation[] = [
     {
       ...operation,
+      preparation: undefined,
+      restoreLayout: true,
+      dataRows: operation.dataRows && {
+        before: operation.dataRows.after,
+        after: operation.dataRows.before,
+      },
       action: operation.action === 'insert' ? 'delete' : 'insert',
       beforeGeometry: operation.afterGeometry,
       afterGeometry: operation.beforeGeometry,
@@ -72,7 +81,7 @@ function invertLines(operation: LinesOperation): WorkbookOperation[] {
       before: structuredClone(operation.afterGeometry),
       after: structuredClone(operation.beforeGeometry),
     });
-  if (operation.beforeMerges && operation.afterMerges)
+  if (operation.beforeMerges || operation.afterMerges)
     inverse.push({
       kind: 'merges',
       sheetId,
@@ -108,9 +117,18 @@ export function invertWorkbookOperations(
     if (operation.kind === 'cells') {
       const cells = invertCells(operation, inserted);
       if (cells) inverse.push(cells);
-    } else if (operation.kind === 'lines') {
+    } else if (operation.kind === 'lines' && !operation.extentOnly) {
       // The inverse line command runs before every inverse recorded so far.
       inverse = [...invertLines(operation), ...inverse];
+      if (operation.preparation)
+        inverse.push({
+          kind: 'line-frame',
+          sheetId: operation.sheetId,
+          before: operation.preparation.after,
+          after: operation.preparation.before,
+        });
+    } else if (operation.kind === 'lines') {
+      inverse.push({ ...operation, action: operation.action === 'insert' ? 'delete' : 'insert' });
     } else inverse.push(invertOther(operation));
   }
   return inverse;

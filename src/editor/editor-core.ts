@@ -1,10 +1,10 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { WorkbookVersion } from '../host/adapters.js';
-import type { SpreadsheetCopy } from '../model/clipboard.js';
 import type { CellSelection } from '../model/editing.js';
 import type { SpreadsheetCollaborator } from '../model/presence.js';
 import type { ReviewActor } from '../model/review.js';
 import type { Workbook, Worksheet } from '../model/workbook.js';
+import type { ClipboardCopy } from './clipboard-payload.js';
 import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
 import type { editorAccess } from './editor-access.js';
 import type { EditorHistory } from './history.js';
@@ -20,7 +20,12 @@ export interface SheetView {
   selection: CellSelection;
   viewport: { left: number; top: number };
 }
-export type LiveEditor = { canEdit: boolean; canWrite: boolean; props: SpreadsheetEditorProps };
+export type LiveEditor = {
+  canEdit: boolean;
+  canWrite: boolean;
+  props: SpreadsheetEditorProps;
+  peers: SpreadsheetCollaborator[];
+};
 
 /**
  * One render's editor: its props, workbook, place, permissions, drafts, and the refs and setters
@@ -44,13 +49,14 @@ export interface EditorCore extends ReturnType<typeof editorAccess> {
   peers: SpreadsheetCollaborator[];
   grid: RefObject<GridController | null>;
   draftRef: RefObject<DraftText>;
+  nativeDraftRef: RefObject<NativeDraft>;
   setDraft(next: DraftText): void;
   setNativeDraft(next: NativeDraft): void;
   display: ReturnType<typeof useCellDisplay>;
   alive: RefObject<boolean>;
   latestWorkbook: RefObject<Workbook>;
   live: RefObject<LiveEditor>;
-  copied: RefObject<SpreadsheetCopy | null>;
+  copied: RefObject<ClipboardCopy | null>;
   pendingStructure: RefObject<(() => void) | null>;
   dialog: EditorDialog;
   dialogValue: string;

@@ -30,7 +30,7 @@ export function AddressField({
   selection: CellSelection;
   isComposing: ComposingCheck;
   onFocus(): void;
-  onNavigate(selection: CellSelection): void;
+  onNavigate(selection: CellSelection): boolean | void;
 }) {
   const [addressDraft, setAddressDraft] = useState<string | null>(null);
   const [addressInvalid, setAddressInvalid] = useState(false);
@@ -41,11 +41,10 @@ export function AddressField({
   };
   const commitAddress = () => {
     const next = addressSelection(addressDraft ?? address);
-    if (!next) {
+    if (!next || onNavigate(next) === false) {
       setAddressInvalid(true);
       return;
     }
-    onNavigate(next);
     setAddressDraft(selectionAddress(next));
     setAddressInvalid(false);
   };
@@ -58,14 +57,13 @@ export function AddressField({
       tracksChanges={false}
       size="sm"
       value={addressDraft ?? address}
-      errorMessage={addressInvalid ? 'Enter a cell or range from A1 to XFD1048576.' : undefined}
+      errorMessage={addressInvalid ? 'Enter a cell or range within this worksheet.' : undefined}
       messageDisplay="tooltip"
       onFocus={onFocus}
       onChange={(value) => {
         setAddressDraft(value);
         const next = addressSelection(value);
-        setAddressInvalid(!next);
-        if (next) onNavigate(next);
+        setAddressInvalid(!next || onNavigate(next) === false);
       }}
       onBlur={normalizeAddress}
       onKeyDown={(event) => {

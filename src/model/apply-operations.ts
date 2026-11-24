@@ -1,67 +1,17 @@
-import { authoredAddresses } from './cell-operations.js';
 import { createWorkbookEntityId, type WorkbookIdFactory, worksheetExtent } from './extent.js';
+import { checkDeletedLines } from './line-conflicts.js';
 import { applyWorkbookOperations } from './operation-apply.js';
-import { equal, sheetOf, WorkbookOperationConflict } from './operation-delta.js';
-import {
-  type AuthoredCellState,
-  authoredCellState,
-  type WorkbookChangeContext,
-  type WorkbookOperation,
-} from './operations.js';
+import { equal, WorkbookOperationConflict } from './operation-delta.js';
+import type { WorkbookChangeContext, WorkbookOperation } from './operations.js';
 import { requireDefined } from './require-defined.js';
-import { parseSpreadsheetAddress } from './spreadsheet-addressing.js';
-import { assertWorkbook, copyWorkbook, type Workbook, type Worksheet } from './workbook.js';
+import { assertWorkbook, copyWorkbook, type Workbook } from './workbook.js';
 
 export { applyWorkbookOperations } from './operation-apply.js';
 export { WorkbookOperationConflict } from './operation-delta.js';
 
-type Axis = 'row' | 'column';
 type Transaction = WorkbookChangeContext;
-
-/** One line's authored cell at an address, keyed by its row and column identities. */
-function lineCell(
-  sheet: Worksheet,
-  address: string,
-  { axis, index }: { axis: Axis; index: number },
-): [string, AuthoredCellState] | undefined {
-  const point = requireDefined(parseSpreadsheetAddress(address));
-  if ((axis === 'row' ? point.y : point.x) !== index) return undefined;
-  const state = authoredCellState(sheet, address);
-  if ((state.value === null || state.value === '') && Object.keys(state).length === 1)
-    return undefined;
-  const row = sheet.rowIds?.[point.y],
-    column = sheet.columnIds?.[point.x];
-  if (!row || !column) throw new WorkbookOperationConflict('line-content-identities');
-  return [JSON.stringify([row, column]), state];
-}
-
-/** Compare a line's authored cells by identity, including sparse metadata and geometry. */
-function lineContent(sheet: Worksheet, axis: Axis, id: string): unknown {
-  const index = (axis === 'row' ? sheet.rowIds : sheet.columnIds)?.indexOf(id) ?? -1;
-  if (index < 0) return undefined;
-  const cells: Record<string, AuthoredCellState> = {};
-  for (const address of authoredAddresses(sheet)) {
-    const cell = lineCell(sheet, address, { axis, index });
-    if (cell) cells[cell[0]] = cell[1];
-  }
-  return { cells, geometry: axis === 'row' ? sheet.rows?.[String(index)] : sheet.columns?.[index] };
-}
-
-const formulaInput = (value: unknown) => typeof value === 'string' && value.startsWith('=');
-
-/** A deleted line someone changed since the baseline is not deleted out from under them. */
-function checkDeletedLines(current: Workbook, transaction: Transaction) {
-  for (const operation of transaction.operations) {
-    if (operation.kind !== 'lines' || operation.action !== 'delete') continue;
-    const previous = sheetOf(transaction.baseline, operation.sheetId);
-    const latest = sheetOf(current, operation.sheetId);
-    for (const id of operation.ids) {
-      const target = lineContent(latest, operation.axis, id);
-      if (target !== undefined && !equal(lineContent(previous, operation.axis, id), target))
-        throw new WorkbookOperationConflict(`modified-line/${id}`);
-    }
-  }
-}
+const formulaInput = (value: unknown) =>
+  typeof value === 'string' && value.trimStart().startsWith('=');
 
 /** Formulas and suggestions name sheets, so they need the baseline's sheet names. */
 function checkReferences(current: Workbook, transaction: Transaction) {
@@ -93,7 +43,7 @@ function checkStructuralAnnotations(
 
 /** Positional operations are rejected after a concurrent structure change. */
 function checkStructuralOperation(operation: WorkbookOperation) {
-  if (operation.kind === 'geometry' || operation.kind === 'merges' || operation.kind === 'replace')
+  if (['geometry', 'merges', 'replace', 'line-frame'].includes(operation.kind))
     throw new WorkbookOperationConflict('structural-baseline');
   if (
     operation.kind === 'cells' &&
@@ -171,7 +121,7 @@ export function createWorkbookOperationBinding(
     throw new RangeError('Transaction memory capacity must be a positive integer.');
   const accepted = new Set<string>();
   return {
-    applyTransaction(_next: Workbook, transaction: WorkbookChangeContext): void {
+    applyTransaction(_next: Workbook, transaction: WorkbookChangeContext): Workbook {
       if (host.hasTransaction?.(transaction.transactionId))
         throw new WorkbookOperationConflict('transaction-id');
       const next = applyWorkbookTransaction(host.getSnapshot(), transaction, {
@@ -180,6 +130,7 @@ export function createWorkbookOperationBinding(
       host.commit(next, transaction);
       accepted.add(transaction.transactionId);
       if (accepted.size > capacity) accepted.delete(requireDefined(accepted.values().next().value));
+      return next;
     },
   };
 }

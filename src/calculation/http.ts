@@ -12,12 +12,13 @@ interface CalculationRequest {
   options?: CalculationOptions;
 }
 
-/**
- * Default transport limits follow the cell limit: a request may use 64 bytes per cell and a response
- * 256 bytes per cell, so a workbook the cell limit accepts is not refused for its size.
- */
+/** Defaults for wire bodies. The minimum also accommodates framing for very small workbooks. */
 const REQUEST_BYTES_PER_CELL = 64,
-  RESPONSE_BYTES_PER_CELL = 256;
+  RESPONSE_BYTES_PER_CELL = 256,
+  MINIMUM_BODY_BYTES = 1024;
+
+const defaultBodyLimit = (maxCells: number | undefined, bytesPerCell: number) =>
+  Math.max(MINIMUM_BODY_BYTES, (maxCells ?? DEFAULT_WORKBOOK_LIMITS.maxCells) * bytesPerCell);
 
 class BodyTooLargeError extends RangeError {}
 
@@ -51,7 +52,7 @@ export interface HttpCalculatorOptions {
   fetch?: typeof globalThis.fetch;
   headers?: HeadersInit;
   credentials?: RequestCredentials;
-  /** Defaults to 256 bytes per cell of the requested cell limit (64 MB for 250,000 cells). */
+  /** Defaults to 256 bytes per requested cell, with a 1 KiB minimum. */
   maxResponseBytes?: number;
 }
 
@@ -82,8 +83,7 @@ export function createHttpCalculator(
       const body = await readJson(
         response.body,
         options.maxResponseBytes ??
-          (calculationOptions?.maxCells ?? DEFAULT_WORKBOOK_LIMITS.maxCells) *
-            RESPONSE_BYTES_PER_CELL,
+          defaultBodyLimit(calculationOptions?.maxCells, RESPONSE_BYTES_PER_CELL),
       );
       if (
         !body ||
@@ -104,7 +104,7 @@ export interface CalculationHandlerOptions {
   host?: FormulaHost;
   /** Server ceilings take precedence over caller-requested limits. */
   limits?: CalculationOptions;
-  /** Defaults to 64 bytes per cell of the server's cell limit (16 MB for 250,000 cells). */
+  /** Defaults to 64 bytes per allowed cell, with a 1 KiB minimum. */
   maxRequestBytes?: number;
 }
 
@@ -165,14 +165,13 @@ async function readCalculationRequest(request: Request, configuration: Calculati
   const value = await readJson(
     request.body,
     configuration.maxRequestBytes ??
-      (configuration.limits?.maxCells ?? DEFAULT_WORKBOOK_LIMITS.maxCells) * REQUEST_BYTES_PER_CELL,
+      defaultBodyLimit(configuration.limits?.maxCells, REQUEST_BYTES_PER_CELL),
   );
   if (!value || typeof value !== 'object') throw new TypeError('Invalid calculation request.');
-  const body = value as Partial<CalculationRequest>;
+  const body = value as CalculationRequest;
   if (body.schemaVersion !== 1 || typeof body.requestId !== 'string' || body.requestId.length > 128)
     throw new TypeError('Invalid calculation request version or id.');
   const options = boundedOptions(body.options, configuration.limits);
-  assertWorkbook(body.workbook, options);
   return { requestId: body.requestId, workbook: body.workbook, options };
 }
 

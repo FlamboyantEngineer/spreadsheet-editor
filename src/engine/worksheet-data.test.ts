@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { gridWorksheetExtent } from '../model/extent.js';
 import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
-import {
-  captureWorksheetCellChanges,
-  gridWorksheetExtent,
-  syncWorksheetData,
-} from './worksheet-data.js';
+import { captureWorksheetCellChanges, syncWorksheetData } from './worksheet-data.js';
 
 describe('SE-UI-1.1: logical vendor worksheet dimensions', () => {
   it('rejects an oversized vendor batch or far-away write before extending authored data', () => {
@@ -43,6 +40,25 @@ describe('SE-UI-1.1: logical vendor worksheet dimensions', () => {
     expect(sheet).toEqual(original);
   });
 
+  it('SE-PERF-2.1 preserves earlier cells and line IDs when a native batch extends the sheet', () => {
+    const sheet = createWorkbook([['1'], ['2']]).worksheets[0];
+    sheet.rowIds = ['row1', 'row2'];
+    sheet.columnIds = ['column1'];
+    expect(captureWorksheetCellChanges(sheet, [{ x: 0, y: 0, value: '1' }])).toBe(sheet);
+    const next = captureWorksheetCellChanges(
+      sheet,
+      [{ x: 1, y: 2, value: 'new' }],
+      (kind) => `${kind}-new`,
+    );
+    expect(next.data[0]).toBe(sheet.data[0]);
+    expect(next.data[1]).toBe(sheet.data[1]);
+    expect(next.data[2]).toEqual([null, 'new']);
+    expect(next.rowIds).toEqual(['row1', 'row2', 'row-new']);
+    expect(next.columnIds).toEqual(['column1', 'column-new']);
+    expect(sheet.rowIds).toEqual(['row1', 'row2']);
+    expect(sheet.columnIds).toEqual(['column1']);
+  });
+
   it('counts blank metadata edges and retains the initial viewport only while minima are implicit', () => {
     const sheet = createWorkbook().worksheets[0];
     expect(gridWorksheetExtent(sheet)).toEqual([26, 100]);
@@ -53,6 +69,13 @@ describe('SE-UI-1.1: logical vendor worksheet dimensions', () => {
     expect(gridWorksheetExtent(sheet)).toEqual([28, 102]);
     expect(gridWorksheetExtent(sheet, { columns: 30, rows: 150 })).toEqual([30, 150]);
     expect(sheet.minDimensions).toEqual([2, 2]);
+  });
+
+  it('SE-PERF-1.1 does not multiply a narrow or short sheet past the cell budget', () => {
+    const tall = createWorkbook(Array.from({ length: 10_000 }, () => ['x'])).worksheets[0];
+    const wide = createWorkbook([Array<string>(10_000).fill('x')]).worksheets[0];
+    expect(gridWorksheetExtent(tall)).toEqual([1, 10_000]);
+    expect(gridWorksheetExtent(wide)).toEqual([10_000, 1]);
   });
 
   it('updates minima and column structures before rebuilding body data, without mutating authored inputs', () => {

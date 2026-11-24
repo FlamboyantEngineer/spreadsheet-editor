@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
 import { calculateWorkbook } from './evaluator.js';
-import { createHttpCalculator, handleCalculationRequest } from './http.js';
+import { assertCalculationResult, createHttpCalculator, handleCalculationRequest } from './http.js';
 
 const request = (body: unknown) =>
   new Request('http://localhost/calculate', {
@@ -18,6 +19,30 @@ describe('SE-CALC-3.1: interchangeable server calculation', () => {
         handleCalculationRequest(new Request(url, init))) as typeof fetch,
     });
     expect(await server.calculate(workbook)).toEqual(calculateWorkbook(workbook));
+  });
+  it('keeps typed errors, error-like text and blank results local to their cells', async () => {
+    const workbook = createWorkbook([
+      ['=XFE1', '=SUM(A1048576:A1048577)', '="#N/A label"', '=IF(FALSE,1,)'],
+    ]);
+    const provider = createHttpCalculator('http://localhost/calculate', {
+      fetch: (async (url, init) =>
+        handleCalculationRequest(new Request(url, init))) as typeof fetch,
+    });
+    const result = await provider.calculate(workbook);
+    const invalidReference = { kind: 'error', code: '#REF!' };
+    expect(result).toEqual(calculateWorkbook(workbook));
+    expect(result.worksheets[0].values[0]).toEqual([
+      invalidReference,
+      invalidReference,
+      '#N/A label',
+      null,
+    ]);
+  });
+  it('rejects a differently serialized key that would skip dependency invalidation', () => {
+    const workbook = createWorkbook([['1', '=A1']]);
+    const result = calculateWorkbook(workbook);
+    requireDefined(result.dependencies).cells['["sheet-1",1,0]'] = ['["sheet-1", 0, 0]'];
+    expect(() => assertCalculationResult(result, workbook)).toThrow('Invalid dependency cell key');
   });
   it('forwards authentication headers and cancellation without local fallback', async () => {
     const controller = new AbortController();
@@ -87,7 +112,16 @@ describe('SE-CALC-3.1: interchangeable server calculation', () => {
     );
     expect(response.status).toBe(413);
   });
-  it('accepts every workbook the cell limit accepts with the default transport limits', async () => {
+  it('has space for JSON framing even with a one-cell limit', async () => {
+    const limits = { maxCells: 1 };
+    const provider = createHttpCalculator('http://localhost/calculate', {
+      fetch: (async (url, init) =>
+        handleCalculationRequest(new Request(url, init), { limits })) as typeof fetch,
+    });
+    const workbook = createWorkbook([['1']]);
+    expect(await provider.calculate(workbook, limits)).toEqual(calculateWorkbook(workbook, limits));
+  });
+  it('fits a large workbook of short values in the default transport limits', async () => {
     // 200,000 short values: 2.6 MiB of request JSON and about 10 MiB of response JSON.
     const workbook = createWorkbook(
       Array.from({ length: 2_000 }, (_, y) =>

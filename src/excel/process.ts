@@ -5,7 +5,13 @@ import { requireDefined } from '../model/require-defined.js';
 import type { Workbook } from '../model/workbook.js';
 import { validateFormulaCapabilities } from './capabilities.js';
 import type { ExcelFormulaCapabilities, XlsxExport, XlsxImport } from './contracts.js';
-import { encodeImportRequest } from './protocol.js';
+import {
+  decodeExportResponse,
+  encodeImportRequest,
+  excelInputLimit,
+  type ExcelOperation,
+  excelOutputLimit,
+} from './protocol.js';
 
 export interface ExcelProcessOptions {
   signal?: AbortSignal;
@@ -19,28 +25,7 @@ export async function exportXlsx(
   result: CalculationResult,
   options: ExcelProcessOptions = {},
 ): Promise<Uint8Array> {
-  if (exportsInFlight >= 2)
-    throw Object.assign(new Error('Two Excel exports are already running. Try again.'), {
-      status: 503,
-    });
-  exportsInFlight++;
-  try {
-    return new Uint8Array(
-      await runChild(
-        'export',
-        Buffer.from(
-          JSON.stringify({
-            workbook,
-            result,
-            formulaCapabilities: validateFormulaCapabilities(options.formulaCapabilities),
-          }),
-        ),
-        options,
-      ),
-    );
-  } finally {
-    exportsInFlight--;
-  }
+  return (await exportXlsxWithReport(workbook, result, options)).bytes;
 }
 /** Node-only conversion boundary: 640 MiB heap, 768 MiB RSS, two minutes and 100 MiB output. */
 export async function importXlsx(
@@ -65,32 +50,24 @@ export async function exportXlsxWithReport(
     });
   exportsInFlight++;
   try {
-    const output = JSON.parse(
-      (
-        await runChild(
-          'export-report',
-          Buffer.from(
-            JSON.stringify({
-              workbook,
-              result,
-              formulaCapabilities: validateFormulaCapabilities(options.formulaCapabilities),
-            }),
-          ),
-          options,
-        )
-      ).toString(),
-    ) as { bytes: string; report: XlsxExport['report'] };
-    return { bytes: new Uint8Array(Buffer.from(output.bytes, 'base64')), report: output.report };
+    const request = Buffer.from(
+      JSON.stringify({
+        workbook,
+        result,
+        formulaCapabilities: validateFormulaCapabilities(options.formulaCapabilities),
+      }),
+    );
+    return decodeExportResponse(await runChild('export', request, options));
   } finally {
     exportsInFlight--;
   }
 }
 function runChild(
-  operation: 'import' | 'export' | 'export-report',
+  operation: ExcelOperation,
   bytes: Uint8Array,
   options: ExcelProcessOptions,
 ): Promise<Buffer> {
-  if (bytes.byteLength > (operation === 'import' ? 20 * 1024 * 1024 + 65_540 : 100 * 1024 * 1024))
+  if (bytes.byteLength > excelInputLimit(operation))
     return Promise.reject(new RangeError('Excel process input exceeds its byte limit.'));
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -121,8 +98,9 @@ function runChild(
       Math.min(120000, Math.max(1, options.timeoutMs ?? 120000)),
     );
     child.stdout.on('data', (chunk: Buffer) => {
+      if (settled) return;
       size += chunk.length;
-      if (size > 100 * 1024 * 1024) {
+      if (size > excelOutputLimit) {
         child.kill();
         finish(new Error('Excel process output exceeds 100 MiB.'));
       } else output.push(chunk);
@@ -134,14 +112,12 @@ function runChild(
     child.stdin.on('error', (failure) => {
       if ((failure as NodeJS.ErrnoException).code !== 'EPIPE') finish(failure);
     });
-    child.on('close', (code) =>
-      finish(
-        code !== 0
-          ? new Error(error || 'Excel processing failed within its resource limits.')
-          : undefined,
-        Buffer.concat(output),
-      ),
-    );
+    child.on('close', (code) => {
+      if (settled) return;
+      if (code !== 0)
+        finish(new Error(error || 'Excel processing failed within its resource limits.'));
+      else finish(undefined, Buffer.concat(output, size));
+    });
     child.stdin.end(bytes);
   });
 }

@@ -52,9 +52,43 @@ describe('SE-DOC-1.1: document insertion modes', () => {
     expect(insertion.rows[1]).toHaveLength(2);
     expect(insertion.html).not.toContain('Outside');
   });
+  it('uses the original anchor value and format when a selection clips a merge', () => {
+    const workbook = createWorkbook([['=1/8'], ['', 'Covered'], ['']]);
+    workbook.worksheets[0].mergeCells = { A1: [3, 3] };
+    workbook.worksheets[0].formats = { A1: { kind: 'percent', decimals: 2 } };
+    const insertion = createDocumentInsertion(workbook, calculateWorkbook(workbook), {
+      mode: 'table',
+      range: 'C3:B2',
+    });
+    if (insertion.kind !== 'table') throw new Error('Expected table.');
+    expect(insertion.range).toBe('B2:C3');
+    expect(insertion.rows).toEqual([[{ text: '12.50%', colspan: 2, rowspan: 2 }], []]);
+    expect(insertion.html).toContain('<td colspan="2" rowspan="2">12.50%</td>');
+  });
+  it('captures an explicit cell near the end of a tall valid worksheet', () => {
+    const workbook = createWorkbook(Array.from({ length: 140_000 }, () => []));
+    workbook.worksheets[0].data[139_999] = ['Last'];
+    const range = 'A140000';
+    const table = createDocumentInsertion(workbook, calculateWorkbook(workbook), {
+      mode: 'table',
+      range,
+    });
+    const live = createDocumentInsertion(workbook, null, { mode: 'spreadsheet', range });
+    expect(table).toMatchObject({ range, rows: [[{ text: 'Last' }]] });
+    expect(live).toMatchObject({ range });
+    expect(() => createDocumentInsertion(workbook, null, { mode: 'spreadsheet' })).toThrow(
+      'Invalid insertion range.',
+    );
+  });
   it('rejects a normal table without computed values', () => {
     expect(() => createDocumentInsertion(createWorkbook(), null, { mode: 'table' })).toThrow(
       'current calculation',
     );
+  });
+  it('rejects results with mismatched dimensions', () => {
+    const result = calculateWorkbook(createWorkbook([['=1']]));
+    expect(() =>
+      createDocumentInsertion(createWorkbook([['=1', '=2']]), result, { mode: 'table' }),
+    ).toThrow('Result does not match the row.');
   });
 });

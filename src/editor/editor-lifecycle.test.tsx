@@ -87,12 +87,14 @@ describe('SE-HOST-2.1 and SE-SESSION-1.4: flushes cover each requested edit', ()
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
     expect(secondSettled).toBe(false);
+    expect(requireDefined(editorRef.current).getState().flushing).toBe(true);
     expect(save.mock.calls[1][1].content.worksheets[0].data[0][0]).toBe('second');
     await act(async () => {
       answers[1]();
       await second;
     });
     expect(requireDefined(editorRef.current).getState().dirty).toBe(false);
+    expect(requireDefined(editorRef.current).getState().flushing).toBe(false);
   });
 
   it('commits native input and saves it before history navigation', async () => {
@@ -172,5 +174,46 @@ describe('SE-HOST-2.1 and SE-SESSION-1.4: flushes cover each requested edit', ()
     await act(() => result.current.openVersion(version));
     expect(result.current.viewedVersion).toEqual(version);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('keeps newer edits when a version finishes opening or restoring', async () => {
+    const { session } = await heldSession([['current']]);
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const versions: VersionStoreAdapter = {
+      list: async () => ({ ok: true, value: [version] }),
+      load: async () => {
+        await pending;
+        return { ok: true, value: createWorkbook([['old']]) };
+      },
+      restore: async () => {
+        await pending;
+        return { ok: true, value: { revision: 'r2', sequence: 2 } };
+      },
+    };
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({ session, versions, workbookId: 'book' }),
+    );
+    let opening!: Promise<unknown>;
+    let restoring!: Promise<unknown>;
+    act(() => {
+      opening = result.current.openVersion(version);
+      restoring = result.current.restoreVersion(version);
+    });
+    await act(async () => {});
+    await act(async () => {
+      result.current.proposeCells([['later']], 0, 0);
+    });
+    await act(async () => {
+      finish();
+      await expect(opening).resolves.toBe(false);
+      await expect(restoring).resolves.toBe(false);
+    });
+    expect(result.current.viewedVersion).toBeNull();
+    expect(result.current.sheet.data[0][0]).toBe('later');
+    expect(session.status().dirty).toBe(true);
+    session.close();
   });
 });

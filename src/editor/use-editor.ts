@@ -3,9 +3,9 @@
 import { type RefObject, useMemo, useRef, useState } from 'react';
 import { type DisplayOptions, formatCellValue } from '../calculation/format.js';
 import { summarizeCellValues } from '../calculation/summary.js';
-import type { SpreadsheetCopy } from '../model/clipboard.js';
 import { type CellSelection, selectionCells } from '../model/editing.js';
 import type { Workbook } from '../model/workbook.js';
+import type { ClipboardCopy } from './clipboard-payload.js';
 import type { GridController, SpreadsheetEditorProps, SpreadsheetMode } from './contracts.js';
 import { editorAccess } from './editor-access.js';
 import type { EditorCore, ViewedVersion } from './editor-core.js';
@@ -31,7 +31,7 @@ import {
 import { useFind } from './use-find.js';
 import { useNotice } from './use-notice.js';
 import { useSessionActions } from './use-session-actions.js';
-import { sessionSavePhase } from './use-session-state.js';
+import { sessionSavePhase, type useSessionState } from './use-session-state.js';
 import { useVersionActions } from './use-version-actions.js';
 
 /** The count, sum and average of the selection's shown values. */
@@ -72,8 +72,12 @@ function sessionView(
 }
 
 /** The editor's state, refs and commands for one render: everything but its React chrome. */
-function useEditorCore(props: SpreadsheetEditorProps, grid: RefObject<GridController | null>) {
-  const data = useEditorWorkbook(props);
+function useEditorCore(
+  props: SpreadsheetEditorProps,
+  grid: RefObject<GridController | null>,
+  session: ReturnType<typeof useSessionState> | undefined,
+) {
+  const data = useEditorWorkbook(props, session);
   const { workbook, viewedVersion } = data;
   const [localMode, setLocalMode] = useState<SpreadsheetMode>(props.defaultMode ?? 'author');
   const access = editorAccess(props, {
@@ -83,12 +87,16 @@ function useEditorCore(props: SpreadsheetEditorProps, grid: RefObject<GridContro
   const actor = useEditorActor(props.identity);
   const place = useEditorPlace(props, workbook, { actorId: actor.id, grid });
   const drafts = useEditorDrafts(props, place.sheet.id);
-  const copied = useRef<SpreadsheetCopy | null>(null);
+  const copied = useRef<ClipboardCopy | null>(null);
   const panels = useEditorPanels();
   const notices = useNotice();
   const dialogs = useEditorDialogState();
   const { canEdit, canWrite, canSuggest } = access;
-  const liveRefs = useEditorLive(workbook, { canEdit, canWrite, props }, panels);
+  const liveRefs = useEditorLive(
+    workbook,
+    { canEdit, canWrite, props, peers: place.peers },
+    panels,
+  );
   const [refreshVersion, setRefreshVersion] = useState(0);
   const display = useCellDisplay({
     props,
@@ -149,6 +157,7 @@ function useEditorReview(
     sheet: core.sheet,
     selection: core.selection,
     initialCommentId: props.initialCommentId,
+    idFactory: props.idFactory,
     canComment: core.canComment,
     canDecide: core.canDecide,
     grid: core.grid,
@@ -170,6 +179,26 @@ function useEditorFind(core: EditorCore) {
     display: core.props.display,
   });
   return { ...find, ...useEditorFindActions(core, find) };
+}
+
+/** A version action must keep newer edits and drafts in the current editor. */
+function captureVersionContext(core: EditorCore) {
+  const read = () => {
+    const { workbookId, versions, session } = core.live.current.props;
+    return [
+      workbookId,
+      versions,
+      session,
+      session?.getSnapshot().localRevision ?? core.latestWorkbook.current,
+      core.draftRef.current,
+      core.nativeDraftRef.current,
+    ];
+  };
+  const previous = read();
+  return () => {
+    if (!core.alive.current || read().some((value, index) => value !== previous[index]))
+      throw new Error('The workbook changed while handling its saved version. Try again.');
+  };
 }
 
 /** Saving through the session, and opening, saving and restoring versions. */
@@ -194,6 +223,7 @@ function useEditorSessionWork(
     setViewedVersion,
     versionList,
     commitDraft,
+    capture: () => captureVersionContext(core),
     flush,
     props: () => live.current.props,
     alive,
@@ -202,9 +232,16 @@ function useEditorSessionWork(
   return { ...sessionActions, ...versions };
 }
 
-export function useSpreadsheetEditor(props: SpreadsheetEditorProps) {
+export function useSpreadsheetEditor(
+  props: SpreadsheetEditorProps,
+  session?: ReturnType<typeof useSessionState>,
+) {
   const grid = useRef<GridController | null>(null);
-  const { core, data, place, drafts, panels, notices, liveRefs } = useEditorCore(props, grid);
+  const { core, data, place, drafts, panels, notices, liveRefs } = useEditorCore(
+    props,
+    grid,
+    session,
+  );
   const { sheet, selection, display } = core;
   const edits = useEditorEditActions(core);
   const navigation = useEditorNavigationActions(core);

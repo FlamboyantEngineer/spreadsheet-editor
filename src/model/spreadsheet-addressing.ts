@@ -16,6 +16,9 @@ export const UNQUOTED_SHEET_NAME = String.raw`[\p{L}_][\p{L}\p{N}_ ]*`;
 /** A character that continues a formula word, so a reference cannot start right after it. */
 export const FORMULA_WORD_CHARACTER = /[\p{L}\p{N}_.]/u;
 
+export const MAX_COLUMN_INDEX = 16_383;
+export const MAX_ROW_INDEX = 1_048_575;
+
 /** Parsed spreadsheet `A1` address coordinates (0-based). */
 interface SpreadsheetAddress {
   x: number;
@@ -43,6 +46,7 @@ export function parseSpreadsheetColumnName(columnName: unknown): number | null {
   let index = 0;
   for (const char of normalized) {
     index = index * 26 + (char.charCodeAt(0) - 64);
+    if (!Number.isSafeInteger(index)) return null;
   }
   return index - 1;
 }
@@ -55,6 +59,7 @@ export function parseSpreadsheetColumnName(columnName: unknown): number | null {
  */
 export function formatSpreadsheetColumnName(index: unknown): string {
   let value = Number(index) + 1;
+  if (!Number.isSafeInteger(value)) return 'A';
   let label = '';
   while (value > 0) {
     const remainder = (value - 1) % 26;
@@ -90,7 +95,7 @@ export function parseSpreadsheetAddress(value: unknown): SpreadsheetAddress | nu
   if (!match) return null;
   const x = parseSpreadsheetColumnName(match[1]);
   const y = Number.parseInt(match[2], 10) - 1;
-  if (x === null || !Number.isInteger(x) || x < 0 || !Number.isInteger(y) || y < 0) return null;
+  if (x === null || !Number.isSafeInteger(y) || y < 0) return null;
   return { x, y };
 }
 

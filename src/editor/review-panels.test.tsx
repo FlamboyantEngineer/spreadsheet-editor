@@ -73,8 +73,9 @@ describe('SE-HOST-1.1: panel commands use accepted host capabilities', () => {
       result.current.undo();
     });
     expect(onChange.mock.calls[1][1].operations).toMatchObject([
-      { kind: 'lines', axis: 'row', action: 'delete', ids: [rowId] },
-      { kind: 'lines', axis: 'column', action: 'delete', ids: [columnId] },
+      { kind: 'cells', changes: [{ address: 'B2', after: { value: null } }] },
+      { kind: 'lines', axis: 'column', action: 'delete', extentOnly: true, ids: [columnId] },
+      { kind: 'lines', axis: 'row', action: 'delete', extentOnly: true, ids: [rowId] },
     ]);
     expect(result.current.workbook).toEqual(workbook);
   });

@@ -11,6 +11,7 @@ type ViewedVersion = { version: WorkbookVersion; content: Workbook } | null;
 /** What version actions need from the editor. */
 interface VersionContext {
   commitDraft: () => Workbook;
+  capture: () => () => void;
   flush: () => Promise<void>;
   props: () => SpreadsheetEditorProps;
   alive: RefObject<boolean>;
@@ -21,14 +22,17 @@ interface VersionContext {
  * Commits the active cell edit and saves every change made so far, so a version action never
  * leaves an edit behind. Throws when an edit stays unsaved.
  */
-async function settleChanges({ commitDraft, flush, props }: VersionContext) {
-  commitDraft();
+async function settleChanges({ capture, commitDraft, flush, props }: VersionContext) {
+  const content = commitDraft();
+  const assertCurrent = capture();
   const current = props().session;
   if (current?.status().dirty || current?.status().phase === 'saving') {
     await flush();
     if (current.status().dirty)
       throw new Error('Changes are not saved. Save or discard them first.');
   }
+  assertCurrent();
+  return content;
 }
 
 /** Runs a version action, showing its failure as a notice. Resolves whether it succeeded. */
@@ -61,18 +65,21 @@ function unwrap<T>(result: HostResult<T>, fallback: string): T {
 async function loadVersion(context: VersionContext, version: WorkbookVersion, viewing: boolean) {
   if (!viewing) await settleChanges(context);
   const { versions, workbookId } = versionStore(context.props);
-  return unwrap(await versions.load(workbookId, version.revision), 'Could not open the version.');
+  const assertCurrent = context.capture();
+  const content = unwrap(
+    await versions.load(workbookId, version.revision),
+    'Could not open the version.',
+  );
+  assertCurrent();
+  return content;
 }
 
 /** Saves pending changes, then saves the workbook as a new version named `label`. */
 async function createVersion(context: VersionContext, label: string | null) {
-  await settleChanges(context);
+  const content = await settleChanges(context);
   const { versions, workbookId } = versionStore(context.props);
   if (!versions.create) throw new Error('This workbook cannot save versions.');
-  unwrap(
-    await versions.create(workbookId, { content: context.commitDraft(), label }),
-    'Could not save the version.',
-  );
+  unwrap(await versions.create(workbookId, { content, label }), 'Could not save the version.');
 }
 
 async function renameStoredVersion(
@@ -94,10 +101,12 @@ async function restoreStoredVersion(
   version: WorkbookVersion,
   viewing: boolean,
 ) {
+  if (!viewing) await settleChanges(context);
   const { versions, workbookId } = versionStore(context.props);
   if (!versions.restore) throw new Error('This workbook cannot restore versions.');
-  if (!viewing) await settleChanges(context);
+  const assertCurrent = context.capture();
   unwrap(await versions.restore(workbookId, version.revision), 'Could not restore the version.');
+  assertCurrent();
   await context.props().session?.takeStored();
 }
 

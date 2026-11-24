@@ -1,6 +1,7 @@
 'use client';
 
 import { type Dispatch, type SetStateAction, useEffect, useLayoutEffect } from 'react';
+import { gridWorksheetExtent } from '../model/extent.js';
 import { renderContributors, renderReviewMarkers } from './cell-markers.js';
 import { type CellPortal, renderCalculatedCells } from './cell-renderer.js';
 import type { GridSurfaceContext, WorkbookGridProps } from './grid-context.js';
@@ -11,10 +12,11 @@ import type {
   JSpreadsheetWorksheetInstance,
 } from './jspreadsheet-types.js';
 import { refreshGridRowWindow } from './row-window.js';
-import { gridWorksheetExtent, patchWorksheetData, syncWorksheetData } from './worksheet-data.js';
+import { patchWorksheetData, syncWorksheetData } from './worksheet-data.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
 
 type SyncContext = Omit<GridSurfaceContext, 'native' | 'resize'>;
+const paintedProps = new WeakMap<JSpreadsheetHostHandle, WorkbookGridProps>();
 
 /** Paints review markers, calculated cells and contributor colours from the given props. */
 export function paint(
@@ -22,6 +24,7 @@ export function paint(
   current: WorkbookGridProps,
   setPortals: Dispatch<SetStateAction<CellPortal[]>>,
 ) {
+  paintedProps.set(api, current);
   // Markers rewrite cell titles, which presentation tooltips share.
   const markersChanged = renderReviewMarkers(api, current.worksheet.id, {
     comments: current.comments,
@@ -45,12 +48,30 @@ export function paint(
   });
   // An unchanged empty list keeps its identity, so painting causes no render.
   setPortals((previous) =>
-    previous.length === 0 && portalList.length === 0 ? previous : portalList,
+    previous.length === portalList.length &&
+    previous.every((portal, index) => {
+      const next = portalList[index];
+      return (
+        portal.key === next.key && portal.target === next.target && portal.content === next.content
+      );
+    })
+      ? previous
+      : portalList,
   );
   renderContributors(api, current.worksheet, {
     visible: current.showContributors ?? false,
     editing: current.pickingFormula ? current.selection : undefined,
   });
+}
+
+/** Paints the currently mounted geometry while a protected edit defers replacements. */
+export function paintCurrentGrid(context: SyncContext, props: WorkbookGridProps) {
+  const handle = context.handle.current;
+  if (!handle) return;
+  const protectedEdit = context.inCell.current || props.pickingFormula;
+  const current =
+    protectedEdit && context.applied.current !== props.worksheet ? paintedProps.get(handle) : props;
+  if (current) paint(handle, current, context.setPortals);
 }
 
 /** Writes the worksheet's data into the engine, in place when only values changed. */
@@ -93,10 +114,10 @@ function applyWorksheet(
   context.applied.current = props.worksheet;
   context.appliedExtent.current = nextExtent;
   context.appliedZoom.current = props.zoom ?? 100;
-  paint(api, props, context.setPortals);
   if (scale !== previousScale)
     restoreGridScroll(viewport, scroll, { from: previousScale, to: scale });
   refreshGridRowWindow(sheet);
+  paint(api, props, context.setPortals);
   if (!zoomOnly && !context.draggingSelection.current)
     selectGridRange(context, props.selection, false);
   context.scheduleReferences();
@@ -152,7 +173,7 @@ export function useWorksheetSync(context: SyncContext, props: WorkbookGridProps,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the host's selection; the rest is read through refs
   }, [props.selection, controller]);
   useEffect(() => {
-    if (context.handle.current) paint(context.handle.current, props, context.setPortals);
+    paintCurrentGrid(context, props);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- repaints only when what it paints changes
   }, [
     props.values,

@@ -8,8 +8,8 @@
  * consumes request events outside the engine-owned DOM.
  *
  * The wrapper has no teardown, so unmount calls onBeforeDestroy and
- * teardownJspreadsheetInstance. setData updates the worksheet in place when
- * available; otherwise a key change remounts the wrapper with the new dataset.
+ * teardownJspreadsheetInstance. Worksheet changes reach the mounted engine
+ * through the grid synchronization code.
  */
 
 // The vendor-provided React wrapper for jspreadsheet-ce. `<Spreadsheet>` owns
@@ -22,7 +22,6 @@ import { Spreadsheet } from '@jspreadsheet-ce/react';
 import {
   type ComponentType,
   createElement,
-  type CSSProperties,
   type ReactElement,
   type Ref,
   useCallback,
@@ -36,18 +35,9 @@ import {
 import {
   createBridgedConfig,
   type JspreadsheetBridgeOptions,
-  readActiveWorksheet,
   resolveEngineRootElement,
   teardownJspreadsheetInstance,
 } from './jspreadsheet-bridge.js';
-import {
-  currentSelection,
-  type JSpreadsheetMountState,
-  readCellValue,
-  refreshWorksheet,
-  replaceData,
-  writeCellValue,
-} from './jspreadsheet-handle.js';
 import { observeJSpreadsheetCellSpill } from './jspreadsheet-spill.js';
 import type {
   JSpreadsheetAnchorRect,
@@ -76,12 +66,6 @@ interface JSpreadsheetHostProps {
    * exists to OWN engine DOM, not be styled by chrome.
    */
   className?: string | undefined;
-
-  /** Optional inline style on the engine root `<div>`. */
-  style?: CSSProperties | undefined;
-
-  /** Optional id on the engine root `<div>` (defaults to none). */
-  id?: string | undefined;
 
   /**
    * Fired once after the jspreadsheet instance is created. The chrome typically
@@ -210,21 +194,16 @@ function useHostDispatchers(propsSlot: JSpreadsheetHostPropsSlot): Dispatchers {
 }
 
 /**
- * Stamp the engine-host marker (and any id/className/style) onto the wrapper's
+ * Stamp the engine-host marker and class name onto the wrapper's
  * root <div> so the established DOM contract holds
  * (`[data-jspreadsheet-host] > .jtabs-content` and the
  * `:scope > [data-jspreadsheet-host]` worksheet/collaboration lookups).
  */
-function stampEngineRoot(
-  rootEl: HTMLElement,
-  { id, className, style }: Pick<JSpreadsheetHostProps, 'id' | 'className' | 'style'>,
-) {
+function stampEngineRoot(rootEl: HTMLElement, className?: string) {
   rootEl.setAttribute('data-jspreadsheet-host', 'true');
-  if (id) rootEl.id = id;
   // classList.add (not assignment): jspreadsheet adds its own classes
   // (.jtabs, etc.) to this div and we must not clobber them.
   for (const cls of className?.split(/\s+/) ?? []) if (cls) rootEl.classList.add(cls);
-  if (style) Object.assign(rootEl.style, style);
 }
 
 export function JSpreadsheetHost(
@@ -232,22 +211,11 @@ export function JSpreadsheetHost(
 ): ReactElement {
   const { ref } = props;
   // `engineSlot` is handed to the vendor <Spreadsheet> wrapper, which sets its
-  // `.current` to the live jspreadsheet instance at mount time. `instanceRef`
-  // is our canonical copy, and `engineRootElRef` is the wrapper's engine root
-  // <div> (where we stamp the data-jspreadsheet-host marker and which teardown
-  // targets).
+  // `.current` to the live jspreadsheet instance at mount time.
   const [engineSlot] = useState(() => new JSpreadsheetEngineSlot());
   const instanceRef = useRef<JSpreadsheetInstance | null>(null);
-  const engineRootElRef = useRef<HTMLElement | null>(null);
   const [propsSlot] = useState(() => new JSpreadsheetHostPropsSlot(props));
-  // The config the engine is (re)mounted with. It intentionally captures the
-  // first config rather than following later prop changes; the setData fallback
-  // replaces this state and increments `nonce` to force a fresh <Spreadsheet>
-  // mount with the replacement dataset.
-  const [mountState, setMountState] = useState<JSpreadsheetMountState>(() => ({
-    config: props.config,
-    nonce: 0,
-  }));
+  const [config] = useState(() => props.config);
 
   // Keep the latest props in a slot so the engine callback bridge always sees
   // the most recent handlers without remounting jspreadsheet on every render.
@@ -256,28 +224,15 @@ export function JSpreadsheetHost(
   });
   const dispatchers = useHostDispatchers(propsSlot);
 
-  // Build the bridged config for the current mount. The vendor <Spreadsheet>
-  // wrapper consumes it once per mount, so the engine is created from
-  // `mountState.config`; later `config` prop changes do not remount it (the
-  // baked-in dispatchers are stable and read through the props slot, so the
-  // latest handlers still fire). It is rebuilt only when the setData fallback
-  // replaces `mountState.config`.
   const bridgedConfig = useMemo(
-    () => createBridgedConfig({ config: mountState.config, ...dispatchers }),
-    [mountState.config, dispatchers],
+    () => createBridgedConfig({ config, ...dispatchers }),
+    [config, dispatchers],
   );
 
-  const imperativeHandle = useMemo<JSpreadsheetHostHandle>(() => {
-    const active = () => readActiveWorksheet(instanceRef.current);
-    return {
-      setCellValue: (row, col, value) => writeCellValue(active(), { row, col }, value),
-      getCellValue: (row, col) => readCellValue(active(), { row, col }),
-      setData: (data) => replaceData(active(), data, setMountState),
-      getCurrentSelection: () => currentSelection(active()),
-      refresh: () => refreshWorksheet(active()),
-      getInstance: () => instanceRef.current,
-    };
-  }, []);
+  const imperativeHandle = useMemo<JSpreadsheetHostHandle>(
+    () => ({ getInstance: () => instanceRef.current }),
+    [],
+  );
 
   useImperativeHandle(ref, () => imperativeHandle, [imperativeHandle]);
 
@@ -290,8 +245,7 @@ export function JSpreadsheetHost(
     const instance = engineSlot.current;
     instanceRef.current = instance;
     const rootEl = resolveEngineRootElement(instance);
-    engineRootElRef.current = rootEl;
-    if (rootEl) stampEngineRoot(rootEl, propsSlot.read());
+    if (rootEl) stampEngineRoot(rootEl, propsSlot.read().className);
     // Keep the adopted engine's text-cell spill widths current.
     const stopCellSpill =
       rootEl && instance ? observeJSpreadsheetCellSpill(rootEl, instance) : null;
@@ -300,34 +254,19 @@ export function JSpreadsheetHost(
       stopCellSpill?.();
       const currentInstance = instanceRef.current;
       if (currentInstance) propsSlot.read().onBeforeDestroy?.(currentInstance);
-      const rootForTeardown = engineRootElRef.current;
-      if (rootForTeardown) teardownJspreadsheetInstance(rootForTeardown, currentInstance);
+      if (rootEl) teardownJspreadsheetInstance(rootEl, currentInstance);
       instanceRef.current = null;
       engineSlot.current = null;
-      engineRootElRef.current = null;
     };
-    // Runs once on mount and again only on a setData-driven remount
-    // (`nonce` bump + <Spreadsheet> `key` change): the cleanup tears the
-    // old engine down and the re-run adopts the freshly mounted one. The
-    // dispatch callbacks are stable.
-  }, [engineSlot, imperativeHandle, mountState.nonce, propsSlot]);
+  }, [engineSlot, imperativeHandle, propsSlot]);
 
   // Render the vendor-provided React wrapper. It owns the engine root <div> and
   // mounts `jspreadsheet(div, options)` into it; `engineSlot` receives the live
   // instance. We deliberately render it WITHOUT an extra wrapping element so the
   // engine root stays a direct child of the React mount container — the
   // worksheet/collaboration DOM lookups rely on `:scope > [data-jspreadsheet-host]`.
-  // The data-jspreadsheet-host marker and any id/className/style are stamped
-  // onto that div in the mount effect above (the wrapper only forwards `id`).
-  // `key={nonce}` lets the setData fallback force a fresh engine mount.
   return createElement(Spreadsheet as unknown as ComponentType<Record<string, unknown>>, {
     ...bridgedConfig,
     ref: engineSlot,
-    key: mountState.nonce,
   });
 }
-
-/**
- * JSpreadsheetHost — the engine boundary React component for the spreadsheet
- * editor. See the file header for why only this module mounts the engine.
- */

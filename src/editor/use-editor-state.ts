@@ -2,6 +2,7 @@
 
 import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { IdentityAdapter } from '../host/adapters.js';
+import { equal } from '../model/cell-operations.js';
 import { type CellSelection, INITIAL_SELECTION, selectionAddress } from '../model/editing.js';
 import { placePeers, selectionLock } from '../model/presence.js';
 import type { ReviewActor } from '../model/review.js';
@@ -22,15 +23,28 @@ import { useWorkbookPresence } from './use-workbook-presence.js';
 import { useWorkbookVersions } from './use-workbook-versions.js';
 
 /** The workbook the editor shows: a viewed version, the host's value, the session's or its own. */
-export function useEditorWorkbook(props: SpreadsheetEditorProps) {
+export function useEditorWorkbook(
+  props: SpreadsheetEditorProps,
+  provided?: ReturnType<typeof useSessionState>,
+) {
   const [local, setLocal] = useState(() => copyWorkbook(props.defaultValue ?? createWorkbook()));
-  const session = useSessionState(props.session ?? undefined);
+  const subscribed = useSessionState(provided ? undefined : (props.session ?? undefined));
+  const session = provided ?? subscribed;
   /** A saved version the reader opened, shown read-only in place of the workbook (SE-ADAPTERS-5.1). */
   const [viewedVersion, setViewedVersion] = useState<ViewedVersion>(null);
   const workbook = viewedVersion?.content ?? props.value ?? session.workbook ?? local;
   const [history, setHistory] = useState<EditorHistory>({ head: null, past: [], future: [] });
-  const currentHistory =
-    history.head === workbook ? history : { head: workbook, past: [], future: [] };
+  const controlled = !!props.value;
+  const currentHistory = useMemo(() => {
+    if (history.head === workbook) return history;
+    if (
+      controlled &&
+      (history.past.length || history.future.length) &&
+      equal(history.head, workbook)
+    )
+      return { ...history, head: workbook };
+    return { head: workbook, past: [], future: [] };
+  }, [controlled, history, workbook]);
   return {
     setLocal,
     session,
@@ -164,15 +178,15 @@ export function useEditorLive(
   }, []);
   const latestWorkbook = useRef(workbook);
   const live = useRef(current);
-  const { canEdit, canWrite, props } = current;
+  const { canEdit, canWrite, props, peers } = current;
   useLayoutEffect(() => {
-    live.current = { canEdit, canWrite, props };
-  }, [canEdit, canWrite, props]);
+    live.current = { canEdit, canWrite, props, peers };
+  }, [canEdit, canWrite, props, peers]);
   // Read the callback through `live` so a host's inline callback is not a dependency (SE-HOST-2.1).
   useEffect(() => {
     live.current.props.onPanelChange?.({ id: panel, expanded: panelOpen });
   }, [panel, panelOpen]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latestWorkbook.current = workbook;
   }, [workbook]);
   return { listeners, alive, latestWorkbook, live };

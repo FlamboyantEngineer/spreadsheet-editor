@@ -33,10 +33,14 @@ export function selectionAddress(range: CellSelection): string {
     last = formatSpreadsheetAddress(r.x2, r.y2);
   return first === last ? first : `${first}:${last}`;
 }
+/** Whether a selection fits the editor's bounded range operations. */
+export function selectionFitsCellLimit(range: CellSelection): boolean {
+  return (Math.abs(range.x2 - range.x1) + 1) * (Math.abs(range.y2 - range.y1) + 1) <= 50_000;
+}
+
 export function selectionCells(range: CellSelection): { x: number; y: number; address: string }[] {
   const r = normalizeSelection(range);
-  if ((r.x2 - r.x1 + 1) * (r.y2 - r.y1 + 1) > 50_000)
-    throw new RangeError('Selection exceeds the cell limit.');
+  if (!selectionFitsCellLimit(r)) throw new RangeError('Selection exceeds the cell limit.');
   const cells = [];
   for (let y = r.y1; y <= r.y2; y++)
     for (let x = r.x1; x <= r.x2; x++)
@@ -56,6 +60,7 @@ export interface CellPlacement {
 export interface SheetRange {
   sheetId: string;
   range: CellSelection;
+  idFactory?: WorkbookIdFactory | undefined;
 }
 
 export function writeCells(
@@ -96,7 +101,7 @@ export function readSelection(
   const r = normalizeSelection(range),
     sheet = workbook.worksheets.find((sheet) => sheet.id === sheetId);
   if (!sheet) throw new RangeError('Unknown worksheet.');
-  selectionCells(r);
+  if (!selectionFitsCellLimit(r)) throw new RangeError('Selection exceeds the cell limit.');
   return Array.from({ length: r.y2 - r.y1 + 1 }, (_, y) =>
     Array.from({ length: r.x2 - r.x1 + 1 }, (_, x) => sheet.data[r.y1 + y]?.[r.x1 + x] ?? null),
   );
@@ -140,7 +145,7 @@ export interface CellFormatting {
 
 export function formatCells(
   workbook: Workbook,
-  { sheetId, range }: SheetRange,
+  { sheetId, range, idFactory }: SheetRange,
   { properties, format }: CellFormatting,
 ): Workbook {
   const next = copyWorkbook(workbook),
@@ -165,6 +170,7 @@ export function formatCells(
           : {}),
       };
   }
+  extendWorksheetIdentities(sheet, idFactory);
   return next;
 }
 export function clearSelection(
@@ -194,7 +200,7 @@ function toggleBorder(style: Record<string, string>, side: string, remove: boole
 
 export function borderCells(
   workbook: Workbook,
-  { sheetId, range }: SheetRange,
+  { sheetId, range, idFactory }: SheetRange,
   kind: 'all' | 'outside' | 'none' | 'top' | 'right' | 'bottom' | 'left',
 ): Workbook {
   const next = copyWorkbook(workbook),
@@ -224,12 +230,13 @@ export function borderCells(
       } else if (targeted(cell, side)) toggleBorder(style, side, remove);
     writeCellStyle(sheet.style, cell.address, style);
   }
+  extendWorksheetIdentities(sheet, idFactory);
   return next;
 }
 
 export function mergeSelection(
   workbook: Workbook,
-  { sheetId, range }: SheetRange,
+  { sheetId, range, idFactory }: SheetRange,
   unmerge = false,
 ): Workbook {
   const next = copyWorkbook(workbook),
@@ -248,5 +255,6 @@ export function mergeSelection(
   }
   if (!unmerge && (r.x2 > r.x1 || r.y2 > r.y1))
     sheet.mergeCells[formatSpreadsheetAddress(r.x1, r.y1)] = [r.x2 - r.x1 + 1, r.y2 - r.y1 + 1];
+  extendWorksheetIdentities(sheet, idFactory);
   return next;
 }

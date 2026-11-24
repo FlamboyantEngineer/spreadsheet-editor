@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from 'react';
 import type { GridController } from '../editor/contracts.js';
 import type { CellSelection } from '../model/editing.js';
+import { gridCellAt } from './grid-cell.js';
 import type { GridContext } from './grid-context.js';
 import { gridViewport, restoreGridScroll, scrollGridCellIntoView } from './grid-geometry.js';
 import {
@@ -17,6 +18,7 @@ type ControllerContext = Pick<
   | 'visualSelection'
   | 'scheduleReferences'
   | 'commentClick'
+  | 'selectedHeader'
   | 'surface'
   | 'inCell'
 >;
@@ -24,12 +26,15 @@ type ControllerContext = Pick<
 /** Selects a range in the engine, scrolling it into view when asked. */
 export function selectGridRange(context: ControllerContext, range: CellSelection, reveal: boolean) {
   if (context.selecting.current) return;
+  if (reveal) context.selectedHeader.current = null;
   context.visualSelection.current = range;
   context.selecting.current = true;
   try {
     const sheet = context.worksheet();
-    sheet?.updateSelectionFromCoords?.(range.x1, range.y1, range.x2, range.y2);
-    if (sheet && reveal) scrollGridCellIntoView(sheet, range.x1, range.y1);
+    if (sheet && gridCellAt(sheet, range.x1, range.y1) && gridCellAt(sheet, range.x2, range.y2)) {
+      sheet.updateSelectionFromCoords?.(range.x1, range.y1, range.x2, range.y2);
+      if (reveal) scrollGridCellIntoView(sheet, range.x1, range.y1);
+    }
   } finally {
     context.selecting.current = false;
   }
@@ -54,7 +59,7 @@ function closeDraft(context: ControllerContext, save: boolean) {
 function releaseKeyboard(context: ControllerContext) {
   if (context.commentClick.current) clearTimeout(context.commentClick.current);
   context.commentClick.current = null;
-  releaseJSpreadsheetKeyboardOwner();
+  releaseJSpreadsheetKeyboardOwner(context.worksheet());
 }
 
 function viewportOf(context: ControllerContext) {
@@ -72,8 +77,7 @@ export function useGridController(
     () => ({
       select: (range) => selectGridRange(context, range, true),
       getAnchor: (range) =>
-        context.worksheet()?.getCellFromCoords?.(range.x1, range.y1)?.getBoundingClientRect() ??
-        null,
+        gridCellAt(context.worksheet(), range.x1, range.y1)?.getBoundingClientRect() ?? null,
       releaseKeyboard: () => releaseKeyboard(context),
       focus: () => focusGrid(context),
       commitDraft: () => closeDraft(context, true),

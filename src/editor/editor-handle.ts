@@ -42,6 +42,7 @@ function editorState({
 }: EditorHandleRefs): SpreadsheetEditorState {
   const pending = draftRef.current;
   const current = lifecycle.current.state;
+  const status = session()?.getSnapshot().status ?? null;
   const target = lifecycle.current.draftTarget;
   const draftDirty =
     !!nativeDraftRef.current ||
@@ -54,11 +55,11 @@ function editorState({
         ));
   return structuredClone({
     ...current,
-    dirty: !!session()?.status().dirty || draftDirty,
+    dirty: !!status?.dirty || draftDirty,
     draftDirty,
-    saving: session()?.status().phase === 'saving',
+    saving: status?.phase === 'saving',
     flushing: current.flushing,
-    error: sessionErrorMessage(session()?.status() ?? null) ?? errorNotice.current,
+    error: sessionErrorMessage(status) ?? errorNotice.current,
   });
 }
 

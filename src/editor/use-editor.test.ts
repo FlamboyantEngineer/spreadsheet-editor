@@ -121,7 +121,7 @@ describe('SE-CHROME-1.1: capability and preview boundaries', () => {
     expect(result.current.workbook.worksheets[0].data).toEqual([['1E-25']]);
     expect(store.save).not.toHaveBeenCalled();
     const workbook = result.current.workbook;
-    rerender({ value: workbook, identity, session, capabilities: FULL_CAPABILITIES });
+    rerender({ value: workbook, identity, capabilities: FULL_CAPABILITIES });
     expect(result.current.previewSheet.data[0][0]).toBe('1E-25');
     act(() => {
       result.current.decide(proposal.id, 'accepted');
@@ -158,6 +158,26 @@ describe('SE-CHROME-1.1: capability and preview boundaries', () => {
 });
 
 describe('SE-SESSION-1.4: saving through the session', () => {
+  it('saves the accepted host-rebased snapshot', async () => {
+    const { session, store } = await openSession([['old', 'original']]);
+    const initial = requireDefined(session.workbook());
+    const accepted = createWorkbook([['edited', 'remote']]);
+    const { result } = renderHook(() =>
+      useSpreadsheetEditor({
+        value: initial,
+        session,
+        acceptChange: () => accepted,
+      }),
+    );
+    await act(async () => {
+      result.current.proposeCells([['edited']], 0, 0);
+    });
+    expect(result.current.handle.getSnapshot()).toEqual(accepted);
+    await act(() => result.current.handle.flush());
+    expect(store.save).toHaveBeenCalledWith('book', { content: accepted, baseRevision: 'r1' });
+    session.close();
+  });
+
   it('SE-SESSION-1.4: exposes background session failures through the imperative state', async () => {
     vi.useFakeTimers();
     const { session, store } = await openSession([['before']], { autosaveDelay: 10 });
@@ -194,10 +214,10 @@ describe('SE-SESSION-1.4: saving through the session', () => {
 
   it('SE-SESSION-1.4: applies causal external receipts to a controlled editor without saving', async () => {
     const { session, store } = await openSession([['before']]);
-    const onChange = vi.fn();
+    const acceptChange = vi.fn<NonNullable<SpreadsheetEditorProps['acceptChange']>>((next) => next);
     const props: SpreadsheetEditorProps = {
       session,
-      onChange,
+      acceptChange,
       value: requireDefined(session.workbook()),
       calculation: { mode: 'external', snapshot: null },
     };
@@ -208,24 +228,24 @@ describe('SE-SESSION-1.4: saving through the session', () => {
     act(() => {
       result.current.proposeCells([['first']], 0, 0);
     });
-    rerender({ ...props, value: onChange.mock.calls[0][0] });
+    rerender({ ...props, value: acceptChange.mock.calls[0][0] });
     act(() => {
       result.current.proposeCells([['later']], 0, 0);
     });
-    rerender({ ...props, value: onChange.mock.calls[1][0] });
+    rerender({ ...props, value: acceptChange.mock.calls[1][0] });
     act(() => {
-      session.acknowledge(onChange.mock.calls[0][1].transactionId);
+      session.acknowledge(acceptChange.mock.calls[0][1].transactionId);
     });
     expect(result.current.handle.getState().dirty).toBe(true);
     act(() => {
-      session.acknowledge(onChange.mock.calls[1][1].transactionId);
+      session.acknowledge(acceptChange.mock.calls[1][1].transactionId);
     });
     expect(result.current.handle.getState().dirty).toBe(false);
     act(() => {
       result.current.setDraftValue('uncommitted');
     });
     act(() => {
-      session.acknowledge(onChange.mock.calls[1][1].transactionId);
+      session.acknowledge(acceptChange.mock.calls[1][1].transactionId);
     });
     expect(result.current.handle.getState()).toMatchObject({ dirty: true, draftDirty: true });
     expect(store.save).not.toHaveBeenCalled();
@@ -779,6 +799,11 @@ describe('SE-HOST-MODEL-2.1 and SE-PERF-2.1: change context', () => {
       {
         kind: 'cells',
         sheetId: 'sheet-1',
+        shape: {
+          count: undefined,
+          lengths: [],
+          maps: [{ field: 'cellProvenance', before: false, after: true }],
+        },
         changes: [
           expect.objectContaining({
             address: 'A1',

@@ -1,12 +1,12 @@
 import type { WorkbookChangeContext } from '../model/operations.js';
 import { requireDefined } from '../model/require-defined.js';
 import { copyWorkbook, type Workbook } from '../model/workbook.js';
-import type { HostError, SavedState, StoredWorkbook, WorkbookDraft } from './adapters.js';
+import type { HostError, SavedState, StoredWorkbook } from './adapters.js';
+import { createSessionDrafts } from './session-drafts.js';
 import {
   answer,
   closedError,
   DEFAULT_AUTOSAVE_DELAY,
-  DEFAULT_DRAFT_DELAY,
   HostRequestError,
   RETRY_WINDOW,
   type Timer,
@@ -18,6 +18,7 @@ import type {
   WorkbookSession,
   WorkbookSessionOptions,
   WorkbookSessionPhase,
+  WorkbookSessionSnapshot,
   WorkbookSessionStatus,
 } from './workbook-session.js';
 
@@ -29,19 +30,25 @@ export class StoredWorkbookSession implements WorkbookSession {
   readonly workbookId: string;
   readonly ready: Promise<boolean>;
   private readonly autosaveDelay: number;
-  private readonly draftDelay: number;
-  private readonly now: () => string;
   private readonly listeners = new Set<() => void>();
   private readonly loading = new AbortController();
   private readonly tracker = createTransactionReceiptTracker();
+  private readonly drafts: ReturnType<typeof createSessionDrafts>;
   private current: Workbook | null = null;
   private stored: SavedState | null = null;
+  private editBase: string | null = null;
   private state: WorkbookSessionStatus = {
     phase: 'loading',
     revision: null,
     dirty: false,
     automatic: false,
     error: null,
+  };
+  private snapshot: WorkbookSessionSnapshot = {
+    workbook: null,
+    status: this.state,
+    draft: null,
+    localRevision: 0,
   };
   private offer: (WorkbookDraftOffer & { content: Workbook }) | null = null;
   private closed = false;
@@ -50,20 +57,19 @@ export class StoredWorkbookSession implements WorkbookSession {
   private savedThrough = 0;
   private inFlight: Promise<void> | null = null;
   private autosaveTimer: Timer | null = null;
-  private draftTimer: Timer | null = null;
   private stopStore: (() => void) | undefined;
   private stopLifecycle: (() => void) | undefined;
 
   constructor(private readonly options: WorkbookSessionOptions) {
     this.workbookId = options.workbookId;
     this.autosaveDelay = options.autosaveDelay ?? DEFAULT_AUTOSAVE_DELAY;
-    this.draftDelay = options.draftDelay ?? DEFAULT_DRAFT_DELAY;
-    this.now = options.now ?? (() => new Date().toISOString());
+    this.drafts = createSessionDrafts(options);
     this.ready = this.load();
   }
 
   readonly workbook = () => this.current;
   readonly status = () => this.state;
+  readonly getSnapshot = () => this.snapshot;
   readonly draft = (): WorkbookDraftOffer | null =>
     this.offer
       ? {
@@ -80,8 +86,8 @@ export class StoredWorkbookSession implements WorkbookSession {
   readonly change = (next: Workbook, context: WorkbookChangeContext) => {
     if (this.closed) throw closedError();
     if (!this.stored) throw new Error('The workbook is not loaded.');
+    this.tracker.record(context.transactionId, this.localRevision + 1);
     this.localRevision++;
-    this.tracker.record(context.transactionId, this.localRevision);
     this.current = next;
     const { phase } = this.state;
     this.setStatus(
@@ -95,17 +101,15 @@ export class StoredWorkbookSession implements WorkbookSession {
     const revision = this.tracker.acknowledge(transactionId);
     if (revision === undefined || revision <= this.savedThrough) return;
     this.savedThrough = revision;
-    if (this.localRevision === this.savedThrough) this.clearDraft();
+    if (this.localRevision === this.savedThrough) this.drafts.clear();
     this.setStatus(this.state.phase === 'saving' ? {} : { phase: this.idlePhase() });
   };
 
   readonly save = () => this.run(false);
 
   readonly flush = async () => {
-    this.clearTimer(this.draftTimer);
     const requested = this.localRevision;
     while (this.savedThrough < requested) await this.run(false);
-    if (this.inFlight) await this.inFlight;
   };
 
   readonly keepMine = async () => {
@@ -115,25 +119,32 @@ export class StoredWorkbookSession implements WorkbookSession {
 
   readonly takeStored = async () => {
     if (this.closed) return;
-    const result = await this.options.workbooks.load(this.workbookId);
+    const requested = this.localRevision;
+    await this.inFlight?.catch(() => {});
+    const result = await answer(() => this.options.workbooks.load(this.workbookId));
     if (this.closed) return;
+    if (this.localRevision !== requested)
+      throw new Error('The workbook changed while opening the stored copy. Try again.');
     if (!result.ok) {
       this.setStatus({ phase: 'error', error: result.error });
       throw new HostRequestError(result.error);
     }
-    this.savedThrough = this.localRevision;
+    this.savedThrough = requested;
+    this.tracker.forgetThrough(requested);
     this.stopAutosave();
-    this.clearDraft();
+    this.drafts.clear();
     this.adopt(result.value);
   };
 
   readonly restoreDraft = () => {
     if (!this.offer || this.closed || !this.stored) return false;
     this.current = copyWorkbook(this.offer.content);
+    this.editBase = this.offer.baseRevision;
     this.offer = null;
     this.localRevision++;
     this.tracker.record(`draft:${this.localRevision}`, this.localRevision);
     this.setStatus({ phase: 'dirty' });
+    this.scheduleDraft();
     this.scheduleAutosave();
     return true;
   };
@@ -141,7 +152,7 @@ export class StoredWorkbookSession implements WorkbookSession {
   readonly discardDraft = () => {
     if (!this.offer) return;
     this.offer = null;
-    this.clearDraft();
+    this.drafts.clear();
     this.emit();
   };
 
@@ -149,8 +160,8 @@ export class StoredWorkbookSession implements WorkbookSession {
     if (this.closed) return;
     this.closed = true;
     this.loading.abort();
-    this.clearTimer(this.autosaveTimer);
-    this.clearTimer(this.draftTimer);
+    this.stopAutosave();
+    this.drafts.stop();
     this.stopStore?.();
     this.stopLifecycle?.();
     this.listeners.clear();
@@ -160,6 +171,12 @@ export class StoredWorkbookSession implements WorkbookSession {
     return this.localRevision > this.savedThrough;
   }
   private emit() {
+    this.snapshot = {
+      workbook: this.current,
+      status: this.state,
+      draft: this.draft(),
+      localRevision: this.localRevision,
+    };
     for (const listener of [...this.listeners]) listener();
   }
   private setStatus(next: Partial<WorkbookSessionStatus>) {
@@ -169,11 +186,8 @@ export class StoredWorkbookSession implements WorkbookSession {
   private idlePhase(): WorkbookSessionPhase {
     return this.unsaved ? 'dirty' : 'saved';
   }
-  private clearTimer(timer: Timer | null) {
-    if (timer) clearTimeout(timer);
-  }
   private stopAutosave() {
-    this.clearTimer(this.autosaveTimer);
+    if (this.autosaveTimer) clearTimeout(this.autosaveTimer);
     this.autosaveTimer = null;
   }
 
@@ -188,31 +202,19 @@ export class StoredWorkbookSession implements WorkbookSession {
     }, this.autosaveDelay);
   }
   private scheduleDraft() {
-    const { drafts } = this.options;
-    if (!drafts || this.closed) return;
-    this.clearTimer(this.draftTimer);
-    this.draftTimer = setTimeout(() => {
-      this.draftTimer = null;
-      if (this.closed || !this.current || !this.stored || !this.unsaved) return;
-      const draft: WorkbookDraft = {
-        content: copyWorkbook(this.current),
-        baseRevision: this.stored.revision,
-        savedAt: this.now(),
-      };
-      void drafts.put(this.workbookId, draft).catch(() => {});
-    }, this.draftDelay);
-  }
-  private clearDraft() {
-    this.clearTimer(this.draftTimer);
-    this.draftTimer = null;
-    if (this.options.drafts) void this.options.drafts.clear(this.workbookId).catch(() => {});
+    this.drafts.schedule(() =>
+      this.current && this.editBase !== null && this.unsaved
+        ? { content: this.current, baseRevision: this.editBase }
+        : null,
+    );
   }
 
   private saved(value: SavedState, covered: number) {
     this.stored = value;
+    this.editBase = value.revision;
     this.savedThrough = Math.max(this.savedThrough, covered);
     this.tracker.forgetThrough(covered);
-    if (this.localRevision === this.savedThrough) this.clearDraft();
+    if (this.localRevision === this.savedThrough) this.drafts.clear();
     this.setStatus({ phase: this.idlePhase(), revision: value.revision, error: null });
     if (this.unsaved) this.scheduleAutosave();
   }
@@ -262,7 +264,10 @@ export class StoredWorkbookSession implements WorkbookSession {
       return Promise.reject(new HostRequestError(this.state.error ?? { kind: 'conflict' }));
     if (!this.unsaved) return Promise.resolve();
     this.stopAutosave();
-    const operation = this.saveOnce(automatic, baseRevision ?? this.stored.revision).finally(() => {
+    const operation = this.saveOnce(
+      automatic,
+      baseRevision ?? requireDefined(this.editBase),
+    ).finally(() => {
       this.inFlight = null;
     });
     this.inFlight = operation;
@@ -270,12 +275,9 @@ export class StoredWorkbookSession implements WorkbookSession {
   }
 
   private async offerDraft(revision: string) {
-    const { drafts } = this.options;
-    if (!drafts) return;
-    const kept = await drafts.get(this.workbookId).catch(() => null);
-    if (this.closed || !kept?.ok || !kept.value) return;
-    const { content, savedAt, baseRevision } = kept.value;
-    this.offer = { content, savedAt, baseRevision, stale: baseRevision !== revision };
+    const kept = await this.drafts.read();
+    if (this.closed || this.unsaved || !kept) return;
+    this.offer = { ...kept, stale: kept.baseRevision !== revision };
     this.emit();
   }
   private listen() {
@@ -306,6 +308,7 @@ export class StoredWorkbookSession implements WorkbookSession {
   }
   private adopt(value: StoredWorkbook) {
     this.current = value.content;
+    this.editBase = value.revision;
     this.stored = { revision: value.revision, sequence: value.sequence };
     this.setStatus({ phase: this.idlePhase(), revision: value.revision, error: null });
   }

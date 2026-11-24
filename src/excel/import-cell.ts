@@ -1,12 +1,13 @@
 import type ExcelJS from 'exceljs';
+import { isFormula, isNumericInputText } from '../calculation/cell-evaluation.js';
 import { SUPPORTED_FUNCTIONS } from '../calculation/evaluator.js';
 import { formatCellValue } from '../calculation/format.js';
 import type { Arithmetic } from '../calculation/rational.js';
 import { serializeCellStyle } from '../model/editing.js';
 import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
+import { DEFAULT_WORKBOOK_LIMITS } from '../model/limits.js';
 import { requireDefined } from '../model/require-defined.js';
 import type { CellFormat } from '../model/review.js';
-import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { CellInput, Worksheet } from '../model/workbook.js';
 import type { XlsxReport } from './contracts.js';
 import { importCellStyle, importNumberFormat } from './styles.js';
@@ -21,13 +22,6 @@ export interface ImportContext {
   /** Whether the workbook counts dates from 1904, so date serials shift by 1462 days. */
   date1904: boolean;
   external: ReadonlyMap<string, unknown>;
-}
-
-/** The worksheet being filled, and the plain numbers its XML authored. */
-export interface SheetImport {
-  sheet: Worksheet;
-  name: string;
-  authoredNumbers: ReadonlyMap<string, string>;
 }
 
 /** Function names a formula calls that neither the catalog nor the host provides. */
@@ -62,8 +56,7 @@ function formulaValue(context: ImportContext, formula: string, location: string)
 }
 
 function authoredNumber(context: ImportContext, number: string, format: CellFormat | null) {
-  if (!context.date1904 || !format || !['date', 'time', 'datetime'].includes(format.kind))
-    return number;
+  if (!context.date1904 || !format || !['date', 'datetime'].includes(format.kind)) return number;
   const { arithmetic } = context;
   return formatCellValue(arithmetic.add(arithmetic.parse(number), arithmetic.parse('1462')), {
     significantDigits: 10000,
@@ -77,7 +70,7 @@ function objectValue(
   context: ImportContext,
   value: ObjectValue,
   { cell, location }: { cell: ExcelJS.Cell; location: string },
-): CellInput {
+): string {
   if ('richText' in value) {
     context.warn({ code: 'rich-text', message: 'Rich text becomes plain text.', location });
     return value.richText.map((part) => part.text).join('');
@@ -86,32 +79,49 @@ function objectValue(
     context.warn({ code: 'hyperlink', message: 'Hyperlinks become plain text.', location });
     return value.text;
   }
-  return 'error' in value ? value.error : cell.text;
+  if ('error' in value) {
+    context.warn({
+      code: 'static-error',
+      message:
+        'A stored Excel error becomes text because the workbook stores only authored inputs.',
+      location,
+    });
+    return value.error;
+  }
+  return cell.text;
 }
 
 interface CellPlace {
-  address: string;
   location: string;
   format: CellFormat | null;
 }
 
+/** Preserve Excel text when its spelling would be interpreted as a different authored type. */
+function literalText(value: string, format: CellFormat | null) {
+  return value.startsWith("'") ||
+    isFormula(value) ||
+    isNumericInputText(value) ||
+    format?.kind === 'unit'
+    ? "'" + value
+    : value;
+}
+
 function cellValue(
   context: ImportContext,
-  {
-    cell,
-    authoredNumbers,
-  }: { cell: ExcelJS.Cell; authoredNumbers: SheetImport['authoredNumbers'] },
-  { address, location, format }: CellPlace,
+  { cell, number }: { cell: ExcelJS.Cell; number: string | undefined },
+  { location, format }: CellPlace,
 ): CellInput {
   if (cell.formula) return formulaValue(context, cell.formula, location);
-  const number = authoredNumbers.get(address);
-  if (number !== undefined) return authoredNumber(context, number, format);
+  if (number !== undefined) {
+    if (!isNumericInputText(number)) throw new TypeError(`${location}: invalid numeric cell.`);
+    return authoredNumber(context, number, format);
+  }
   const { value } = cell;
-  // Numeric date serials normally use the raw XML path above.
-  if (value instanceof Date) return String((value.getTime() - Date.UTC(1899, 11, 30)) / 86400000);
+  if (typeof value === 'number' || value instanceof Date)
+    throw new TypeError(`${location}: numeric cell has no exact XML value.`);
   if (typeof value === 'object' && value !== null)
-    return objectValue(context, value, { cell, location });
-  return value as CellInput;
+    return literalText(objectValue(context, value, { cell, location }), format);
+  return typeof value === 'string' ? literalText(value, format) : (value ?? null);
 }
 
 /** Errors and booleans center, authored numbers align right and everything else left. */
@@ -143,38 +153,62 @@ function legendWarning(context: ImportContext, value: CellInput, location: strin
     });
 }
 
-/** Imports one cell's value, number format and style into the worksheet. */
-export function importCell(
+/** A value, unlike independent cell formatting, expands the authored rows and has a contributor. */
+function storeImportedValue(
   context: ImportContext,
-  target: SheetImport,
-  { cell, x, y }: { cell: ExcelJS.Cell; x: number; y: number },
+  sheet: Worksheet,
+  {
+    value,
+    x,
+    y,
+    address,
+    location,
+  }: { value: Exclude<CellInput, null>; x: number; y: number; address: string; location: string },
 ) {
-  if (cell.isMerged && cell.master.address !== cell.address) return;
-  const { sheet } = target;
-  const address = formatSpreadsheetAddress(x - 1, y - 1),
-    location = `${target.name}!${address}`;
-  const format = importNumberFormat(cell.numFmt);
-  if (!format)
-    context.warn({
-      code: `number-format:${cell.numFmt}`,
-      message: 'Unsupported number format falls back to General.',
-      location,
-    });
-  if (format && format.kind !== 'general') requireDefined(sheet.formats)[address] = format;
-  const place = { address, location, format };
-  const value = cellValue(context, { cell, authoredNumbers: target.authoredNumbers }, place);
-  const values = sheet.data[y - 1];
-  while (values.length < x) values.push(null);
-  values[x - 1] = value;
-  const style = importCellStyle(cell.style, context.theme);
-  if (!cell.alignment?.horizontal)
-    style['text-align'] = defaultAlignment(value, target.authoredNumbers.has(address));
-  requireDefined(sheet.style)[address] = serializeCellStyle(style);
+  if (typeof value === 'string' && value.length > DEFAULT_WORKBOOK_LIMITS.maxCellLength)
+    throw new RangeError(`${location}: cell exceeds the workbook text limit.`);
+  while (sheet.data.length <= y) sheet.data.push([]);
+  const values = sheet.data[y];
+  while (values.length <= x) values.push(null);
+  values[x] = value;
   requireDefined(sheet.cellProvenance)[address] = {
     actor: { id: 'system', name: 'System' },
     source: 'system',
   };
   context.report.cells++;
-  cellWarnings(context, cell, place);
   legendWarning(context, value, location);
+}
+
+/** Imports one cell's value, number format and style into the worksheet. */
+export function importCell(
+  context: ImportContext,
+  sheet: Worksheet,
+  {
+    cell,
+    address,
+    x,
+    y,
+    number,
+  }: { cell: ExcelJS.Cell; address: string; x: number; y: number; number: string | undefined },
+) {
+  if (cell.isMerged && cell.master.address !== cell.address) return;
+  const location = `${sheet.name}!${address}`;
+  const { format, lossy } = importNumberFormat(cell.numFmt);
+  if (!format || lossy)
+    context.warn({
+      code: `number-format:${cell.numFmt}`,
+      message: format
+        ? 'Excel number format modifiers are omitted from its editor format.'
+        : 'Unsupported number format falls back to General.',
+      location,
+    });
+  if (format && format.kind !== 'general') requireDefined(sheet.formats)[address] = format;
+  const place = { location, format };
+  const value = cellValue(context, { cell, number }, place);
+  const style = importCellStyle(cell.style, context.theme);
+  if (value !== null && !cell.alignment?.horizontal)
+    style['text-align'] = defaultAlignment(value, number !== undefined);
+  if (Object.keys(style).length) requireDefined(sheet.style)[address] = serializeCellStyle(style);
+  cellWarnings(context, cell, place);
+  if (value !== null) storeImportedValue(context, sheet, { value, x, y, address, location });
 }

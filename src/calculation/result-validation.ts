@@ -1,4 +1,5 @@
 import type { Workbook } from '../model/workbook.js';
+import { parseCalculationCellKey } from './calculation-cell-key.js';
 import type {
   CalculationContext,
   CalculationDependencies,
@@ -37,11 +38,11 @@ function assertWorksheets(result: CalculationResult, workbook: Workbook): void {
       output.values.length !== sheet.data.length
     )
       throw new TypeError('Result does not match the workbook.');
-    output.values.forEach((row, y) => {
+    for (const [y, row] of output.values.entries()) {
       if (!Array.isArray(row) || row.length !== sheet.data[y].length)
         throw new TypeError('Result does not match the row.');
-      row.forEach(validateCell);
-    });
+      for (const cell of row) validateCell(cell);
+    }
   });
 }
 
@@ -73,24 +74,10 @@ function assertContext(context: CalculationContext): void {
 /** Checks a `[sheetId, x, y]` dependency key against the workbook's sheets and the grid. */
 function cellKeyCheck(sheets: ReadonlySet<string>) {
   return (key: unknown) => {
-    let tuple: unknown;
-    try {
-      tuple = typeof key === 'string' ? JSON.parse(key) : undefined;
-    } catch {
-      throw new TypeError('Invalid dependency cell key.');
-    }
-    const valid =
-      Array.isArray(tuple) &&
-      tuple.length === 3 &&
-      typeof tuple[0] === 'string' &&
-      sheets.has(tuple[0]) &&
-      inRange(tuple[1], 16383) &&
-      inRange(tuple[2], 1048575);
-    if (!valid) throw new TypeError('Invalid dependency cell key.');
+    const tuple = parseCalculationCellKey(key);
+    if (!tuple || !sheets.has(tuple[0])) throw new TypeError('Invalid dependency cell key.');
   };
 }
-const inRange = (value: unknown, max: number) =>
-  Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= max;
 
 function assertExtents(
   extents: CalculationDependencies['extents'],
@@ -123,7 +110,7 @@ function assertDependencies(dependencies: CalculationDependencies, workbook: Wor
     cellKey(key);
     if (!Array.isArray(reads) || reads.length > 10000)
       throw new TypeError('Invalid dependency reads.');
-    reads.forEach(cellKey);
+    for (const read of reads) cellKey(read);
   }
   if (dependencies.extents !== undefined) assertExtents(dependencies.extents, { sheets, cellKey });
 }

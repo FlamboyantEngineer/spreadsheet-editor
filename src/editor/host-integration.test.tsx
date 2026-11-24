@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createRef, useState } from 'react';
+import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
 import { workbookCalculationKey } from '../calculation/publication.js';
@@ -16,11 +17,17 @@ import { copyWorkbook, createWorkbook } from '../model/workbook.js';
 import type { SpreadsheetEditorHandle, SpreadsheetEditorProps } from './contracts.js';
 import { editorMenus } from './editor-menus.js';
 import { formulaFunctionCatalog } from './public-host.js';
+import { SpreadsheetEditor } from './spreadsheet-editor.js';
 import { useSpreadsheetEditor } from './use-editor.js';
 
 const reviewerIdentity = createMemoryHost({
   reader: { id: 'reviewer', name: 'Reviewer' },
 }).identity;
+
+it('SE-SESSION-1.1: server renders local editors and the opening state', () => {
+  expect(renderToString(<SpreadsheetEditor chrome="minimal" />)).toContain('Spreadsheet editor');
+  expect(renderToString(<SpreadsheetEditor session={null} />)).toContain('Opening workbook');
+});
 
 /** A loaded session over a memory store whose `save` is a spy. */
 async function openSession(data: string[][]) {
@@ -407,7 +414,12 @@ describe('SE-HOST-1.1 and SE-HOST-2.1: accepted transactions and session lifecyc
     );
     const remote = copyWorkbook(result.current.workbook);
     remote.worksheets[0].data[0][0] = 'peer';
-    rerender({ ...result.current.props, value: remote });
+    rerender({
+      value: remote,
+      editorRef,
+      onChange,
+      undo: { canUndo: true, canRedo: false, undo, redo: vi.fn() },
+    });
     act(() => {
       result.current.undo();
     });
