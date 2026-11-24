@@ -6,6 +6,7 @@ import {
   type WorksheetExtent,
   worksheetExtent,
 } from './extent.js';
+import { moveAddress, rewriteStructureReferences } from './formula-references.js';
 import type {
   LinePreparation,
   WorkbookCellChange,
@@ -14,17 +15,23 @@ import type {
   WorksheetGeometry,
 } from './operations.js';
 import { requireDefined } from './require-defined.js';
+import { createReviewReferenceMove, type ReviewReferenceMove } from './review-reference-move.js';
 import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 import { changeWorkbookStructure, type StructureChange } from './structure.js';
 import { copyWorkbook, type Workbook, type Worksheet } from './workbook.js';
 
 type LinesOperation = Extract<WorkbookOperation, { kind: 'lines' }>;
 
-export function annotationOperation(before: Workbook, after: Workbook): WorkbookOperation {
+export function annotationOperation(
+  before: Workbook,
+  after: Workbook,
+  inverseReferenceMove?: ReviewReferenceMove,
+): WorkbookOperation {
   return {
     kind: 'annotations',
     before: structuredClone({ comments: before.comments, suggestions: before.suggestions }),
     after: structuredClone({ comments: after.comments, suggestions: after.suggestions }),
+    ...(inverseReferenceMove && { inverseReferenceMove }),
   };
 }
 const geometryOf = (sheet: Worksheet): WorksheetGeometry =>
@@ -130,42 +137,37 @@ function deletedCells(
   });
 }
 
-/** Where a surviving cell of the changed sheet moves; null for a deleted one. */
-function movedAddress(
-  address: string,
-  { change, count }: { change: StructureChange; count: number },
-): string | null {
-  const position = requireDefined(parseSpreadsheetAddress(address));
-  let coordinate = change.axis === 'row' ? position.y : position.x;
-  if (change.kind === 'delete' && coordinate >= change.index && coordinate < change.index + count)
-    return null;
-  if (coordinate >= change.index) coordinate += change.kind === 'insert' ? count : -count;
-  return formatSpreadsheetAddress(
-    change.axis === 'column' ? coordinate : position.x,
-    change.axis === 'row' ? coordinate : position.y,
-  );
-}
-
 /** Cell changes besides the move itself, such as rewritten formulas, by structural mapping. */
 function survivingChanges(
   previousSheet: Worksheet,
   currentSheet: Worksheet,
-  move: { sheetId: string; change: StructureChange; count: number },
+  {
+    target,
+    change,
+    inverse,
+  }: { target: Worksheet; change: StructureChange; inverse: StructureChange },
 ): WorkbookCellChange[] {
   const changes: WorkbookCellChange[] = [];
   previousSheet.data.forEach((row, y) =>
     row.forEach((value, x) => {
       if (typeof value !== 'string' || !value.trimStart().startsWith('=')) return;
       const address = formatSpreadsheetAddress(x, y);
-      const destination = previousSheet.id === move.sheetId ? movedAddress(address, move) : address;
+      const destination = previousSheet.id === target.id ? moveAddress(address, change) : address;
       if (destination === null) return;
       const { x: nextX, y: nextY } = requireDefined(parseSpreadsheetAddress(destination));
-      if (currentSheet.data[nextY]?.[nextX] === value) return;
+      const rewritten = currentSheet.data[nextY]?.[nextX];
+      if (typeof rewritten !== 'string' || rewritten === value) return;
+      const inverseBaselineValue = rewriteStructureReferences(rewritten, inverse, {
+        currentSheet: currentSheet.name,
+        targetSheet: target.name,
+      });
       changes.push({
         address: destination,
         beforeAddress: address,
         rowId: previousSheet.rowIds?.[y],
         columnId: previousSheet.columnIds?.[x],
+        ...(inverseBaselineValue !== rewritten &&
+          inverseBaselineValue !== value && { inverseBaselineValue }),
         before: authoredCellState(previousSheet, address),
         after: authoredCellState(currentSheet, destination),
       });
@@ -245,14 +247,25 @@ export function changeWorkbookStructureWithOperations(
   );
   // Compare surviving cells by their structural mapping, so moving a cell is not emitted as a second write.
   const operations: WorkbookOperation[] = [operation];
+  const inverse = {
+    ...change,
+    count,
+    kind: change.kind === 'insert' ? 'delete' : 'insert',
+  } satisfies StructureChange;
   for (const previousSheet of materialized.worksheets) {
     const currentSheet = requireDefined(
       next.worksheets.find((candidate) => candidate.id === previousSheet.id),
     );
-    const changes = survivingChanges(previousSheet, currentSheet, { sheetId, change, count });
+    const changes = survivingChanges(previousSheet, currentSheet, {
+      target: nextSheet,
+      change: actual,
+      inverse,
+    });
     if (changes.length) operations.push({ kind: 'cells', sheetId: previousSheet.id, changes });
   }
   if (!equal(workbook.comments, next.comments) || !equal(workbook.suggestions, next.suggestions))
-    operations.push(annotationOperation(workbook, next));
+    operations.push(
+      annotationOperation(workbook, next, createReviewReferenceMove(next, nextSheet, inverse)),
+    );
   return { workbook: next, operations };
 }

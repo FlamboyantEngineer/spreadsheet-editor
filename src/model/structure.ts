@@ -7,6 +7,7 @@ import {
   rewriteStructureReferences,
 } from './formula-references.js';
 import { requireDefined } from './require-defined.js';
+import { createReviewReferenceMove, moveReviewReferences } from './review-reference-move.js';
 import {
   formatSpreadsheetAddress,
   parseSpreadsheetAddress,
@@ -160,27 +161,7 @@ function followChange(next: Workbook, sheet: Worksheet, change: StructureChange)
       }),
     ),
   );
-  next.comments?.forEach((thread) => {
-    if (thread.sheetId !== sheet.id || thread.orphaned) return;
-    const moved = moveRange(thread.range ?? '', change);
-    if (moved) thread.range = requireDefined(parseSpreadsheetRange(moved)).address;
-    else thread.orphaned = true;
-  });
-  next.suggestions?.forEach((item) =>
-    item.changes.forEach((cell) => {
-      const current = next.worksheets.find((candidate) => candidate.id === cell.sheetId);
-      if (cell.sheetId === sheet.id) {
-        const moved = moveAddress(cell.address, change);
-        if (moved) cell.address = moved;
-        else item.outdated = true;
-      }
-      if (!current) return;
-      for (const field of ['before', 'after'] as const) {
-        const value = cell[field];
-        if (typeof value === 'string') cell[field] = rewrite(value, current.name);
-      }
-    }),
-  );
+  moveReviewReferences(next, createReviewReferenceMove(next, sheet, change));
 }
 
 export function changeWorkbookStructure(

@@ -3,7 +3,7 @@
 import { gridWorksheetExtent } from '../model/extent.js';
 import { clearCalculatedPresentation } from './cell-renderer.js';
 import type { GridSurfaceContext } from './grid-context.js';
-import { gridViewport, placeGridCorner } from './grid-geometry.js';
+import { gridViewport, placeGridCorner, syncFrozenColumnOffsets } from './grid-geometry.js';
 import { paint, paintCurrentGrid } from './grid-sync.js';
 import {
   focusJSpreadsheetWorksheet,
@@ -29,6 +29,7 @@ function startRowWindow(context: Context, sheet: JSpreadsheetWorksheetInstance |
   (sheet.options as { lazyLoading?: boolean }).lazyLoading = false;
   context.stopRowWindow.current = windowGridRows(sheet, (rows) => {
     presentAttachedRows(sheet, rows);
+    if (rows.length) syncFrozenColumnOffsets(sheet, rows);
     syncSharedGridBorders(sheet);
     const corner = Number(sheet.highlighted?.at(-1)?.element?.dataset.y);
     if (rows.includes(corner)) placeGridCorner(sheet);

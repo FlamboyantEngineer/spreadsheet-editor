@@ -5,8 +5,8 @@ test.use({ viewport: { width: 1440, height: 1000 } });
 
 const ROWS = 2_000;
 
-async function openLarge(page: Page) {
-  await page.goto(`/large.html?rows=${ROWS}`);
+async function openLarge(page: Page, frozen = false) {
+  await page.goto(`/large.html?rows=${ROWS}${frozen ? '&frozen' : ''}`);
   const editor = page.locator('.se-editor').first();
   await expect(editor.locator('td[data-x="24"][data-y="3"]')).toHaveText('24', {
     timeout: 30_000,
@@ -89,6 +89,34 @@ test('SE-PERF-1.1: rows attached after a zoom change carry the zoomed text metri
   const far = editor.locator(`td[data-x="3"][data-y="${ROWS - 1}"]`);
   await expect(far).toBeInViewport();
   expect(await fontSize(far)).toBe(zoomed);
+});
+
+test('SE-PERF-1.1: frozen columns stay aligned through resize and viewport changes', async ({
+  page,
+}) => {
+  const editor = await openLarge(page, true);
+  const viewport = editor.locator('.jss_content');
+  const firstHeader = editor.locator('thead td[data-x="0"]');
+  const secondHeader = editor.locator('thead td[data-x="1"]');
+  const last = editor.locator(`td[data-x="1"][data-y="${ROWS - 1}"]`);
+  await viewport.evaluate((content) => {
+    content.scrollLeft = 420;
+    content.scrollTop = content.scrollHeight;
+  });
+  const left = async (cell: Locator) => requireDefined(await cell.boundingBox()).x;
+  await expect(last).toBeInViewport();
+  const before = await left(secondHeader);
+  await expect.poll(() => left(last)).toBeCloseTo(before, 0);
+
+  const { x, y, width } = requireDefined(await firstHeader.boundingBox());
+  await page.mouse.move(x + width - 1, y + 10);
+  await page.mouse.down();
+  await page.mouse.move(x + width + 29, y + 10);
+  await expect.poll(() => left(last)).toBeCloseTo(before + 30, 0);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect.poll(() => left(last)).toBeCloseTo(before, 0);
+  expect(await attachedRows(editor)).toBeLessThan(100);
 });
 
 test('SE-PERF-1.1: a far cell can be edited and recalculates its row', async ({ page }) => {

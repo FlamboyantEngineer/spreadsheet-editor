@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   createWorkbookSession,
   type WorkbookSession,
@@ -9,31 +9,34 @@ import {
 
 /**
  * Opens a workbook session while the component is mounted, and a new one when the store, the
- * workbook id or the drafts or lifecycle adapters change; the previous one closes, keeping its
- * draft. It is null until the first effect runs, which the editor's `session` prop shows as
+ * workbook id or the drafts or lifecycle adapters change. The previous session closes. The hook
+ * returns null until the effect opens a session for the current options, which the editor shows as
  * opening (SE-SESSION-1.4).
  */
 export function useWorkbookSession(options: WorkbookSessionOptions): WorkbookSession | null {
   const { workbooks, workbookId, drafts, lifecycle, autosaveDelay, draftDelay, now } = options;
-  const [session, setSession] = useState<WorkbookSession | null>(null);
-  useEffect(() => {
-    const opened = createWorkbookSession({
+  const configuration = useMemo(
+    () => ({
       workbooks,
       workbookId,
       drafts,
       lifecycle,
       autosaveDelay,
       draftDelay,
-      now,
-    });
+    }),
+    [workbooks, workbookId, drafts, lifecycle, autosaveDelay, draftDelay],
+  );
+  const [opened, setOpened] = useState<{
+    configuration: typeof configuration;
+    session: WorkbookSession;
+  } | null>(null);
+  useEffect(() => {
+    const session = createWorkbookSession({ ...configuration, now });
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the session is an external resource opened by this effect
-    setSession(opened);
-    return () => {
-      opened.close();
-      setSession((current) => (current === opened ? null : current));
-    };
-    // `now` is read once per session, like the delays.
+    setOpened({ configuration, session });
+    return () => session.close();
+    // `now` is read once per session.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new clock does not reopen the session
-  }, [workbooks, workbookId, drafts, lifecycle, autosaveDelay, draftDelay]);
-  return session;
+  }, [configuration]);
+  return opened?.configuration === configuration ? opened.session : null;
 }

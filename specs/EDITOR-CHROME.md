@@ -34,6 +34,8 @@ Find/replace shall search raw values/formulas and current formatted result text 
 
 The first Previous command selects the last match. Changing the query resets its active result, and navigation advances only after a protected draft successfully commits. Replace is disabled for result-only targets; Replace all is disabled when no authored match can change. Copying while results are pending or unavailable uses authored inputs for those cells rather than blank or stale displayed values.
 
+Find computes matches only while open and enabled. Reopening restores the query and searches the current workbook and results. Replacement applies to the authored text after accounting for a protected draft. Identical replacement leaves the cell type and canonical input intact. A replacement with no changed targets leaves the draft and history as they were.
+
 Grid keyboard commands follow focus, including when focus moves to a host control or returns from a menu. Tab moves between the grid and adjacent controls outside cell editing. The active selection has an accessible announcement. The Find shortcut focuses the query, and closing Find returns focus to the grid.
 
 Grid clipboard shortcuts use the browser's copy, cut and paste events unless a host supplies a clipboard adapter. Plain text is interoperable. A structured paste that retains formulas and formats, including a cut that clears its source, requires the current clipboard data to identify the corresponding editor copy. Matching displayed text alone is insufficient. Malformed clipboard text is reported through the editor notice. Pending paste retains its original destination and rechecks access and edit locks before writing it.

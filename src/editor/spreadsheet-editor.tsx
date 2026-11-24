@@ -38,6 +38,9 @@ export type {
 export * from './public-host.js';
 export { useWorkbookSession } from './use-workbook-session.js';
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
+  const [instance, setInstance] = useState({ session: props.session, generation: 0 });
+  if (instance.session !== props.session)
+    setInstance({ session: props.session, generation: instance.generation + 1 });
   const session = useSessionState(props.session ?? undefined);
   if (props.session !== undefined && !session.workbook) {
     const failed = session.status?.phase === 'unavailable';
@@ -61,7 +64,7 @@ export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   }
   return (
     <SpreadsheetEditorInstance
-      key={`${props.workbookId ?? ''}\n${props.sessionKey ?? 'spreadsheet'}`}
+      key={JSON.stringify([props.workbookId, props.sessionKey, instance.generation])}
       props={props}
       session={session}
     />

@@ -1,3 +1,4 @@
+import { hasAuthoredInput } from '../model/authored-cell.js';
 import { calculationFormats, worksheetCalculationExtent } from '../model/extent.js';
 import { assertWorkbook, type Workbook } from '../model/workbook.js';
 import { calculationCellKey, parseCalculationCellKey } from './calculation-cell-key.js';
@@ -129,7 +130,7 @@ function assertPublishedCells(snapshot: ExternalCalculationSnapshot, workbook: W
         const state = snapshot.cellStates?.[calculationCellKey(sheet.id, x, y)] ?? snapshot.status;
         const result = values?.[y]?.[x];
         const missing = result === undefined || (result === null && !isFormula(input));
-        if (state === 'ready' && input !== null && input !== '' && missing)
+        if (state === 'ready' && missing && hasAuthoredInput(sheet, x, y))
           throw new TypeError('Ready authored cells require calculated values.');
         if (state !== 'ready' && result != null)
           throw new TypeError('Pending or unavailable cells cannot publish cached values.');

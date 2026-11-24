@@ -17,7 +17,6 @@ import type {
   WorkbookDraftOffer,
   WorkbookSession,
   WorkbookSessionOptions,
-  WorkbookSessionPhase,
   WorkbookSessionSnapshot,
   WorkbookSessionStatus,
 } from './workbook-session.js';
@@ -50,12 +49,13 @@ export class StoredWorkbookSession implements WorkbookSession {
     draft: null,
     localRevision: 0,
   };
-  private offer: (WorkbookDraftOffer & { content: Workbook }) | null = null;
+  private offer: { content: Workbook; details: WorkbookDraftOffer } | null = null;
   private closed = false;
   /** The local revision of the latest accepted change, and the latest one a save answer covers. */
   private localRevision = 0;
   private savedThrough = 0;
   private inFlight: Promise<void> | null = null;
+  private takingStored: Promise<void> | null = null;
   private autosaveTimer: Timer | null = null;
   private stopStore: (() => void) | undefined;
   private stopLifecycle: (() => void) | undefined;
@@ -70,14 +70,7 @@ export class StoredWorkbookSession implements WorkbookSession {
   readonly workbook = () => this.current;
   readonly status = () => this.state;
   readonly getSnapshot = () => this.snapshot;
-  readonly draft = (): WorkbookDraftOffer | null =>
-    this.offer
-      ? {
-          savedAt: this.offer.savedAt,
-          baseRevision: this.offer.baseRevision,
-          stale: this.offer.stale,
-        }
-      : null;
+  readonly draft = () => this.offer?.details ?? null;
   readonly subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -117,9 +110,18 @@ export class StoredWorkbookSession implements WorkbookSession {
     await this.run(false, this.stored.revision);
   };
 
-  readonly takeStored = async () => {
-    if (this.closed) return;
+  readonly takeStored = () => {
     const requested = this.localRevision;
+    return (this.takingStored ??= Promise.resolve()
+      .then(() => this.discardChanges(requested))
+      .finally(() => {
+        this.takingStored = null;
+        if (this.unsaved) this.scheduleAutosave();
+      }));
+  };
+
+  private async discardChanges(requested: number) {
+    if (this.closed) return;
     await this.inFlight?.catch(() => {});
     const result = await answer(() => this.options.workbooks.load(this.workbookId));
     if (this.closed) return;
@@ -134,12 +136,12 @@ export class StoredWorkbookSession implements WorkbookSession {
     this.stopAutosave();
     this.drafts.clear();
     this.adopt(result.value);
-  };
+  }
 
   readonly restoreDraft = () => {
     if (!this.offer || this.closed || !this.stored) return false;
     this.current = copyWorkbook(this.offer.content);
-    this.editBase = this.offer.baseRevision;
+    this.editBase = this.offer.details.baseRevision;
     this.offer = null;
     this.localRevision++;
     this.tracker.record(`draft:${this.localRevision}`, this.localRevision);
@@ -183,7 +185,7 @@ export class StoredWorkbookSession implements WorkbookSession {
     this.state = { ...this.state, dirty: this.unsaved, ...next };
     this.emit();
   }
-  private idlePhase(): WorkbookSessionPhase {
+  private idlePhase() {
     return this.unsaved ? 'dirty' : 'saved';
   }
   private stopAutosave() {
@@ -251,6 +253,7 @@ export class StoredWorkbookSession implements WorkbookSession {
   /** Saves until an answer covers every change accepted before it was asked for. */
   private run(automatic: boolean, baseRevision?: string): Promise<void> {
     if (this.closed) return Promise.reject(closedError());
+    if (this.takingStored) return this.takingStored.then(() => this.run(automatic, baseRevision));
     if (!this.current || !this.stored)
       return Promise.reject(new Error('The workbook is not loaded.'));
     if (this.inFlight) {
@@ -275,9 +278,9 @@ export class StoredWorkbookSession implements WorkbookSession {
   }
 
   private async offerDraft(revision: string) {
-    const kept = await this.drafts.read();
+    const kept = await this.drafts.read(revision);
     if (this.closed || this.unsaved || !kept) return;
-    this.offer = { ...kept, stale: kept.baseRevision !== revision };
+    this.offer = kept;
     this.emit();
   }
   private listen() {

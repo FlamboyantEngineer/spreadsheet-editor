@@ -1,6 +1,7 @@
 import { calculationCellKey } from '../calculation/publication.js';
 import { createDocumentInsertion } from '../document/insertion.js';
 import { createDocumentTable } from '../document/table-capture.js';
+import { hasAuthoredInput } from '../model/authored-cell.js';
 import { selectionAddress } from '../model/editing.js';
 import { assertWorkbook, copyWorkbook, type Workbook } from '../model/workbook.js';
 import type { EditorCore } from './editor-core.js';
@@ -18,11 +19,10 @@ function insertTable({ props, workbook, sheet, selection, display }: EditorCore)
     range: selectionAddress(selection),
     display: props.display,
     assertReady(x, y) {
-      const input = sheet.data[y]?.[x],
-        key = calculationCellKey(sheet.id, x, y);
+      const key = calculationCellKey(sheet.id, x, y);
       if (
         !calculation.readyCells.has(key) &&
-        ((input != null && input !== '') || (cellStates?.[key] ?? calculation.status) !== 'ready')
+        (hasAuthoredInput(sheet, x, y) || (cellStates?.[key] ?? calculation.status) !== 'ready')
       )
         throw new Error('Every inserted cell must have a current ready result.');
     },
@@ -72,8 +72,8 @@ function allReady(workbook: Workbook, readyCells: ReadonlySet<string>) {
   return workbook.worksheets.every((target) =>
     target.data.every((row, y) =>
       row.every(
-        (input, x) =>
-          input == null || input === '' || readyCells.has(calculationCellKey(target.id, x, y)),
+        (_input, x) =>
+          !hasAuthoredInput(target, x, y) || readyCells.has(calculationCellKey(target.id, x, y)),
       ),
     ),
   );

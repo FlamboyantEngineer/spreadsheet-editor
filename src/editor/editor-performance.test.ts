@@ -73,7 +73,10 @@ describe('SE-8: replace all is one write', () => {
     const { result } = renderHook(() =>
       useSpreadsheetEditor({ defaultValue: workbook, onChange, calculation: { mode: 'client' } }),
     );
-    act(() => result.current.setQuery('needle'));
+    act(() => {
+      result.current.setShowFind(true);
+      result.current.setQuery('needle');
+    });
     expect(result.current.matches).toHaveLength(1_000);
     // Before SE-8 each match copied and validated the whole workbook: seconds, not milliseconds.
     const time = elapsed(() => act(() => void result.current.replace(true, 'pin')));

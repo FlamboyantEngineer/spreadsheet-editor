@@ -172,12 +172,16 @@ function useEditorReview(
 /** The find pane's state and its navigation and replacement commands. */
 function useEditorFind(core: EditorCore) {
   const { display } = core;
-  const find = useFind(core.workbook, {
-    result: display.shown.result,
-    readyCells: display.readyCells,
-    presentation: display.presentation,
-    display: core.props.display,
-  });
+  const find = useFind(
+    core.workbook,
+    {
+      result: display.shown.result,
+      readyCells: display.readyCells,
+      presentation: display.presentation,
+      display: core.props.display,
+    },
+    core.props.features?.search !== false,
+  );
   return { ...find, ...useEditorFindActions(core, find) };
 }
 

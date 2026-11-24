@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { createRef } from 'react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
+import { createRef, useLayoutEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   HostResult,
@@ -14,7 +14,12 @@ import { createWorkbookSession } from '../host/workbook-session.js';
 import { requireDefined } from '../model/require-defined.js';
 import { createWorkbook } from '../model/workbook.js';
 import type { SpreadsheetEditorHandle } from './contracts.js';
+import { SpreadsheetEditor } from './spreadsheet-editor.js';
 import { useSpreadsheetEditor } from './use-editor.js';
+import { useWorkbookSession } from './use-workbook-session.js';
+
+// The lifecycle tests exercise the public handle. Grid behavior is covered in Chromium.
+vi.mock('../engine/workbook-grid.js', () => ({ WorkbookGrid: () => null }));
 
 const version: WorkbookVersion = {
   revision: 'r0',
@@ -54,6 +59,52 @@ async function heldSession(data: string[][]) {
   await session.ready;
   return { session, save, answers };
 }
+
+describe('SE-HOST-2.1 and SE-SESSION-1.4: session replacement', () => {
+  it('invalidates the previous handle and drops its draft when a loaded session replaces it', async () => {
+    const first = await heldSession([['first']]);
+    const second = await heldSession([['second']]);
+    const editorRef = createRef<SpreadsheetEditorHandle>();
+    const { rerender, unmount } = render(
+      <SpreadsheetEditor chrome="minimal" session={first.session} editorRef={editorRef} />,
+    );
+    const previous = requireDefined(editorRef.current);
+    await act(async () => {
+      previous.restoreDraft({ sheetId: 'sheet-1', x: 0, y: 0, text: 'first draft' });
+    });
+    expect(previous.getState().draftDirty).toBe(true);
+    rerender(<SpreadsheetEditor chrome="minimal" session={second.session} editorRef={editorRef} />);
+    const current = requireDefined(editorRef.current);
+    expect(() => previous.getSnapshot()).toThrow('The editor session has ended.');
+    expect(current.getSnapshot().worksheets[0].data).toEqual([['second']]);
+    expect(current.getState().draftDirty).toBe(false);
+    unmount();
+    first.session.close();
+    second.session.close();
+  });
+
+  it('returns a session only for the current hook configuration', async () => {
+    const { workbooks } = createMemoryHost({
+      workbooks: { first: createWorkbook([['first']]), second: createWorkbook([['second']]) },
+    });
+    const observed: string[] = [];
+    const { result, rerender } = renderHook(
+      (workbookId: string) => {
+        const session = useWorkbookSession({ workbooks, workbookId, autosaveDelay: Infinity });
+        useLayoutEffect(() => {
+          if (session) observed.push(`${workbookId}:${session.workbookId}`);
+        }, [session, workbookId]);
+        return session;
+      },
+      { initialProps: 'first' },
+    );
+    expect(result.current?.workbookId).toBe('first');
+    rerender('second');
+    expect(result.current?.workbookId).toBe('second');
+    expect(observed).toEqual(['first:first', 'second:second']);
+    await result.current?.ready;
+  });
+});
 
 describe('SE-HOST-2.1 and SE-SESSION-1.4: flushes cover each requested edit', () => {
   it('commits a newer draft and waits for a newer save when another flush is pending', async () => {

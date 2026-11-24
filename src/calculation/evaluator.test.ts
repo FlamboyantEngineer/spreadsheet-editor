@@ -7,7 +7,7 @@ import { isNumeric, type NumericValue } from './values.js';
 
 const calculate = (formula: string) =>
   calculateWorkbook(createWorkbook([[formula]])).worksheets[0].values[0][0];
-const exact = (numerator: string, denominator = '1') => ({
+const exact = (numerator: string, denominator = '1'): NumericValue => ({
   kind: 'number',
   numerator,
   denominator,
@@ -136,6 +136,26 @@ describe('SE-CALC-2.1: workbook formulas', () => {
     });
     expect(calculate('=SUM(A1:XFD1048576)')).toEqual({ kind: 'error', code: '#LIMIT!' });
     expect(calculate('=1e99999999')).toEqual({ kind: 'error', code: '#LIMIT!' });
+  });
+  it.each([
+    ['=IFERROR(B1,FALLBACK())', '=A1'],
+    ['=B1', '=IFERROR(A1,FALLBACK())'],
+  ])('publishes a typed error for every evaluated cycle member (%s)', (first, second) => {
+    let fallbackCalls = 0;
+    const workbook = createWorkbook([[first, second, '=IFERROR(A1,7)', '=IF(FALSE,D1,8)']]);
+    const result = calculateWorkbook(
+      workbook,
+      {},
+      {
+        callFunction() {
+          fallbackCalls++;
+          return exact('0');
+        },
+      },
+    );
+    const cycle = { kind: 'error', code: '#CYCLE!' };
+    expect(result.worksheets[0].values[0]).toEqual([cycle, cycle, exact('7'), exact('8')]);
+    expect(fallbackCalls).toBe(0);
   });
   it('supports aggregate, statistical, text, and host-defined functions', () => {
     expect(calculate('=AVERAGE(1,2,3)')).toEqual(exact('2'));

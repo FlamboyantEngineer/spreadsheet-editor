@@ -29,7 +29,12 @@ function largeSheet(rows: number) {
 
 export function LargeLab() {
   const [rows] = useState(requestedRows);
-  const [workbook, setWorkbook] = useState(() => largeSheet(rows));
+  const [workbook, setWorkbook] = useState(() => {
+    const workbook = largeSheet(rows);
+    if (new URLSearchParams(location.search).has('frozen'))
+      workbook.worksheets[0].freezeColumns = 2;
+    return workbook;
+  });
   return (
     <section className="lab-demo" aria-label="Large worksheet demo">
       <p>

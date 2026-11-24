@@ -3,9 +3,8 @@ import { formatWorksheetCell } from '../calculation/cell-format.js';
 import type { CalculationResult } from '../calculation/evaluator.js';
 import { formatCellValue } from '../calculation/format.js';
 import { assertCalculationResult } from '../calculation/http.js';
-import { type CellValue, isError, isNumeric } from '../calculation/values.js';
+import { type CellValue, isNumeric } from '../calculation/values.js';
 import { parseCellStyle } from '../model/editing.js';
-import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
 import { requireDefined } from '../model/require-defined.js';
 import type { CellFormat } from '../model/review.js';
 import {
@@ -14,18 +13,18 @@ import {
 } from '../model/spreadsheet-addressing.js';
 import { assertWorkbook, type Workbook } from '../model/workbook.js';
 import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js';
-import { capturedText } from './captured-text.js';
+import { excelTextProblem } from './captured-text.js';
 import type {
   ExcelFormulaCapabilities,
   ExcelHostFunction,
   XlsxExport,
   XlsxReport,
 } from './contracts.js';
-import { excelValue, unsupportedCall } from './export-values.js';
-import { inlineHostOperands } from './inline-operands.js';
+import { excelValue, numericTextWarning } from './export-values.js';
 import { exportCellStyle, exportNumberFormat, numberFormatLoss } from './styles.js';
 import { createWarnings, type ReportedWarning } from './warnings.js';
 import { writeManualWorkbook } from './write-archive.js';
+import { exportFormula } from './write-formula.js';
 
 type Sheet = Workbook['worksheets'][number];
 type Warn = (warning: ReportedWarning) => void;
@@ -48,9 +47,6 @@ interface ExportCell {
   format: CellFormat | undefined;
   location: string;
 }
-
-const unrepresentableError = (value: CellValue) =>
-  isError(value) && ['#CYCLE!', '#LIMIT!', '#ERROR!'].includes(value.code);
 
 /** Metadata XLSX cannot keep for a cell, reported before the cell is written. */
 function metadataLosses(context: ExportContext, target: ExportCell) {
@@ -83,73 +79,6 @@ function metadataLosses(context: ExportContext, target: ExportCell) {
     });
 }
 
-/** A frozen formula result: Excel keeps the stored value, or the formula with its cache. */
-function writeParsedFormula(
-  context: ExportContext,
-  target: ExportCell,
-  { formula, node }: { formula: string; node: FormulaNode },
-) {
-  const { cell, value, location } = target;
-  const { functions } = context;
-  // A direct rich host call has the same display projection in its
-  // frozen cache and its expanded formula; Excel does not recalculate.
-  const projected =
-    node.kind === 'call' &&
-    functions.get(node.name)?.capturedText === 'html-to-text' &&
-    typeof value === 'string'
-      ? capturedText(value, 'html-to-text', 32767)
-      : value;
-  const inlined = inlineHostOperands(node, {
-    formula,
-    sheetId: target.sheet.id,
-    x: target.x,
-    y: target.y,
-    result: context.result,
-    functions,
-    loss: (code, message) => context.warn({ code, message, location }),
-  });
-  if (inlined === null || unrepresentableError(value)) {
-    cell.value = excelValue(projected);
-    if (unrepresentableError(value))
-      context.warn({
-        code: 'formula-error',
-        message:
-          'Excel cannot represent this calculation error; its stored error text is exported.',
-        location,
-      });
-    return;
-  }
-  const cache = excelValue(projected),
-    unsupported = unsupportedCall(node, functions);
-  if (unsupported)
-    context.warn({
-      code: 'unsupported-formula',
-      message: 'An unsupported or undeclared host formula is retained without a cache.',
-      location,
-      disposition: 'not-exported',
-    });
-  cell.value = {
-    formula: inlined,
-    result:
-      cache === null || unsupported ? undefined : (cache as ExcelJS.CellFormulaValue['result']),
-  };
-}
-
-function writeFormula(context: ExportContext, target: ExportCell, raw: string) {
-  try {
-    const formula = raw.trimStart().slice(1);
-    writeParsedFormula(context, target, { formula, node: parseFormula(formula) });
-  } catch {
-    context.warn({
-      code: 'malformed-formula',
-      message: 'The formula is exported as authored text because it cannot be parsed.',
-      location: target.location,
-      disposition: 'not-exported',
-    });
-    target.cell.value = raw;
-  }
-}
-
 /** Quantities become stored text, formulas keep their frozen results, other values export as-is. */
 function writeContent(context: ExportContext, target: ExportCell, input: unknown) {
   const { cell, value, format, location } = target;
@@ -167,8 +96,22 @@ function writeContent(context: ExportContext, target: ExportCell, input: unknown
         'A quantity is exported as stored text to preserve its units and temperature meaning.',
       location,
     });
-  } else if (formula) writeFormula(context, target, formula);
-  else cell.value = typeof value === 'string' ? value : excelValue(value);
+  } else if (formula) {
+    cell.value = exportFormula(
+      formula,
+      { sheetId: target.sheet.id, x: target.x, y: target.y, value },
+      {
+        result: context.result,
+        functions: context.functions,
+        warn: (warning) => context.warn({ ...warning, location }),
+      },
+    );
+  } else {
+    const stored = excelValue(value);
+    cell.value = stored;
+    const numericText = numericTextWarning(value, stored);
+    if (numericText) context.warn({ ...numericText, location });
+  }
 }
 
 function writeCell(
@@ -191,8 +134,10 @@ function writeCell(
   metadataLosses(context, target);
   writeContent(context, target, input);
   const { cell } = target;
-  if (typeof cell.value === 'string' && cell.value.length > 32767)
-    throw new RangeError(`${location}: Excel cell strings have a 32767-character limit.`);
+  if (typeof cell.value === 'string') {
+    const problem = excelTextProblem(cell.value);
+    if (problem) throw new RangeError(`${location}: ${problem}`);
+  }
   cell.style = {
     ...exportCellStyle(parseCellStyle(sheet.style?.[address])),
     numFmt: exportNumberFormat(target.format),

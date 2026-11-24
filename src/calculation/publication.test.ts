@@ -259,6 +259,31 @@ describe('SE-HOST-3.1: deterministic authored calculation identity', () => {
   });
 });
 
+it('SE-CALC-5.1: keeps unread formulas pending after a calculation exhausts its operation budget', () => {
+  const workbook = createWorkbook([['1', '=A1']]);
+  const result = calculateWorkbook(workbook, { maxOperations: 1 });
+  const input = calculationCellKey('sheet-1', 0, 0);
+  const unread = calculationCellKey('sheet-1', 1, 0);
+  expect(result.worksheets[0].values[0][1]).toEqual({ kind: 'error', code: '#LIMIT!' });
+  expect(pendingCalculationCells(result, [input])).toEqual(new Set([input, unread]));
+});
+
+it.each([null, ''])(
+  'SE-HOST-3.1: requires a current value for canonical input with raw %s',
+  (input) => {
+    const workbook = createWorkbook([[input]]);
+    workbook.worksheets[0].inputValues = { A1: exact('42') };
+    const snapshot = publication(workbook);
+    const values = requireDefined(snapshot.result).worksheets[0].values;
+    expect(values[0][0]).toEqual(exact('42'));
+    expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).not.toThrow();
+    values[0][0] = null;
+    expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).toThrow(
+      'require calculated values',
+    );
+  },
+);
+
 describe('SE-HOST-3.1: external snapshot ingress', () => {
   it('accepts a detached ready publication with finite opaque context and valid quantity metadata', () => {
     const workbook = workbookFixture(),

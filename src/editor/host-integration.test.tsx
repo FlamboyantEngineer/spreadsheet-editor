@@ -4,7 +4,11 @@ import { createRef, useState } from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { calculateWorkbook } from '../calculation/evaluator.js';
-import { workbookCalculationKey } from '../calculation/publication.js';
+import {
+  calculationCellKey,
+  type ExternalCalculationSnapshot,
+  workbookCalculationKey,
+} from '../calculation/publication.js';
 import type { WorkbookStoreAdapter } from '../host/adapters.js';
 import { FULL_CAPABILITIES, READ_ONLY_CAPABILITIES } from '../host/capabilities.js';
 import { createMemoryHost } from '../host/memory-host.js';
@@ -455,6 +459,47 @@ describe('SE-HOST-1.1 and SE-HOST-2.1: accepted transactions and session lifecyc
 });
 
 describe('SE-HOST-3.1 and SE-HOST-4.1: authoritative values, drafts and result search', () => {
+  it('blocks captures until a pending canonical-only input has a current value', async () => {
+    const workbook = createWorkbook([[null]]);
+    workbook.worksheets[0].inputValues = {
+      A1: { kind: 'number', numerator: '42', denominator: '1', approximate: false },
+    };
+    const onExportXlsx = vi.fn(),
+      onInsert = vi.fn();
+    const ready = calculateWorkbook(workbook);
+    const pending = structuredClone(ready);
+    pending.worksheets[0].values[0][0] = null;
+    const snapshot: ExternalCalculationSnapshot = {
+      inputKey: workbookCalculationKey(workbook),
+      revision: 1,
+      status: 'ready',
+      cellStates: { [calculationCellKey('sheet-1', 0, 0)]: 'pending' },
+      result: pending,
+    };
+    const { result, rerender } = renderHook(
+      (current) =>
+        useSpreadsheetEditor({
+          defaultValue: workbook,
+          calculation: { mode: 'external', snapshot: current },
+          onExportXlsx,
+          onInsert,
+        }),
+      { initialProps: snapshot },
+    );
+    expect(result.current.calculation.error).toBeNull();
+    await expect(result.current.exportExcel()).rejects.toThrow('current ready results');
+    expect(() => result.current.insert('table')).toThrow('current ready result');
+    expect(onExportXlsx).not.toHaveBeenCalled();
+    expect(onInsert).not.toHaveBeenCalled();
+
+    rerender({ inputKey: snapshot.inputKey, revision: 2, status: 'ready', result: ready });
+    await result.current.exportExcel();
+    result.current.insert('table');
+    expect(onExportXlsx).toHaveBeenCalledWith(workbook, ready);
+    expect(onInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ rows: [[expect.objectContaining({ text: '42' })]] }),
+    );
+  });
   it('accepts publications without an edit, rejects conflicting revisions and never calculates externally', () => {
     const workbook = createWorkbook([['=NOW()']]),
       onChange = vi.fn();
@@ -514,6 +559,7 @@ describe('SE-HOST-3.1 and SE-HOST-4.1: authoritative values, drafts and result s
     );
     await waitFor(() => expect(result.current.output?.[0][0]).toMatchObject({ numerator: '4' }));
     act(() => {
+      result.current.setShowFind(true);
       result.current.setQuery('4');
     });
     expect(result.current.matches).toHaveLength(2);

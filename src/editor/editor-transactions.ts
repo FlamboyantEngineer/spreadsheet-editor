@@ -201,10 +201,10 @@ function withPendingDraft(
   return { base, draftTargets };
 }
 
-/** Compose a protected formula draft and a chrome command into one history entry. */
+/** Compose a draft and a command into one history entry. A null command result keeps the draft open. */
 export function mutateWithDraftChange(
   core: EditorCore,
-  transform: (base: Workbook) => Workbook | WorkbookCommandResult,
+  transform: (base: Workbook) => Workbook | WorkbookCommandResult | null,
   { label, operation, written }: DraftMutateOptions & { label: string },
 ): boolean {
   const pending = core.draftRef.current;
@@ -212,6 +212,7 @@ export function mutateWithDraftChange(
   if (!prepared) return false;
   const { base, draftTargets } = prepared;
   const transformed = transform(base);
+  if (!transformed) return false;
   const result =
     'workbook' in transformed ? transformed : { workbook: transformed, operations: undefined };
   const changed = mutateChange(core, result.workbook, {

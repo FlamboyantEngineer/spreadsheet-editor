@@ -40,9 +40,11 @@ export function createSessionDrafts({
       stop();
       enqueue(null);
     },
-    async read() {
+    async read(revision: string) {
       const answer = await adapter?.get(workbookId).catch(() => null);
-      return answer?.ok ? answer.value : null;
+      if (!answer?.ok || !answer.value) return null;
+      const { content, baseRevision, savedAt } = answer.value;
+      return { content, details: { baseRevision, savedAt, stale: baseRevision !== revision } };
     },
   };
 }

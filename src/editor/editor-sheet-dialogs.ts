@@ -149,9 +149,18 @@ export function replaceText(
     all ? matches : matches[matchIndex] ? [matches[matchIndex]] : matches.slice(0, 1)
   ).filter((match) => match.authored);
   if (!targets.length) return 0;
-  mutateWithDraftChange(core, (base) => replaceMatches(base, targets, { query, text, all }), {
-    label: all ? 'Replace all matches' : 'Replace match',
-    written: matchTargets(targets),
-  });
-  return targets.length;
+  let count = 0;
+  const changed = mutateWithDraftChange(
+    core,
+    (base) => {
+      const replacement = replaceMatches(base, targets, { query, text, all });
+      count = replacement?.count ?? 0;
+      return replacement?.workbook ?? null;
+    },
+    {
+      label: all ? 'Replace all matches' : 'Replace match',
+      written: matchTargets(targets),
+    },
+  );
+  return changed ? count : 0;
 }
