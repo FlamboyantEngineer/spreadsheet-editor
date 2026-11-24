@@ -116,11 +116,18 @@ execFileSync(
 );
 console.log('Built public host types, example and legacy consumers passed.');
 
-const { importXlsx, exportXlsx } = await import('@flamboyantengineer/spreadsheet-editor/excel');
+const { importXlsx, exportXlsx, exportXlsxWithReport } =
+  await import('@flamboyantengineer/spreadsheet-editor/excel');
 const xlsx = await exportXlsx(workbook, result);
 const imported = await importXlsx(xlsx);
 assert.equal(imported.workbook.worksheets[0].data[0][0], '=1-(1-1E-25)');
 assert.equal(imported.report.formulas, 1);
+const reportedXlsx = await exportXlsxWithReport(workbook, result);
+assert.equal(reportedXlsx.report.formulas, 1);
+assert.equal(
+  (await importXlsx(reportedXlsx.bytes)).workbook.worksheets[0].data[0][0],
+  '=1-(1-1E-25)',
+);
 await assert.rejects(importXlsx(new Uint8Array([0, 1, 2, 3])));
 console.log('Isolated Excel import and stored-result export passed.');
 

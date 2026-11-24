@@ -29,7 +29,7 @@ export function createHostWorkbookBinding(host: {
 /** Host persistence and transport remain independent of operation application. */
 export interface HostWorkbookBinding {
   /** Preflight the complete transaction before mutation; throw only before applying it. */
-  applyTransaction(next: Workbook, transaction: WorkbookChangeContext): void;
+  applyTransaction(next: Workbook, transaction: WorkbookChangeContext): Workbook;
 }
 
 /** A projection of an existing host provider; this example never creates or destroys it. */
@@ -100,7 +100,7 @@ export function HostIntegratedSpreadsheet(props: HostIntegrationProps) {
       formulaFunctions={props.formulaFunctions}
       cellPresentation={props.cellPresentation}
       renderCellContent={props.renderCellContent}
-      onChange={(next, transaction) => props.binding.applyTransaction(next, transaction)}
+      acceptChange={props.binding.applyTransaction}
       session={props.session}
       onRefresh={props.onRefresh}
     />

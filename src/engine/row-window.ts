@@ -15,6 +15,7 @@ interface RowWindowState {
   bottom: HTMLTableRowElement;
   /** The table body the window was built in; the engine replaces its rows when it rebuilds. */
   rows: readonly unknown[];
+  offsets: Float64Array | undefined;
   onAttach: (rows: number[]) => void;
 }
 const windows = new WeakMap<JSpreadsheetWorksheetInstance, RowWindowState>();
@@ -47,15 +48,27 @@ function spacer(engine: JSpreadsheetWorksheetInstance): HTMLTableRowElement {
   return row;
 }
 
-/** Each row's height in CSS pixels: its written measure, or none while it is hidden. */
-function rowHeights(engine: JSpreadsheetWorksheetInstance): number[] {
+/** Cached offsets allow scroll to find rows without reading every row's style. */
+function rowOffsets(engine: JSpreadsheetWorksheetInstance, state: RowWindowState): Float64Array {
+  if (state.offsets) return state.offsets;
+  const rows = engine.rows ?? [];
+  const offsets = new Float64Array(rows.length + 1);
   const fallback = Number(engine.options?.defaultRowHeight) || 24;
-  return (engine.rows ?? []).map((row) => {
-    const element = row?.element as HTMLElement | undefined;
-    if (!element || element.style.display === 'none') return 0;
-    const height = Number.parseFloat(element.style.height);
-    return Number.isFinite(height) ? height : fallback;
+  rows.forEach((row, index) => {
+    const style = row?.element?.style;
+    const shown = style && style.display !== 'none';
+    const height = Number.parseFloat(style?.height ?? '');
+    offsets[index + 1] =
+      offsets[index] + (shown ? (Number.isFinite(height) ? height : fallback) : 0);
   });
+  state.offsets = offsets;
+  return offsets;
+}
+
+/** A changed row measure invalidates the prefix sums for the next geometry read. */
+export function invalidateGridRowHeights(engine: JSpreadsheetWorksheetInstance) {
+  const state = windows.get(engine);
+  if (state) state.offsets = undefined;
 }
 
 /** Rows covered by a merge that starts in [start, end), or that crosses either edge. */
@@ -95,12 +108,9 @@ export function gridRowWindow(
 /** Give the spacers the height of the detached rows above and below the window. */
 function sizeSpacers(engine: JSpreadsheetWorksheetInstance, state: RowWindowState): void {
   const tbody = requireDefined(engine.tbody);
-  const count = engine.rows?.length ?? 0;
-  const heights = rowHeights(engine);
-  let above = 0,
-    below = 0;
-  for (let y = 0; y < state.start; y++) above += heights[y];
-  for (let y = state.end; y < count; y++) below += heights[y];
+  const offsets = rowOffsets(engine, state);
+  const above = offsets[state.start],
+    below = offsets[offsets.length - 1] - offsets[state.end];
   // With no rows detached on a side, the first or last row keeps its :first-child or
   // :last-child edge in the stylesheet.
   const columns = (engine.cols?.length ?? 0) + 1;
@@ -170,22 +180,33 @@ function place(engine: JSpreadsheetWorksheetInstance, state: RowWindowState, spa
   state.start = start;
   state.end = end;
   sizeSpacers(engine, state);
-  if (attached.length) state.onAttach(attached);
+  state.onAttach(attached);
 }
 
 /** The rows the viewport shows, by their heights below the column header. */
-function visibleRows(engine: JSpreadsheetWorksheetInstance, viewport: HTMLElement): Span {
+function visibleRows(engine: JSpreadsheetWorksheetInstance, state: RowWindowState): Span {
+  const viewport = requireDefined(engine.content);
   const count = engine.rows?.length ?? 0;
-  const heights = rowHeights(engine);
+  const offsets = rowOffsets(engine, state);
   const header = engine.table?.tHead?.offsetHeight ?? 0;
   const top = viewport.scrollTop - header,
     bottom = viewport.scrollTop + viewport.clientHeight - header;
-  let first = 0,
-    offset = 0;
-  while (first < count - 1 && offset + heights[first] <= top) offset += heights[first++];
-  let last = first;
-  while (last < count && offset < bottom) offset += heights[last++];
+  const first = Math.min(Math.max(count - 1, 0), Math.max(offsetIndex(offsets, top, true) - 1, 0));
+  const last = Math.max(first, Math.min(count, offsetIndex(offsets, bottom, false)));
   return [first, last];
+}
+
+/** First offset meeting the threshold, skipping equal offsets for the top edge. */
+function offsetIndex(offsets: Float64Array, target: number, skipEqual: boolean) {
+  let low = 0,
+    high = offsets.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const offset = offsets[middle];
+    if (offset < target || (skipEqual && offset === target)) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 /** Whether the current window still covers the visible rows with their margin. */
@@ -206,7 +227,7 @@ function wanted(
 ): Span {
   const viewport = engine.content;
   if (!viewport) return [0, engine.rows?.length ?? 0];
-  let [first, last] = visibleRows(engine, viewport);
+  let [first, last] = visibleRows(engine, state);
   if (reveal) {
     first = Math.min(first, reveal[0]);
     last = Math.max(last, reveal[1] + 1);
@@ -230,6 +251,7 @@ export function windowGridRows(
     top: spacer(engine),
     bottom: spacer(engine),
     rows: [],
+    offsets: undefined,
     onAttach,
   };
   windows.set(engine, state);
@@ -237,6 +259,7 @@ export function windowGridRows(
   const update = () => {
     if (state.rows !== engine.rows) resetGridRowWindow(engine);
     else {
+      if (!state.offsets) sizeSpacers(engine, state);
       place(engine, state, wanted(engine, state));
     }
   };
@@ -256,6 +279,7 @@ function resetGridRowWindow(engine: JSpreadsheetWorksheetInstance): void {
   if (!state || !engine.tbody) return;
   const count = engine.rows?.length ?? 0;
   state.rows = engine.rows ?? [];
+  state.offsets = undefined;
   state.top.remove();
   state.bottom.remove();
   // Whatever is attached now is contiguous from row 0.
@@ -267,7 +291,8 @@ function resetGridRowWindow(engine: JSpreadsheetWorksheetInstance): void {
     place(engine, state, [0, count]);
     return;
   }
-  place(engine, state, wanted(engine, { ...state, rows: [] }));
+  const [first, last] = visibleRows(engine, state);
+  place(engine, state, [first - OVERSCAN_ROWS, last + OVERSCAN_ROWS]);
 }
 
 /** Resize the spacers after row heights change, as zoom and row resizing do, and follow the viewport. */

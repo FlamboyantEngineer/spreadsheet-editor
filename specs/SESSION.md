@@ -8,8 +8,10 @@ A workbook session opens one stored workbook through the host's `workbooks` stor
 
 The session shall load the workbook (`workbooks.load`) and report `loading`, then `saved` at the stored revision, or `unavailable` with the host's error. While its session is opening, the editor renders a status in place of the grid (`[data-session="loading"]`), or the error (`[data-session="unavailable"]`); a null `session` prop also shows it as opening. When another save of the workbook lands (`workbooks.subscribe`) and the session holds no unsaved change, it loads and shows that save; otherwise it keeps the reader's changes.
 
+`getSnapshot()` returns the workbook, status, draft offer and local revision from one update. Its identity stays stable between notifications. Server rendering shows the opening state for a configured session and renders local or controlled editors normally.
+
 Implementation: `src/host/workbook-session.ts`, `src/editor/use-session-state.ts`, `src/editor/spreadsheet-editor.tsx`
-Verification: `src/host/workbook-session.test.ts`
+Verification: `src/host/workbook-session.test.ts`, `src/editor/host-integration.test.tsx`
 
 ### SE-SESSION-1.2 - Causal coverage
 
@@ -24,12 +26,14 @@ Verification: `src/host/workbook-session.test.ts`, `src/editor/host-integration.
 
 Given a `drafts` adapter, the session shall keep unsaved content as a draft `draftDelay` milliseconds after the last change (300 by default), with the revision it was edited from, and clear it once a save covers every change. A session that opens a workbook with a kept draft offers it (`draft()`), marked `stale` when the stored revision moved on since; the editor shows a banner (`.se-editor__draft`) to restore it as unsaved changes (`restoreDraft`) or discard it (`discardDraft`).
 
+Draft puts and clears run in order within a session. A failed Flush retains pending draft work. A conflicting remote revision is the target for an explicit overwrite and leaves the recovery draft's edit base unchanged. Restoring a stale draft uses its recorded edit base for the next save.
+
 Implementation: `src/host/workbook-session.ts`, `src/editor/spreadsheet-editor.tsx`
 Verification: `src/host/workbook-session.test.ts`
 
 ### SE-SESSION-1.4 - The editor's saving
 
-With a session, the editor shall show the session's workbook unless `value` is given, record every accepted change in the session after the host's `onChange` accepts it, and refuse a change while the session has not loaded. Save (button, menu and Ctrl+S) commits the active draft and saves through the session; the handle's `flush` commits the draft and waits until every change accepted before it is saved. The save status shows the session's phase, and the handle's state reports `dirty`, `saving` and the current session failure from it, including failures of background autosaves. Controlled `value` editors use the same session and causal transaction acknowledgements; receipts neither save nor acknowledge active drafts. Opening a saved version first flushes, and stays closed when the flush fails or a newer change is unsaved (SE-ADAPTERS-5.1). Without a session the editor has no Save control and saves nothing.
+With a session, the editor shows the session's workbook unless the host supplies `value`. A host that supplies both `value` and `session` uses `acceptChange(next, context)` to synchronously return the accepted workbook. The session records that exact workbook, including rebased changes. The editor waits for a configured session to load before showing editable content. Save (button, menu and Ctrl+S) commits the active draft and saves through the session. The handle's `flush` commits the draft and waits until every change accepted before that call is saved. `flushing` stays true until the last active Flush completes. The status and handle report the same session save phase and failures. Causal acknowledgements cover accepted transactions; an uncommitted draft stays dirty. Opening or restoring a saved version protects newer edits and drafts during the request (SE-ADAPTERS-5.1). Without a session the editor has no Save control.
 
 Implementation: `src/editor/use-editor.ts`, `src/editor/editor-handle.ts`, `src/editor/use-session-state.ts`, `src/editor/use-session-actions.ts`, `src/editor/use-workbook-session.ts`, `src/editor/editor-toolbar.tsx`
 Verification: `src/editor/host-integration.test.tsx`, `src/editor/use-editor.test.ts`, `src/editor/editor-lifecycle.test.tsx`, `e2e/host-integration.spec.ts`, `e2e/full-editor.spec.ts`

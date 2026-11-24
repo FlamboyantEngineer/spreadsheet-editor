@@ -12,7 +12,10 @@ import { convertXlsx } from './convert.js';
 import { inspectXlsx } from './guard.js';
 import { decodeImportRequest, encodeImportRequest } from './protocol.js';
 import { exportNumberFormat, importNumberFormat } from './styles.js';
-import { exportXlsx, exportXlsxWithReport } from './write.js';
+import { exportXlsxWithReport } from './write.js';
+
+const exportXlsx = async (...args: Parameters<typeof exportXlsxWithReport>) =>
+  (await exportXlsxWithReport(...args)).bytes;
 
 describe('SE-XLSX-1.1 and SE-XLSX-2.1: Excel conversion and loss reporting', () => {
   it('keeps formulas and geometry while discarding caches and reporting unsupported content', async () => {
@@ -349,7 +352,7 @@ describe('SE-XLSX-4.1: locale, exact decimals and explicit metadata losses', () 
       { kind: 'date' as const, locale: 'de-DE' },
     ];
     for (const format of formats)
-      expect(importNumberFormat(exportNumberFormat(format))).toMatchObject(format);
+      expect(importNumberFormat(exportNumberFormat(format)).format).toMatchObject(format);
     const workbook = createWorkbook([['9007199254740993', '-1234.567', '0.125', '60']]);
     workbook.worksheets[0].formats = Object.fromEntries(
       formats.map((format, index) => [String.fromCharCode(65 + index) + '1', format]),
@@ -358,7 +361,7 @@ describe('SE-XLSX-4.1: locale, exact decimals and explicit metadata losses', () 
     expect(output.report.warnings).toEqual([]);
     const imported = await convertXlsx(output.bytes);
     expect(imported.workbook.worksheets[0].data[0]).toEqual([
-      '9007199254740993',
+      "'9007199254740993",
       '-1234.567',
       '0.125',
       '60',
@@ -451,7 +454,11 @@ it('SE-XLSX-4.1: projects canonical quantities once, preserves temperature diffe
   ).toBe(4);
   expect(output.report.formulas).toBe(1);
   const imported = await convertXlsx(output.bytes);
-  expect(imported.workbook.worksheets[0].data[0]).toEqual(['9 °F', '≈0 °C', '1 rad']);
+  expect(calculateWorkbook(imported.workbook).worksheets[0].values[0]).toEqual([
+    '9 °F',
+    '≈0 °C',
+    '1 rad',
+  ]);
 });
 
 it('SE-XLSX-4.1: rejects malformed quantity and provenance result metadata at the export boundary', async () => {

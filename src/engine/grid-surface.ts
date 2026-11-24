@@ -3,12 +3,12 @@
 import type {
   ClipboardEvent,
   CSSProperties,
+  FocusEvent,
   KeyboardEvent,
   MouseEvent,
   PointerEvent,
   UIEvent,
 } from 'react';
-import { parseDelimited } from '../model/delimited.js';
 import { selectionAddress } from '../model/editing.js';
 import { selectionLock } from '../model/presence.js';
 import {
@@ -19,6 +19,10 @@ import {
 } from './grid-context.js';
 import { gridViewport } from './grid-geometry.js';
 import { deliveredHeader } from './header-resize.js';
+import {
+  focusJSpreadsheetWorksheet,
+  releaseJSpreadsheetKeyboardOwner,
+} from './jspreadsheet-measures.js';
 
 type Surface = HTMLDivElement;
 /** What the surface shows now: its outlines and the clip box they are drawn in. */
@@ -34,7 +38,39 @@ const composing = (context: GridSurfaceContext, event: KeyboardEvent<Surface>) =
   event.nativeEvent.isComposing ||
   event.nativeEvent.keyCode === 229;
 
+const cellNavigation = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+  'Enter',
+  'Tab',
+]);
+
+function ownKeyboard(context: GridSurfaceContext, target: EventTarget | null) {
+  const sheet = context.worksheet();
+  if (!sheet) return false;
+  const interactive =
+    target instanceof Element &&
+    target.closest('button, input, textarea, select, a[href], [contenteditable="true"]');
+  if (interactive && !context.inCell.current) {
+    releaseJSpreadsheetKeyboardOwner(sheet);
+    return false;
+  }
+  focusJSpreadsheetWorksheet(sheet);
+  return true;
+}
+
+function releaseOnBlur(context: GridSurfaceContext, event: FocusEvent<Surface>) {
+  if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
+    return;
+  context.controller.releaseKeyboard();
+}
+
 function keyDown(context: GridSurfaceContext, event: KeyboardEvent<Surface>) {
+  if (!ownKeyboard(context, event.target)) return;
   const inCell = context.inCell.current;
   if (inCell && composing(context, event)) {
     // CE's document listener treats every Enter as a commit. Leave the
@@ -43,11 +79,19 @@ function keyDown(context: GridSurfaceContext, event: KeyboardEvent<Surface>) {
     return;
   }
   if (inCell) context.native.onKey(event);
-  const header = context.selectedHeader.current;
-  if (!context.inCell.current && header && ['Delete', 'Backspace'].includes(event.key)) {
+  else if (cellNavigation.has(event.key)) {
+    context.selectedHeader.current = null;
+    if (event.key === 'Tab') {
+      // A grid is one stop in the surrounding page's tab order. The vendor uses arrows to navigate.
+      event.stopPropagation();
+      return;
+    }
+  }
+  if (!context.inCell.current && ['Delete', 'Backspace'].includes(event.key)) {
     event.preventDefault();
     event.stopPropagation();
-    context.latest.current.onHeaderDelete?.(header);
+    if (!context.latest.current.readOnly)
+      context.latest.current.onDelete(context.selectedHeader.current);
     return;
   }
   if (context.resize.active && event.key === 'Escape') {
@@ -130,28 +174,26 @@ function scroll(context: GridSurfaceContext, event: UIEvent<Surface>) {
   context.scheduleReferences();
 }
 
-/**
- * Capture the original clipboard block before CE expands it over the
- * selected rectangle. Both native and menu paths share the host command.
- */
-function paste(context: GridSurfaceContext, event: ClipboardEvent<Surface>) {
-  const current = context.latest.current;
-  if (context.inCell.current || (!current.onPasteCells && !current.reviewMode)) return;
-  const values = parseDelimited(event.clipboardData.getData('text/plain'));
+/** Native text editing keeps its own clipboard. Outside it CE must not alter the clipboard block. */
+function clipboard(context: GridSurfaceContext, event: ClipboardEvent<Surface>) {
+  if (
+    event.target instanceof Element &&
+    event.target.closest('input, textarea, [contenteditable="true"]')
+  )
+    return;
   event.preventDefault();
   event.stopPropagation();
-  if (context.latest.current.readOnly) return;
-  const { x1, y1 } = context.latest.current.selection;
-  if (context.latest.current.onPasteCells) context.latest.current.onPasteCells(values, x1, y1);
-  else context.latest.current.onReviewChange?.(values, x1, y1);
+  const current = context.latest.current;
+  if (event.type === 'paste') current.onClipboardPaste(event.clipboardData);
+  else current.onClipboardCopy(event.clipboardData, event.type === 'cut');
 }
 
 /** Focuses the surface for header and cell presses outside formula picking and editing. */
 function focusOnPress(context: GridSurfaceContext, event: PointerEvent<Surface>) {
+  if (event.button !== 0 || context.latest.current.pickingFormula) return;
   const header = deliveredHeader(event, context.surface.current);
   context.selectedHeader.current = header?.axis ?? null;
-  if (header) event.currentTarget.focus({ preventScroll: true });
-  if (!context.latest.current.pickingFormula && !context.inCell.current && pickCell(context, event))
+  if (!context.inCell.current && (header || pickCell(context, event)))
     event.currentTarget.focus({ preventScroll: true });
 }
 
@@ -218,6 +260,8 @@ function pointerUp(context: GridSurfaceContext, event: PointerEvent<Surface>) {
 export function useSurfaceHandlers(context: GridSurfaceContext, view: SurfaceView) {
   return {
     onKeyDownCapture: (event: KeyboardEvent<Surface>) => keyDown(context, event),
+    onFocusCapture: (event: FocusEvent<Surface>) => ownKeyboard(context, event.target),
+    onBlurCapture: (event: FocusEvent<Surface>) => releaseOnBlur(context, event),
     onDoubleClickCapture: (event: MouseEvent<Surface>) => doubleClick(context, view.props, event),
     onClick: (event: MouseEvent<Surface>) => click(context, event),
     onContextMenuCapture: (event: MouseEvent<Surface>) => contextMenu(context, event),
@@ -231,7 +275,9 @@ export function useSurfaceHandlers(context: GridSurfaceContext, view: SurfaceVie
     onCompositionEndCapture: () => {
       context.nativeComposing.current = false;
     },
-    onPasteCapture: (event: ClipboardEvent<Surface>) => paste(context, event),
+    onCopyCapture: (event: ClipboardEvent<Surface>) => clipboard(context, event),
+    onCutCapture: (event: ClipboardEvent<Surface>) => clipboard(context, event),
+    onPasteCapture: (event: ClipboardEvent<Surface>) => clipboard(context, event),
     onPointerDownCapture: (event: PointerEvent<Surface>) => pointerDown(context, event),
     onPointerMove: (event: PointerEvent<Surface>) => pointerMove(context, view, event),
     onPointerUp: (event: PointerEvent<Surface>) => pointerUp(context, event),

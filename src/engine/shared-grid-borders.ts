@@ -1,3 +1,4 @@
+import { gridCellAt } from './grid-cell.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 
 type Side = 'Top' | 'Right' | 'Bottom' | 'Left';
@@ -89,7 +90,7 @@ class BorderPass {
   }
 
   at(x: number, y: number): EdgeCell | undefined {
-    return this.edge(this.engine.getCellFromCoords?.(x, y) as HTMLElement | null | undefined);
+    return this.edge(gridCellAt(this.engine, x, y));
   }
 
   /** Cells with an edge to reconcile, and their right and bottom neighbours. */

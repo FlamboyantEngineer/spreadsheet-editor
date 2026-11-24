@@ -1,10 +1,7 @@
-import { formatCellValue } from './format.js';
-import type { Arithmetic, Value } from './function-call.js';
+import { type Arithmetic, checked, flat, scalar, text, type Value } from './function-call.js';
 import {
-  CalculationError,
   type CellValue,
   type ErrorValue,
-  isError,
   isNumeric,
   type NumericValue,
   TEXT_COLLATOR,
@@ -23,12 +20,6 @@ export interface Coercion {
   flattened(values: readonly Value[]): CellValue[];
 }
 
-const scalar = (value: Value): CellValue =>
-  Array.isArray(value) ? (value[0]?.[0] ?? null) : value;
-function checked(value: CellValue): Exclude<CellValue, ErrorValue> {
-  if (isError(value)) throw new CalculationError(value.code);
-  return value;
-}
 /** Text, booleans, then numbers; an empty cell takes the kind of what it is compared with. */
 const rank = (value: CellValue) =>
   typeof value === 'boolean' ? 2 : typeof value === 'string' ? 1 : 0;
@@ -73,8 +64,7 @@ export function createCoercion(math: Arithmetic): Coercion {
     numeric,
     truth,
     compare,
-    text: (value) => formatCellValue(checked(scalar(value)), { approximationMarker: false }),
-    flattened: (values) =>
-      values.flatMap((value) => (Array.isArray(value) ? value.flat() : [value])),
+    text,
+    flattened: (values) => values.flatMap(flat),
   };
 }

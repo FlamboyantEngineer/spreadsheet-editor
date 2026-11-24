@@ -15,7 +15,7 @@ import {
 } from './function-call.js';
 import { char1252, code1252, formatTextMask } from './text-format.js';
 import { isNumeric } from './values.js';
-import { wildcard } from './wildcard.js';
+import { compileWildcard } from './wildcard.js';
 
 /** A function of one text argument. */
 const unaryText =
@@ -63,7 +63,7 @@ function find(call: FunctionCall) {
   const index =
     call.name === 'FIND'
       ? haystack.indexOf(needle, start)
-      : wildcard(needle, haystack.slice(start), false);
+      : compileWildcard(needle, false)(haystack.slice(start));
   if (index < 0) fail();
   return call.math.parse(String((call.name === 'FIND' ? index : start + index) + 1));
 }

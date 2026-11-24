@@ -1,4 +1,5 @@
 import type { NumericValue } from '../calculation/values.js';
+import type { CellOperationShape } from './operation-cell-shape.js';
 import type { CellFormat } from './review.js';
 import type { CellInput, CellProvenance, Workbook, Worksheet } from './workbook.js';
 
@@ -32,6 +33,8 @@ export interface WorkbookCellChange {
   beforeAddress?: string;
   rowId?: string;
   columnId?: string;
+  /** Restoring a deleted line can restore an explicit blank value. */
+  materializeValue?: true;
   before: AuthoredCellState;
   after: AuthoredCellState;
 }
@@ -41,7 +44,7 @@ export type WorksheetGeometry = Pick<
 >;
 export type WorkbookOperation =
   | { kind: 'workbook-metadata'; before: Pick<Workbook, 'name'>; after: Pick<Workbook, 'name'> }
-  | { kind: 'cells'; sheetId: string; changes: WorkbookCellChange[] }
+  | { kind: 'cells'; sheetId: string; changes: WorkbookCellChange[]; shape?: CellOperationShape }
   | {
       kind: 'lines';
       sheetId: string;
@@ -50,26 +53,32 @@ export type WorkbookOperation =
       index: number;
       count: number;
       ids: string[];
+      /** An ordinary write extends the identities without moving existing cells or layout. */
+      extentOnly?: true;
+      /** A line command can first materialize an implicit viewport in an exact recorded frame. */
+      preparation?: LinePreparation | undefined;
+      restoreLayout?: true;
+      /** Raw row counts preserve a deleted trailing empty row without authoring a value. */
+      dataRows?: { before: number; after: number } | undefined;
       beforeId?: string;
       afterId?: string;
       /** Removed authored cells and sparse geometry support semantic standalone undo. */
       deletedCells?: WorkbookCellChange[];
       beforeGeometry?: WorksheetGeometry;
       afterGeometry?: WorksheetGeometry;
-      beforeMerges?: NonNullable<Worksheet['mergeCells']>;
-      afterMerges?: NonNullable<Worksheet['mergeCells']>;
+      beforeMerges?: Worksheet['mergeCells'];
+      afterMerges?: Worksheet['mergeCells'];
     }
+  | { kind: 'line-frame'; sheetId: string; before: LineFrame; after: LineFrame }
   | {
       kind: 'sheet-add';
       sheet: Worksheet;
-      index: number;
       beforeOrder: string[];
       afterOrder: string[];
     }
   | {
       kind: 'sheet-delete';
       sheet: Worksheet;
-      index: number;
       beforeOrder: string[];
       afterOrder: string[];
     }
@@ -79,8 +88,8 @@ export type WorkbookOperation =
   | {
       kind: 'merges';
       sheetId: string;
-      before: NonNullable<Worksheet['mergeCells']>;
-      after: NonNullable<Worksheet['mergeCells']>;
+      before: Worksheet['mergeCells'];
+      after: Worksheet['mergeCells'];
     }
   | {
       kind: 'annotations';
@@ -89,7 +98,7 @@ export type WorkbookOperation =
     }
   | {
       kind: 'replace';
-      reason: 'import' | 'new-workbook' | 'reset';
+      reason: 'import' | 'new-workbook' | 'reset' | 'suggestion';
       before: Workbook;
       after: Workbook;
     };
@@ -102,4 +111,11 @@ export interface WorkbookChangeContext {
 export interface WorkbookCommandResult {
   workbook: Workbook;
   operations: WorkbookOperation[];
+}
+
+/** The fields an editor line command may materialize before applying the requested change. */
+type LineFrame = Pick<Worksheet, 'minDimensions' | 'rowIds' | 'columnIds'>;
+export interface LinePreparation {
+  before: LineFrame;
+  after: LineFrame;
 }

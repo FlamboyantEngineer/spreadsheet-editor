@@ -64,18 +64,18 @@ function EditorGrid({ editor: e, picking, onContextMenu, onViewportChange }: Gri
       formulaReferences={picking.references}
       pickingFormula={picking.picking}
       onFormulaReference={picking.onFormulaReference}
-      worksheetIndex={e.workbook.worksheets.findIndex((sheet) => sheet.id === e.sheet.id)}
       collaborators={e.peers}
       showContributors={e.showContributors}
       onViewportChange={onViewportChange}
       onEditStateChange={picking.onEditStateChange}
-      onHeaderDelete={(axis) => e.attempt(() => e.structure(axis, 'delete'))}
+      onDelete={(axis) => e.attempt(() => (axis ? e.structure(axis, 'delete') : e.clear()))}
       onEditDraft={(value) => (value === null ? e.cancelFormula() : e.setDraftValue(value))}
       display={props.display}
       readOnly={!e.canWrite}
       reviewMode={e.canSuggest}
       onReviewChange={e.proposeCells}
-      onPasteCells={e.pasteCells}
+      onClipboardCopy={e.transferCopy}
+      onClipboardPaste={e.transferPaste}
       onBlockedAction={e.warn}
       showFormulas={e.showFormulas}
       comments={e.workbook.comments}
@@ -87,7 +87,7 @@ function EditorGrid({ editor: e, picking, onContextMenu, onViewportChange }: Gri
         if (e.dialog) controller?.releaseKeyboard();
       }}
       unavailableText={e.calculation.error ? 'Unavailable' : '…'}
-      onChange={(next) => e.updateSheet(next)}
+      onChange={e.updateSheet}
       onSelectionChange={e.onGridSelection}
       onContextMenu={onContextMenu}
       onCommentRequest={(coords) => openCellComment(e, coords)}
@@ -106,13 +106,7 @@ export function EditorWorkspace(props: GridProps) {
       keyboardActivation="manual"
     >
       <TabsContent id={e.sheet.id} className="se-editor__worksheet-panel">
-        <div
-          className="se-editor__grid"
-          role="group"
-          aria-label="Workbook grid"
-          tabIndex={0}
-          data-gridlines={e.showGridlines}
-        >
+        <div className="se-editor__grid" data-gridlines={e.showGridlines}>
           <Suspense fallback={<p role="status">Loading spreadsheet…</p>}>
             <EditorGrid {...props} />
           </Suspense>

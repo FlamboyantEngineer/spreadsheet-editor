@@ -101,6 +101,7 @@ export function forgetCell(cell: HTMLElement) {
 /** Removes everything this renderer painted on a cell; authored styles remain untouched. */
 export function releaseCell(cell: HTMLElement) {
   clearCellPresentation(cell);
+  delete cell.dataset.approximate;
   paintedCells.delete(cell);
   const target = portalTargets.get(cell);
   if (target) target.remove();
@@ -142,7 +143,8 @@ function inputValue(input: CellInput | undefined, unavailableText: string): Cell
 
 function cellState(frame: PaintFrame, { x, y }: { x: number; y: number }): CellState {
   const input = frame.raw[y]?.[x];
-  const value = frame.values ? frame.values[y][x] : inputValue(input, frame.unavailableText);
+  const calculated = frame.values?.[y]?.[x];
+  const value = calculated === undefined ? inputValue(input, frame.unavailableText) : calculated;
   // Equal to calculationCellKey(sheetId, x, y), without a JSON.stringify per cell.
   const key = `${frame.keyPrefix}${x},${y}]`;
   const draft = frame.presentation?.draft;
@@ -263,7 +265,7 @@ export function paintCell(frame: PaintFrame, cell: HTMLElement, at: { x: number;
   applyHint(cell, state.hint);
   const content = hostContent(frame, state, calculatedText);
   const portal = placeContent(frame, cell, { key: state.key, content, text });
-  markApproximate(cell, state.value);
+  markApproximate(cell, state.drafting ? null : state.value);
   paintedCells.set(cell, {
     settings: frame.settings,
     value: state.value,

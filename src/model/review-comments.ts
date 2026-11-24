@@ -1,3 +1,4 @@
+import { extendWorksheetIdentities, type WorkbookIdFactory } from './extent.js';
 import { requireDefined } from './require-defined.js';
 import type { ReviewStamp, SpreadsheetComment } from './review.js';
 import { parseSpreadsheetRange } from './spreadsheet-addressing.js';
@@ -8,6 +9,7 @@ export interface NewComment {
   sheetId: string;
   range: string;
   text: string;
+  idFactory?: WorkbookIdFactory | undefined;
 }
 /** One comment of a thread, by the thread's id and the comment's. */
 export interface CommentEntryRef {
@@ -17,7 +19,7 @@ export interface CommentEntryRef {
 
 export function addComment(
   workbook: Workbook,
-  { sheetId, range, text }: NewComment,
+  { sheetId, range, text, idFactory }: NewComment,
   stamp: ReviewStamp,
 ): Workbook {
   if (!workbook.worksheets.some((sheet) => sheet.id === sheetId) || !parseSpreadsheetRange(range))
@@ -36,6 +38,11 @@ export function addComment(
       entries: [{ id: stamp.id, author: stamp.actor.id, text: text.trim(), createdAt: stamp.time }],
     },
   ];
+  extendWorksheetIdentities(
+    requireDefined(next.worksheets.find((sheet) => sheet.id === sheetId)),
+    idFactory,
+    next,
+  );
   return next;
 }
 

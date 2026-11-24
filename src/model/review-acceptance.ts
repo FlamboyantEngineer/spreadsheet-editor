@@ -1,7 +1,10 @@
+import { writeAuthoredCellState } from './authored-cell.js';
+import type { WorkbookIdFactory } from './extent.js';
+import type { WorkbookOperation } from './operations.js';
 import { requireDefined } from './require-defined.js';
 import type { SpreadsheetSuggestion, SuggestedCellChange } from './review.js';
 import { parseSpreadsheetAddress } from './spreadsheet-addressing.js';
-import { changeWorkbookStructure } from './structure.js';
+import { changeWorkbookStructureWithOperations } from './structure-operations.js';
 import type { Workbook, Worksheet } from './workbook.js';
 
 type Structure = NonNullable<SpreadsheetSuggestion['structure']>;
@@ -20,16 +23,20 @@ function markRemovedSheets(next: Workbook) {
   });
 }
 
-function acceptStructure(next: Workbook, structure: Structure): Workbook {
+function acceptStructure(next: Workbook, structure: Structure, idFactory?: WorkbookIdFactory) {
   if (json(next.worksheets) !== json(structure.before))
     throw new Error('The workbook changed since this structural suggestion.');
   if (structure.operation) {
     const { sheetId, change } = structure.operation;
-    return changeWorkbookStructure(next, sheetId, change);
+    return changeWorkbookStructureWithOperations(
+      next,
+      { sheetId, idFactory, materialize: false },
+      change,
+    );
   }
   next.worksheets = structuredClone(structure.after);
   markRemovedSheets(next);
-  return next;
+  return { workbook: next };
 }
 
 /** Whether a cell still holds the state the suggestion saw. */
@@ -44,25 +51,14 @@ function unchanged(sheet: Worksheet | undefined, point: Point | null, change: Su
   );
 }
 
-export function setValue(sheet: Worksheet, cell: Point, value: SuggestedCellChange['after']) {
-  while (sheet.data.length <= cell.y) sheet.data.push([]);
-  while (sheet.data[cell.y].length <= cell.x) sheet.data[cell.y].push(null);
-  sheet.data[cell.y][cell.x] = value;
-}
-
-function writeSuggestedCell(next: Workbook, change: SuggestedCellChange) {
-  const sheet = requireDefined(next.worksheets.find((sheet) => sheet.id === change.sheetId)),
-    cell = requireDefined(parseSpreadsheetAddress(change.address));
-  setValue(sheet, cell, change.after);
-  sheet.inputValues = { ...sheet.inputValues };
-  if (change.afterInputValue === undefined) delete sheet.inputValues[change.address];
-  else sheet.inputValues[change.address] = structuredClone(change.afterInputValue);
-  sheet.style = { ...sheet.style };
-  sheet.formats = { ...sheet.formats };
-  if (change.afterStyle === undefined) delete sheet.style[change.address];
-  else sheet.style[change.address] = change.afterStyle;
-  if (change.afterFormat === undefined) delete sheet.formats[change.address];
-  else sheet.formats[change.address] = change.afterFormat;
+export function writeSuggestedCell(sheet: Worksheet, change: SuggestedCellChange) {
+  writeAuthoredCellState(sheet, change.address, {
+    value: change.after,
+    inputValue: change.afterInputValue,
+    style: change.afterStyle,
+    format: change.afterFormat,
+    provenance: sheet.cellProvenance?.[change.address],
+  });
 }
 
 /** Applies a cell suggestion only when none of its cells changed since it was made. */
@@ -74,16 +70,24 @@ function acceptCells(next: Workbook, changes: SuggestedCellChange[]): Workbook {
         `Cell ${change.address} changed since this suggestion. It has not been overwritten.`,
       );
   }
-  for (const change of changes) writeSuggestedCell(next, change);
+  for (const change of changes)
+    writeSuggestedCell(
+      requireDefined(next.worksheets.find((sheet) => sheet.id === change.sheetId)),
+      change,
+    );
   return next;
 }
 
-export function acceptSuggestion(next: Workbook, suggestion: SpreadsheetSuggestion): Workbook {
+export function acceptSuggestion(
+  next: Workbook,
+  suggestion: SpreadsheetSuggestion,
+  idFactory?: WorkbookIdFactory,
+): { workbook: Workbook; operations?: WorkbookOperation[] } {
   if (suggestion.outdated)
     throw new Error('The suggested cells were deleted. Reject this outdated suggestion.');
   return suggestion.structure
-    ? acceptStructure(next, suggestion.structure)
-    : acceptCells(next, suggestion.changes);
+    ? acceptStructure(next, suggestion.structure, idFactory)
+    : { workbook: acceptCells(next, suggestion.changes) };
 }
 
 /** Accepted values are the suggestion author's, by provenance. */

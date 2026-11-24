@@ -1,5 +1,6 @@
 import {
   extendWorksheetIdentities,
+  gridWorksheetExtent,
   type WorkbookIdFactory,
   type WorksheetExtent,
   worksheetExtent,
@@ -8,6 +9,16 @@ import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { type CellInput, DEFAULT_WORKBOOK_LIMITS, type Worksheet } from '../model/workbook.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { withLazyRebuild } from './row-window.js';
+
+function copyCellStorage(sheet: Worksheet): Worksheet {
+  return {
+    ...sheet,
+    data: [...sheet.data],
+    ...(sheet.inputValues && { inputValues: { ...sheet.inputValues } }),
+    ...(sheet.rowIds && { rowIds: [...sheet.rowIds] }),
+    ...(sheet.columnIds && { columnIds: [...sheet.columnIds] }),
+  };
+}
 
 /** Capture a vendor batch without turning its padded blank viewport into authored data. */
 export function captureWorksheetCellChanges(
@@ -43,29 +54,23 @@ export function captureWorksheetCellChanges(
       throw new RangeError('Grid changes exceed the cell limit.');
     return { x, y, value };
   });
-  const next = { ...sheet, data: sheet.data.map((row) => [...row]) };
-  if (sheet.inputValues) next.inputValues = { ...sheet.inputValues };
+  let next = sheet;
+  const edits = new Set<number>();
   for (const { x, y, value } of normalized) {
     const previous = next.data[y]?.[x];
     if (Object.is(previous, value) || (empty(previous) && empty(value))) continue;
+    if (next === sheet) next = copyCellStorage(sheet);
     while (next.data.length <= y) next.data.push([]);
+    if (!edits.has(y)) {
+      next.data[y] = [...next.data[y]];
+      edits.add(y);
+    }
     while (next.data[y].length <= x) next.data[y].push(null);
     next.data[y][x] = value ?? null;
     if (next.inputValues) delete next.inputValues[formatSpreadsheetAddress(x, y)];
   }
-  extendWorksheetIdentities(next, idFactory);
+  if (next !== sheet) extendWorksheetIdentities(next, idFactory);
   return next;
-}
-
-export function gridWorksheetExtent(
-  sheet: Worksheet,
-  logicalExtent?: WorksheetExtent,
-): [number, number] {
-  const extent = worksheetExtent(sheet);
-  return [
-    Math.max(extent.columns, logicalExtent?.columns ?? 0, sheet.minDimensions ? 1 : 26),
-    Math.max(extent.rows, logicalExtent?.rows ?? 0, sheet.minDimensions ? 1 : 100),
-  ];
 }
 
 /** At most this many cells are updated in place; a larger change rebuilds the rows. */
@@ -155,38 +160,4 @@ export function syncWorksheetData(
     options.allowDeleteColumn = permissions.allowDeleteColumn;
     if (!options.mergeCells) options.mergeCells = merges;
   }
-}
-
-/** Whether a captured worksheet is the current one, compared as their JSON would be,
- * without serializing every cell: data compares cell by cell, other fields by JSON.
- */
-export function sameCapture(current: Worksheet, next: Worksheet): boolean {
-  if (current === next) return true;
-  const keys = Object.keys(next) as (keyof Worksheet)[];
-  const currentKeys = Object.keys(current);
-  // Fields in another order or left undefined serialize differently; compare in full.
-  if (
-    keys.length !== currentKeys.length ||
-    keys.some((key, index) => key !== currentKeys[index] || next[key] === undefined)
-  )
-    return JSON.stringify(next) === JSON.stringify(current);
-  return keys.every((key) =>
-    key === 'data'
-      ? sameRows(current.data, next.data)
-      : current[key] === next[key] || JSON.stringify(current[key]) === JSON.stringify(next[key]),
-  );
-}
-
-function sameRows(current: readonly CellInput[][], next: readonly CellInput[][]): boolean {
-  if (current === next) return true;
-  if (current.length !== next.length) return false;
-  for (let y = 0; y < next.length; y++) {
-    const a = current[y],
-      b = next[y];
-    if (a === b) continue;
-    if (!a || !b || a.length !== b.length) return JSON.stringify(a) === JSON.stringify(b);
-    // JSON writes a missing array entry as null.
-    for (let x = 0; x < b.length; x++) if ((a[x] ?? null) !== (b[x] ?? null)) return false;
-  }
-  return true;
 }

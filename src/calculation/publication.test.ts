@@ -360,7 +360,7 @@ describe('SE-HOST-3.1: external snapshot ingress', () => {
       change(requireDefined(snapshot.result));
       expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).toThrow();
     }
-    const blank = createWorkbook([['', null]]);
+    const blank = createWorkbook([['', null, '=IF(FALSE,1,)']]);
     expect(() => assertExternalCalculationSnapshot(publication(blank), blank)).not.toThrow();
   });
 
@@ -375,9 +375,7 @@ describe('SE-HOST-3.1: external snapshot ingress', () => {
     snapshot.cellStates[key] = 'unavailable';
     expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).not.toThrow();
     snapshot.cellStates[key] = 'ready';
-    expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).toThrow(
-      'require calculated values',
-    );
+    expect(() => assertExternalCalculationSnapshot(snapshot, workbook)).not.toThrow();
   });
 
   it('allows pending/unavailable publications with no result and mixed explicitly ready cells', () => {

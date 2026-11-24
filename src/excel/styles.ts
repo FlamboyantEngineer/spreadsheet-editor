@@ -21,8 +21,6 @@ const LOCALE_IDS: Record<string, string> = {
   'fi-FI': '40B',
   'nb-NO': '414',
 };
-type LocalizedFormat = CellFormat & { locale?: string; currency?: string };
-
 const SYMBOL_CURRENCIES: Record<string, string> = { $: 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY' };
 
 /** The locale and currency of a `[$CUR-LCID]` tag; null when the locale ID is not supported. */
@@ -37,8 +35,7 @@ function formatTag(code: string): { locale?: string; currency?: string } | null 
 }
 
 /** A quoted suffix is a unit format only when the unit registry recognizes it. */
-function unitFormat(body: string, decimals: number): CellFormat | undefined {
-  const suffix = /"([^"\n]+)"\s*$/.exec(body)?.[1].trim();
+function unitFormat(suffix: string | undefined, decimals: number): CellFormat | undefined {
   if (!suffix) return undefined;
   try {
     resolveUnit(suffix);
@@ -49,10 +46,7 @@ function unitFormat(body: string, decimals: number): CellFormat | undefined {
 }
 
 /** The currency a body's symbol names: euro, pound or yen, else dollar. */
-const symbolCurrency = (body: string) =>
-  ['€', '£', '¥']
-    .filter((symbol) => body.includes(symbol))
-    .map((symbol) => SYMBOL_CURRENCIES[symbol])[0] ?? 'USD';
+const symbolCurrency = (body: string) => SYMBOL_CURRENCIES[/[$€£¥]/.exec(body)?.[0] ?? '$'];
 
 /** A currency format when the tag names a currency or the body shows a currency symbol. */
 function currencyFormat(
@@ -63,35 +57,89 @@ function currencyFormat(
   return {
     kind: 'currency',
     decimals,
-    ...(currency ? {} : { currency: symbolCurrency(body) }),
-  } as LocalizedFormat;
+    currency: currency ?? symbolCurrency(body),
+  };
 }
 
-/** The format a code's body describes, before its locale and currency tag are applied. */
-function bodyFormat(body: string, currency: string | undefined): CellFormat | null {
+interface FormatSection {
+  pattern: string;
+  literal: string | undefined;
+  hasModifiers: boolean;
+  elapsed: boolean;
+}
+
+/** The positive/default section. Quoted and escaped text and Excel controls are not field tokens. */
+function formatSection(code: string): FormatSection {
+  const section: FormatSection = {
+    pattern: '',
+    literal: undefined,
+    hasModifiers: false,
+    elapsed: false,
+  };
+  for (const match of code.matchAll(/"[^"]*"|[\\_*][\s\S]|\[[^\]]*\]|[\s\S]/g)) {
+    const token = match[0];
+    if (token === ';') {
+      section.hasModifiers = true;
+      break;
+    }
+    if (token.startsWith('"')) {
+      if (section.literal !== undefined) section.hasModifiers = true;
+      section.literal = token.slice(1, -1).trim();
+    } else if (token.length > 1) {
+      section.hasModifiers = true;
+      section.elapsed ||= /^\[(?:hh?|mm?|ss?)\]$/i.test(token);
+    } else section.pattern += token;
+  }
+  return section;
+}
+
+/** A month field by itself is a date, and alongside hours or seconds it represents minutes. */
+function calendarFormat(body: string): CellFormat | undefined {
+  const fields = body.replace(/am\/pm|a\/p/gi, 'h');
+  if (!/^[ymdhs/:.,\s-]+$/i.test(fields) || !/[ymdhs]/i.test(fields)) return undefined;
+  const time = /[hs]/i.test(fields),
+    date = /[dy]/i.test(fields);
+  return { kind: time ? (date ? 'datetime' : 'time') : 'date' };
+}
+
+/** The format a code's fields describe, before its locale tag is applied. */
+function bodyFormat(
+  body: string,
+  { currency, literal }: { currency?: string; literal?: string },
+): CellFormat | null {
   if (body === 'General' || body === '@') return { kind: 'general' };
   if (body === '# ?/?') return { kind: 'fraction' };
-  const decimals = /\.([0#]+)/.exec(body)?.[1].length ?? 0;
-  const unit = unitFormat(body, decimals);
-  if (unit) return unit;
-  if (/[dy]/i.test(body)) return { kind: /[hs]/i.test(body) ? 'datetime' : 'date' };
-  if (/[hs]/i.test(body)) return { kind: 'time' };
+  const decimals = Math.min(100, /\.([0#]+)/.exec(body)?.[1].length ?? 0);
+  const calendar = calendarFormat(body);
+  if (calendar) return calendar;
   if (body.includes('%')) return { kind: 'percent', decimals };
-  const priced = currencyFormat(body, { currency, decimals });
+  const priced = currencyFormat(body + (literal ?? ''), { currency, decimals });
   if (priced) return priced;
   if (/[eE][+-]/.test(body)) return { kind: 'scientific', decimals };
-  return /^[#0.,;()\-+\s]+$/.test(body) ? { kind: 'number', decimals } : null;
+  return /^[#0.,()\-+\s]+$/.test(body)
+    ? (unitFormat(literal, decimals) ?? { kind: 'number', decimals })
+    : null;
 }
 
-export function importNumberFormat(code: string): CellFormat | null {
-  if (!code || code === 'General' || code === '@') return { kind: 'general' };
+export function importNumberFormat(code: string | undefined): {
+  format: CellFormat | null;
+  lossy: boolean;
+} {
+  if (!code || code === 'General' || code === '@')
+    return { format: { kind: 'general' }, lossy: false };
   const metadata = formatTag(code);
-  if (!metadata) return null;
-  const format = bodyFormat(code.replace(/\[\$[^\]]*\]/g, ''), metadata.currency);
-  return format && { ...format, ...metadata };
+  if (!metadata) return { format: null, lossy: true };
+  const section = formatSection(code.replace(/\[\$[^\]]*\]/g, ''));
+  const format = section.elapsed
+    ? null
+    : bodyFormat(section.pattern.trim(), { ...metadata, literal: section.literal });
+  return {
+    format: format && { ...format, ...metadata },
+    lossy: section.hasModifiers || Boolean(section.literal && format?.kind !== 'unit'),
+  };
 }
 /** Excel only has a finite locale-ID vocabulary; unsupported locale metadata is reported, not invented. */
-export function numberFormatLoss(format?: LocalizedFormat): string | null {
+export function numberFormatLoss(format?: CellFormat): string | null {
   if (format?.locale && !Object.hasOwn(LOCALE_IDS, format.locale))
     return `XLSX cannot retain locale ${format.locale}; its default number-format locale is used.`;
   if (format?.currency && format.kind !== 'currency')
@@ -108,19 +156,19 @@ const FIXED_CODES: Partial<Record<CellFormat['kind'], string>> = {
   datetime: 'mmm d, yyyy hh:mm:ss',
 };
 
-function localePrefix(format: LocalizedFormat): string {
+function localePrefix(format: CellFormat): string {
   const locale = LOCALE_IDS[format.locale ?? 'en-US'];
   if (format.kind === 'currency') return `[$${format.currency ?? 'USD'}-${locale ?? '409'}]`;
   return format.locale && locale ? `[$-${locale}]` : '';
 }
 
-function numberSuffix(format: LocalizedFormat): string {
+function numberSuffix(format: CellFormat): string {
   if (format.kind === 'percent') return '%';
   if (format.kind === 'scientific') return 'E+00';
   return format.kind === 'unit' ? ` "${format.unit}"` : '';
 }
 
-export function exportNumberFormat(format?: LocalizedFormat): string {
+export function exportNumberFormat(format?: CellFormat): string {
   if (!format) return 'General';
   const prefix = localePrefix(format);
   const fixed = FIXED_CODES[format.kind];

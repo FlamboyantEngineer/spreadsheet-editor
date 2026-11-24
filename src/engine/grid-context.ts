@@ -10,6 +10,7 @@ import {
 import type { DisplayOptions } from '../calculation/format.js';
 import type { CellValue } from '../calculation/values.js';
 import type { GridController } from '../editor/contracts.js';
+import type { WorksheetEdit } from '../editor/editor-cell-commands.js';
 import type {
   CellPresentationSnapshot,
   FormulaFunctionDescriptor,
@@ -55,7 +56,8 @@ export interface WorkbookGridProps {
   selection: CellSelection;
   reviewMode?: boolean;
   onReviewChange?(values: CellInput[][], x: number, y: number): void;
-  onPasteCells?(values: CellInput[][], x: number, y: number): void;
+  onClipboardCopy(transfer: DataTransfer, cut: boolean): void;
+  onClipboardPaste(transfer: DataTransfer): void;
   onBlockedAction?(message: string): void;
   onError?(error: unknown): void;
   showFormulas?: boolean;
@@ -63,12 +65,11 @@ export interface WorkbookGridProps {
   suggestions?: SpreadsheetSuggestion[];
   collaborators?: readonly SpreadsheetCollaborator[];
   showContributors?: boolean;
-  worksheetIndex?: number;
   onEditStateChange?(editing: boolean): void;
   formulaReferences?: FormulaReferenceHighlight[];
   pickingFormula?: boolean;
   onFormulaReference?(range: string): void;
-  onHeaderDelete?(axis: 'row' | 'column'): void;
+  onDelete(axis: 'row' | 'column' | null): void;
   onEditDraft?(value: string | null): void;
   onNativeDraft?(draft: GridDraft | null): void;
   onController(controller: GridController | null): void;
@@ -76,7 +77,7 @@ export interface WorkbookGridProps {
   subscribeWindowBlur?: (callback: () => void) => () => void;
   onViewportChange?(): void;
   onCommentRequest(coords: JSpreadsheetCellCoords): void;
-  onChange(worksheet: Worksheet): void;
+  onChange(worksheet: Worksheet, change: WorksheetEdit): void;
   onSelectionChange(range: JSpreadsheetSelectionRange): void;
 }
 
@@ -162,19 +163,6 @@ export interface GridSurfaceContext extends GridContext {
   native: ReturnType<typeof useNativeFormula>;
   resize: ReturnType<typeof useHeaderResize>;
   controller: GridController & { focus(): void };
-}
-
-/** The engine's first worksheet. */
-export function gridWorksheet(
-  handle: JSpreadsheetHostHandle | null,
-): JSpreadsheetWorksheetInstance | null {
-  const instance = handle?.getInstance();
-  if (!instance) return null;
-  return Array.isArray(instance)
-    ? (instance[0] ?? null)
-    : 'worksheets' in instance
-      ? (instance.worksheets?.[0] ?? null)
-      : (instance as JSpreadsheetWorksheetInstance);
 }
 
 type PointerTarget = { target: EventTarget | null; clientX: number; clientY: number };

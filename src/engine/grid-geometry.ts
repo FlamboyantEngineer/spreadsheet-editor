@@ -1,6 +1,7 @@
 import type { CellSelection } from '../model/editing.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { Worksheet } from '../model/workbook.js';
+import { gridCellAt } from './grid-cell.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { gridRowWindow, revealGridRows } from './row-window.js';
 
@@ -50,6 +51,7 @@ function* columnCells(
 }
 
 const cornerOf = (engine: JSpreadsheetWorksheetInstance) => engine.table?.tHead?.rows[0]?.cells[0];
+const previousFrozenCounts = new WeakMap<JSpreadsheetWorksheetInstance, number>();
 
 /** Sticky row headers and corner, so they stay over scrolled cells. */
 function pinHeaders(engine: JSpreadsheetWorksheetInstance, corner: HTMLElement | undefined) {
@@ -84,6 +86,8 @@ function freezeColumn(
  */
 export function syncFrozenColumns(engine: JSpreadsheetWorksheetInstance) {
   const count = engine.options?.freezeColumns ?? 0;
+  const previous = previousFrozenCounts.get(engine) ?? 0;
+  previousFrozenCounts.set(engine, count);
   const corner = cornerOf(engine);
   // Measuring forces layout; only frozen columns need the row header's width.
   const rowHeaderWidth =
@@ -91,7 +95,8 @@ export function syncFrozenColumns(engine: JSpreadsheetWorksheetInstance) {
   pinHeaders(engine, corner);
   let left = rowHeaderWidth;
   const positioned = new Set<HTMLElement>();
-  for (let x = 0; x < (engine.cols?.length ?? 0); x++) {
+  const last = Math.min(Math.max(count, previous), engine.cols?.length ?? 0);
+  for (let x = 0; x < last; x++) {
     const frozen = x < count;
     freezeColumn(engine, { x, frozen, left }, positioned);
     if (frozen) left += columnWidth(engine, x);
@@ -171,14 +176,26 @@ interface Box {
 /** The sticky corner, the first column header and the first attached row header. */
 function headerRects(engine: JSpreadsheetWorksheetInstance) {
   const corner = cornerOf(engine)?.getBoundingClientRect();
-  const column = engine.headers
-    ?.find((header) => header?.getBoundingClientRect().height > 0)
-    ?.getBoundingClientRect();
-  const row = engine.rows
-    ?.slice(gridRowWindow(engine)?.start ?? 0)
-    .find((row) => (row?.element?.firstElementChild?.getBoundingClientRect().width ?? 0) > 0)
-    ?.element.firstElementChild?.getBoundingClientRect();
+  let column: DOMRect | undefined;
+  for (const header of engine.headers ?? []) {
+    const rect = header?.getBoundingClientRect();
+    if (rect && rect.height > 0) {
+      column = rect;
+      break;
+    }
+  }
+  const row = firstRowHeaderRect(engine);
   return { corner, column, row };
+}
+
+function firstRowHeaderRect(engine: JSpreadsheetWorksheetInstance) {
+  const attached = gridRowWindow(engine);
+  const last = attached?.end ?? engine.rows?.length ?? 0;
+  for (let y = attached?.start ?? 0; y < last; y++) {
+    const rect = engine.rows?.[y]?.element?.firstElementChild?.getBoundingClientRect();
+    if (rect && rect.width > 0) return rect;
+  }
+  return undefined;
 }
 
 /** The visible cell body excludes both sticky header bands and scrollbar gutters. */
@@ -250,7 +267,7 @@ export function scrollGridCellIntoView(
 ) {
   revealGridRows(engine, y);
   const viewport = gridViewport(engine),
-    cell = engine.getCellFromCoords?.(x, y);
+    cell = gridCellAt(engine, x, y);
   if (!viewport || !cell) return;
   const rect = cell.getBoundingClientRect(),
     bounds = viewport.getBoundingClientRect();

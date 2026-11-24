@@ -1,12 +1,13 @@
+import { formulaReferenceTokens } from './formula-reference-token.js';
 import { requireDefined } from './require-defined.js';
 import {
   formatSpreadsheetAddress,
   formatSpreadsheetColumnName,
-  FORMULA_WORD_CHARACTER,
+  MAX_COLUMN_INDEX,
+  MAX_ROW_INDEX,
   parseSpreadsheetAddress,
   parseSpreadsheetColumnName,
   parseSpreadsheetRange,
-  UNQUOTED_SHEET_NAME,
 } from './spreadsheet-addressing.js';
 import type { StructureChange } from './structure.js';
 import { worksheetNameKey } from './workbook.js';
@@ -35,82 +36,38 @@ export function interval(
   }
   return reversed ? [b, a] : [a, b];
 }
-const CELL_OR_LINES = String.raw`(\$?[A-Za-z]{1,3}\$?[1-9]\d*(?::\$?[A-Za-z]{1,3}\$?[1-9]\d*)?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9]\d*:\$?[1-9]\d*)(?![\p{L}\p{N}_.(])`;
-/** Sticky patterns: one with an optional sheet prefix, one without for runs that end in no `!`. */
-const QUALIFIED_REFERENCE = new RegExp(
-    String.raw`(?:(?:'((?:[^']|'')*)'|(${UNQUOTED_SHEET_NAME}))!)?` + CELL_OR_LINES,
-    'uy',
-  ),
-  LOCAL_REFERENCE = new RegExp(`()()${CELL_OR_LINES}`, 'uy'),
-  NAME_RUN = /[\p{L}\p{N}_ ]*/uy;
-
 type ReferenceMap = (reference: string, sheet: string | null, prefix: string) => string;
-
-/** The end of the run of name characters starting at `index`. */
-function nameRunEnd(formula: string, index: number): number {
-  NAME_RUN.lastIndex = index;
-  NAME_RUN.exec(formula);
-  return Math.max(NAME_RUN.lastIndex, index + 1);
-}
-
-/** The reference at `index`; a sheet prefix is tried only where the name run ends in `!`. */
-function referenceAt(formula: string, index: number, runEnd: number): RegExpExecArray | null {
-  const pattern =
-    formula[index] === "'" || formula[runEnd] === '!' ? QUALIFIED_REFERENCE : LOCAL_REFERENCE;
-  pattern.lastIndex = index;
-  return pattern.exec(formula);
-}
-
-function mapped(match: RegExpExecArray, map: ReferenceMap): string {
-  const sheet = match[1] ? match[1].replace(/''/g, "'") : match[2] || null;
-  const prefix = match[0].slice(0, match[0].length - match[3].length);
-  return map(match[3], sheet, prefix);
-}
-
-/** The index just past the quote that closes text opened before `index`; doubled quotes stay in. */
-function quotedEnd(formula: string, index: number, quote: string): number {
-  let cursor = index;
-  while (cursor < formula.length) {
-    const next = formula[cursor++];
-    if (next !== quote) continue;
-    if (formula[cursor] === quote) cursor++;
-    else break;
-  }
-  return cursor;
-}
 
 /** Scan references while keeping quoted text, anchors, and all authored numeric digits intact. */
 export function mapReferences(formula: string, map: ReferenceMap): string {
   if (!formula.trimStart().startsWith('=')) return formula;
-  let output = '',
-    index = 0,
-    runEnd = -1;
-  while (index < formula.length) {
-    if (!FORMULA_WORD_CHARACTER.test(formula[index - 1] ?? '')) {
-      // An unquoted sheet name runs to the end of its run of name characters, so the run's end is
-      // found once per run; that keeps the scan linear in the formula length.
-      if (index >= runEnd) runEnd = nameRunEnd(formula, index);
-      const match = referenceAt(formula, index, runEnd);
-      if (match) {
-        output += mapped(match, map);
-        index += match[0].length;
-        continue;
-      }
-    }
-    const character = formula[index++];
-    const end =
-      character === '"' || character === "'" ? quotedEnd(formula, index, character) : index;
-    output += character + formula.slice(index, end);
-    index = end;
+  let output = '';
+  let cursor = 0;
+  for (const {
+    startIndex,
+    addressIndex,
+    endIndex,
+    sheetName,
+    coordinates,
+  } of formulaReferenceTokens(formula)) {
+    if (!coordinates) continue;
+    const prefix = formula.slice(startIndex, addressIndex);
+    const mapped = map(formula.slice(addressIndex, endIndex), sheetName, prefix);
+    output += formula.slice(cursor, startIndex) + mapped;
+    cursor = endIndex;
   }
-  return output;
+  return output + formula.slice(cursor);
 }
+
+const RANGE_SEPARATOR = /(\s*:\s*)/;
+const lastIndex = (axis: 'column' | 'row') =>
+  axis === 'column' ? MAX_COLUMN_INDEX : MAX_ROW_INDEX;
 
 const CELL_PATTERN = /^(\$?)([A-Za-z]+)(\$?)([1-9]\d*)$/;
 
 /** A cell or cell range after a change, keeping its anchors. */
 function rewriteCells(
-  pieces: string[],
+  separator: string | undefined,
   [firstCell, lastCell]: RegExpExecArray[],
   change: StructureChange,
 ): string {
@@ -119,23 +76,21 @@ function rewriteCells(
       ? Number(match[4]) - 1
       : requireDefined(parseSpreadsheetColumnName(match[2]));
   const transformed = interval(position(firstCell), position(lastCell), change);
-  if (!transformed) return '#REF!';
+  if (!transformed || transformed.some((index) => index > lastIndex(change.axis))) return '#REF!';
   const format = (match: RegExpExecArray, value: number) =>
     change.axis === 'row'
       ? `${match[1]}${match[2]}${match[3]}${value + 1}`
       : `${match[1]}${formatSpreadsheetColumnName(value)}${match[3]}${match[4]}`;
-  return pieces.length === 1
-    ? format(firstCell, transformed[0])
-    : `${format(firstCell, transformed[0])}:${format(lastCell, transformed[1])}`;
+  return separator
+    ? `${format(firstCell, transformed[0])}${separator}${format(lastCell, transformed[1])}`
+    : format(firstCell, transformed[0]);
 }
 
 function rewriteReference(reference: string, change: StructureChange): string {
-  const pieces = reference.split(':'),
-    first = pieces[0],
-    last = pieces[1] ?? first;
+  const [first, separator, last = first] = reference.split(RANGE_SEPARATOR);
   const firstCell = CELL_PATTERN.exec(first),
     lastCell = CELL_PATTERN.exec(last);
-  if (firstCell && lastCell) return rewriteCells(pieces, [firstCell, lastCell], change);
+  if (firstCell && lastCell) return rewriteCells(separator, [firstCell, lastCell], change);
   const wholeColumns = /^\$?[A-Za-z]+$/.test(first);
   if ((wholeColumns && change.axis !== 'column') || (!wholeColumns && change.axis !== 'row'))
     return reference;
@@ -144,10 +99,10 @@ function rewriteReference(reference: string, change: StructureChange): string {
       ? requireDefined(parseSpreadsheetColumnName(token.replace('$', '')))
       : Number(token.replace('$', '')) - 1;
   const transformed = interval(position(first), position(last), change);
-  if (!transformed) return '#REF!';
+  if (!transformed || transformed.some((index) => index > lastIndex(change.axis))) return '#REF!';
   const format = (original: string, value: number) =>
     `${original.startsWith('$') ? '$' : ''}${wholeColumns ? formatSpreadsheetColumnName(value) : value + 1}`;
-  return `${format(first, transformed[0])}:${format(last, transformed[1])}`;
+  return `${format(first, transformed[0])}${separator}${format(last, transformed[1])}`;
 }
 
 /** The sheet a formula is in, and the sheet a structural change applies to. */
@@ -199,7 +154,8 @@ export function translateFormulaReferences(formula: string, dx: number, dy: numb
     const before = kind === 'column' ? parseSpreadsheetColumnName(bare) : Number(bare) - 1;
     if (before === null) return null;
     const after = before + (anchored ? 0 : kind === 'column' ? dx : dy);
-    if (after < 0 || after > (kind === 'column' ? 16383 : 1048575)) return null;
+    if (after < 0 || after > lastIndex(kind)) return null;
+    if (after === before) return token;
     return (
       (anchored ? '$' : '') +
       (kind === 'column' ? formatSpreadsheetColumnName(after) : String(after + 1))
@@ -213,7 +169,10 @@ export function translateFormulaReferences(formula: string, dx: number, dy: numb
     return x === null || y === null ? null : x + y;
   };
   return mapReferences(formula, (reference, _sheet, prefix) => {
-    const pieces = reference.split(':').map(piece);
-    return pieces.some((part) => part === null) ? '#REF!' : prefix + pieces.join(':');
+    const [first, separator, last = first] = reference.split(RANGE_SEPARATOR);
+    const start = piece(first),
+      end = piece(last);
+    if (start === null || end === null) return '#REF!';
+    return prefix + start + (separator ? separator + end : '');
   });
 }

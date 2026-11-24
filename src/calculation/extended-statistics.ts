@@ -14,21 +14,25 @@ import {
   zeroOf,
 } from './function-call.js';
 import { type CellValue, isNumeric, type NumericValue } from './values.js';
-import { meetsCriterion } from './wildcard.js';
+import { compileCriterion } from './wildcard.js';
 
 interface ConditionTest {
   values: CellValue[];
-  condition: CellValue;
+  matches: (value: CellValue) => boolean;
 }
 
 /** The value ranges and their conditions, each range as long as the outputs. */
-function conditionTests(pairs: readonly Value[], outputs: readonly CellValue[]): ConditionTest[] {
+function conditionTests(
+  call: FunctionCall,
+  pairs: readonly Value[],
+  size: number,
+): ConditionTest[] {
   if (pairs.length % 2) fail();
   const tests: ConditionTest[] = [];
   for (let i = 0; i < pairs.length; i += 2) {
     const values = flat(pairs[i]);
-    if (values.length !== outputs.length) fail();
-    tests.push({ values, condition: scalar(pairs[i + 1]) });
+    if (values.length !== size) fail();
+    tests.push({ values, matches: compileCriterion(call, scalar(pairs[i + 1])) });
   }
   return tests;
 }
@@ -57,9 +61,9 @@ function conditional(call: FunctionCall) {
   else arity(call, count ? 2 : 3, 255);
   const outputs = flat(single ? (args[2] ?? args[0]) : args[0]),
     pairs = single ? args.slice(0, 2) : args.slice(count ? 0 : 1);
-  const tests = conditionTests(pairs, outputs);
+  const tests = conditionTests(call, pairs, outputs.length);
   const selected = outputs.filter((_, index) =>
-    tests.every(({ values, condition }) => meetsCriterion(call, values[index], condition)),
+    tests.every(({ values, matches }) => matches(values[index])),
   );
   return count ? call.math.parse(String(selected.length)) : combineSelected(call, selected);
 }

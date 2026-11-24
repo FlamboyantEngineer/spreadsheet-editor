@@ -9,16 +9,6 @@ import type { Frame, WorkbookEvaluation } from './workbook-evaluation.js';
 
 type NodeOf<K extends FormulaNode['kind']> = Extract<FormulaNode, { kind: K }>;
 
-const ERROR_LITERAL = /^#(?:DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|NULL!)/;
-
-function literal(node: NodeOf<'literal'>): CellValue {
-  if (typeof node.value === 'string' && ERROR_LITERAL.test(node.value))
-    throw new CalculationError(
-      node.value === '#NULL!' ? '#VALUE!' : (node.value as CalculationError['code']),
-    );
-  return node.value;
-}
-
 function name(evaluation: WorkbookEvaluation, node: NodeOf<'name'>, frame: Frame): CellValue {
   const value = hostValue(evaluation.host.readName?.(node.name, evaluation.formulaContext(frame)));
   evaluation.rememberOperand(node, frame, { name: node.name, value });
@@ -82,7 +72,9 @@ export function evaluateNode(
   evaluation.tick(frame.depth);
   switch (node.kind) {
     case 'literal':
-      return literal(node);
+      return node.value;
+    case 'error':
+      throw new CalculationError(node.code);
     case 'decimal':
       return evaluation.math.parse(node.decimal);
     case 'quantity':

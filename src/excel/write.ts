@@ -1,5 +1,4 @@
 import ExcelJS from 'exceljs';
-import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
 import type { CalculationResult } from '../calculation/evaluator.js';
 import { formatCellValue } from '../calculation/format.js';
@@ -26,6 +25,7 @@ import { excelValue, unsupportedCall } from './export-values.js';
 import { inlineHostOperands } from './inline-operands.js';
 import { exportCellStyle, exportNumberFormat, numberFormatLoss } from './styles.js';
 import { createWarnings, type ReportedWarning } from './warnings.js';
+import { writeManualWorkbook } from './write-archive.js';
 
 type Sheet = Workbook['worksheets'][number];
 type Warn = (warning: ReportedWarning) => void;
@@ -64,9 +64,7 @@ function metadataLosses(context: ExportContext, target: ExportCell) {
       disposition: 'not-exported',
     });
   const address = formatSpreadsheetAddress(target.x, target.y);
-  const canonical = (sheet as Sheet & { inputValues?: Record<string, unknown> }).inputValues?.[
-    address
-  ];
+  const canonical = sheet.inputValues?.[address];
   if (canonical)
     context.warn({
       code: 'canonical-input',
@@ -110,7 +108,7 @@ function writeParsedFormula(
     functions,
     loss: (code, message) => context.warn({ code, message, location }),
   });
-  if (inlined === null || (isNumeric(value) && value.dimension) || unrepresentableError(value)) {
+  if (inlined === null || unrepresentableError(value)) {
     cell.value = excelValue(projected);
     if (unrepresentableError(value))
       context.warn({
@@ -158,7 +156,7 @@ function writeContent(context: ExportContext, target: ExportCell, input: unknown
   const raw = typeof input === 'string' ? input : null;
   const formula = raw?.trimStart().startsWith('=') ? raw : null;
   if (formula) context.report.formulas++;
-  if (format?.kind === 'unit' || (isNumeric(value) && (value.dimension || value.quantityKind))) {
+  if (isNumeric(value) && (format?.kind === 'unit' || value.dimension || value.quantityKind)) {
     cell.value =
       format?.kind === 'unit'
         ? formatWorksheetCell(value, format, { significantDigits: 10000 })
@@ -185,7 +183,7 @@ function writeCell(
     cell: output.getCell(y + 1, x + 1),
     x,
     y,
-    value: values[y][x],
+    value: values[y]?.[x] ?? null,
     format: sheet.formats?.[address],
     location,
   };
@@ -199,6 +197,31 @@ function writeCell(
     ...exportCellStyle(parseCellStyle(sheet.style?.[address])),
     numFmt: exportNumberFormat(target.format),
   };
+}
+
+const hasCellValue = (input: unknown, result: CellValue | undefined) =>
+  (input != null && input !== '') || result != null;
+
+/** Write each populated cell and any additional independently authored formatting. */
+function writeWorksheetCells(
+  context: ExportContext,
+  place: { sheet: Sheet; output: ExcelJS.Worksheet; values: CellValue[][] },
+) {
+  const { sheet, values } = place;
+  sheet.data.forEach((row, y) =>
+    row.forEach((input, x) => {
+      if (hasCellValue(input, values[y][x])) writeCell(context, place, { input, x, y });
+    }),
+  );
+  const formatted = new Set([
+    ...Object.keys(sheet.style ?? {}),
+    ...Object.keys(sheet.formats ?? {}),
+  ]);
+  for (const address of formatted) {
+    const { x, y } = requireDefined(parseSpreadsheetAddress(address));
+    const input = sheet.data[y]?.[x];
+    if (!hasCellValue(input, values[y]?.[x])) writeCell(context, place, { input, x, y });
+  }
 }
 
 function checkSheetName(name: string, names: Set<string>) {
@@ -229,33 +252,8 @@ function writeWorksheet(
   });
   for (const [row, geometry] of Object.entries(sheet.rows ?? {}))
     output.getRow(Number(row) + 1).height = (geometry.height * 3) / 4;
-  const place = { sheet, output, values };
-  sheet.data.forEach((row, y) =>
-    row.forEach((input, x) => writeCell(context, place, { input, x, y })),
-  );
+  writeWorksheetCells(context, { sheet, output, values });
   writeLayout(context, sheet, output);
-}
-
-/** Exports a captured authored workbook and its existing results. It never evaluates formulas. */
-export async function exportXlsx(
-  workbook: Workbook,
-  result: CalculationResult,
-  options: { formulaCapabilities?: ExcelFormulaCapabilities } = {},
-): Promise<Uint8Array> {
-  return (await exportXlsxWithReport(workbook, result, options)).bytes;
-}
-
-/** The written archive with manual calculation, so Excel shows the frozen results. */
-async function manualCalculation(document: ExcelJS.Workbook): Promise<Uint8Array> {
-  const files = unzipSync(new Uint8Array(await document.xlsx.writeBuffer()));
-  const xml = strFromU8(files['xl/workbook.xml']);
-  files['xl/workbook.xml'] = strToU8(
-    xml.replace(
-      /<calcPr\b[^>]*\/?\s*>/,
-      '<calcPr calcMode="manual" fullCalcOnLoad="0" forceFullCalc="0" calcOnSave="0"/>',
-    ),
-  );
-  return zipSync(files);
 }
 
 /** Captured-result export with explicit grouped losses; no live resolver is available. */
@@ -277,24 +275,12 @@ export async function exportXlsxWithReport(
   assertCalculationResult(result, workbook);
   const document = new ExcelJS.Workbook(),
     names = new Set<string>();
-  document.calcProperties = {
-    fullCalcOnLoad: false,
-    forceFullCalc: false,
-    calcMode: 'manual',
-  } as ExcelJS.CalculationProperties;
   const context = { warn: warnings.warn, report, result, functions };
   workbook.worksheets.forEach((sheet, index) => {
     checkSheetName(sheet.name, names);
-    const calculated = result.worksheets[index];
-    if (
-      calculated.id !== sheet.id ||
-      calculated.values.length !== sheet.data.length ||
-      calculated.values.some((row, y) => row.length !== sheet.data[y].length)
-    )
-      throw new TypeError('Export needs results matching every authored cell.');
-    writeWorksheet(context, document, { sheet, values: calculated.values });
+    writeWorksheet(context, document, { sheet, values: result.worksheets[index].values });
   });
-  const bytes = await manualCalculation(document);
+  const bytes = await writeManualWorkbook(document);
   report.warnings = warnings.list();
   return { bytes, report };
 }

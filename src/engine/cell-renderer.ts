@@ -11,25 +11,18 @@ import {
   type PaintFrame,
   releaseCell,
 } from './cell-paint.js';
+import { gridCellAt, gridWorksheet } from './grid-cell.js';
+import { observeGridCellWrites } from './grid-cell-writes.js';
 import type {
   JSpreadsheetHostHandle,
   JSpreadsheetWorksheetInstance,
 } from './jspreadsheet-types.js';
+import { gridRowWindow } from './row-window.js';
 
 export type { CellPortal, GridDraft } from './cell-paint.js';
 
-export function worksheetFrom(
-  handle: JSpreadsheetHostHandle,
-): JSpreadsheetWorksheetInstance | undefined {
-  const instance = handle.getInstance();
-  if (!instance) return undefined;
-  return Array.isArray(instance)
-    ? instance[0]
-    : 'worksheets' in instance
-      ? instance.worksheets?.[0]
-      : (instance as JSpreadsheetWorksheetInstance);
-}
-const previousPresentations = new WeakMap<JSpreadsheetHostHandle, Set<HTMLElement>>();
+const previousDraftCells = new WeakMap<JSpreadsheetHostHandle, HTMLElement>();
+const cellWrites = new WeakMap<JSpreadsheetHostHandle, ReturnType<typeof observeGridCellWrites>>();
 /**
  * What a row was last painted from. A values row keeps its identity only while no cell in it
  * changes value or readiness, so a row whose values, input, formats, hints and settings are all
@@ -37,11 +30,11 @@ const previousPresentations = new WeakMap<JSpreadsheetHostHandle, Set<HTMLElemen
  */
 interface PaintedRow {
   settings: object;
-  /** The values row, or the input row when there are no values. */
-  values: readonly (CellValue | CellInput)[];
+  values: readonly CellValue[] | undefined;
   raw: readonly CellInput[] | undefined;
   formats: Record<string, CellFormat>;
   hints: unknown;
+  transient: boolean;
   cells: HTMLElement[];
   /** Each cell's first child after painting, as in PaintedCell. */
   nodes: (ChildNode | null)[];
@@ -55,17 +48,13 @@ const paintSettings = new WeakMap<
   { inputs: readonly unknown[]; token: object }
 >();
 
-type CellLookup = Required<Pick<JSpreadsheetWorksheetInstance, 'getCellFromCoords'>>;
 /** A paint of one grid: the shared frame, the engine's cells and what the paint touched. */
 interface GridPaint extends PaintFrame {
-  worksheet: CellLookup;
+  worksheet: JSpreadsheetWorksheetInstance;
   rows: (CellValue | CellInput)[][];
   rowMemo: Map<number, PaintedRow>;
-  touched: Set<HTMLElement>;
+  dirtyRows: ReadonlySet<number> | undefined;
 }
-const hasCellLookup = (
-  worksheet: JSpreadsheetWorksheetInstance | undefined,
-): worksheet is JSpreadsheetWorksheetInstance & CellLookup => !!worksheet?.getCellFromCoords;
 /** How calculated cells are painted; every field is optional. */
 interface CellPaintOptions {
   display?: DisplayOptions | undefined;
@@ -80,10 +69,25 @@ interface CellPaintOptions {
 
 /** Release only presentation owned by this renderer; authored styles remain untouched. */
 export function clearCalculatedPresentation(handle: JSpreadsheetHostHandle) {
-  for (const cell of previousPresentations.get(handle) ?? []) releaseCell(cell);
-  previousPresentations.delete(handle);
+  for (const row of paintedRows.get(handle)?.values() ?? [])
+    for (const cell of row.cells) releaseCell(cell);
+  const draft = previousDraftCells.get(handle);
+  if (draft) releaseCell(draft);
+  previousDraftCells.delete(handle);
+  cellWrites.get(handle)?.dispose();
+  cellWrites.delete(handle);
   paintSettings.delete(handle);
   paintedRows.delete(handle);
+}
+
+function observeWrites(handle: JSpreadsheetHostHandle, worksheet: JSpreadsheetWorksheetInstance) {
+  let writes = cellWrites.get(handle);
+  if (writes?.table !== worksheet.table) {
+    writes?.dispose();
+    writes = worksheet.table && observeGridCellWrites(worksheet.table);
+    cellWrites.set(handle, writes);
+  }
+  return writes;
 }
 
 /** The settings token for this paint: unchanged while every shared input is unchanged. */
@@ -136,16 +140,22 @@ function paintSettingsOf(handle: JSpreadsheetHostHandle, options: CellPaintOptio
 
 function startPaint(
   handle: JSpreadsheetHostHandle,
-  worksheet: CellLookup,
-  { values, options }: { values: CellValue[][] | undefined; options: CellPaintOptions },
+  worksheet: JSpreadsheetWorksheetInstance,
+  {
+    values,
+    options,
+    dirtyRows,
+  }: {
+    values: CellValue[][] | undefined;
+    options: CellPaintOptions;
+    dirtyRows: GridPaint['dirtyRows'];
+  },
 ): GridPaint {
   const raw = options.raw ?? [],
     formats = options.formats ?? NO_FORMATS;
-  const rows = values ?? raw;
+  const rows = options.raw ?? values ?? [];
   const rowMemo = paintedRows.get(handle) ?? new Map<number, PaintedRow>();
   paintedRows.set(handle, rowMemo);
-  if (rowMemo.size > rows.length)
-    for (const y of rowMemo.keys()) if (y >= rows.length) rowMemo.delete(y);
   return {
     settings: paintSettingsOf(handle, options),
     values,
@@ -162,75 +172,84 @@ function startPaint(
     worksheet,
     rows,
     rowMemo,
-    touched: new Set(),
+    dirtyRows,
   };
 }
 
 /** Whether a row still shows what it was painted from, in the same engine cells. */
-function rowUnchanged(
-  paint: GridPaint,
-  memo: PaintedRow | undefined,
-  y: number,
-): memo is PaintedRow {
+function rowUnchanged(paint: GridPaint, memo: PaintedRow, y: number): boolean {
   return (
-    !!memo &&
-    memo.values === paint.rows[y] &&
+    !memo.transient &&
+    memo.values === paint.values?.[y] &&
     memo.raw === paint.raw[y] &&
     memo.settings === paint.settings &&
     memo.formats === paint.formats &&
     memo.hints === paint.hints &&
     paint.presentation?.draft?.y !== y &&
     // A rebuilt row has new cells; the engine replaces every cell of a row it rebuilds.
-    memo.cells[0] === paint.worksheet.getCellFromCoords(0, y) &&
-    // The engine writes its raw value into a cell when an editor closes.
-    memo.cells.every((cell, index) => cell.firstChild === memo.nodes[index])
+    memo.cells[0] === gridCellAt(paint.worksheet, 0, y) &&
+    // Without an observable table, detect engine writes from the node identities.
+    (paint.dirtyRows
+      ? !paint.dirtyRows.has(y)
+      : memo.cells.every((cell, index) => cell.firstChild === memo.nodes[index]))
   );
+}
+
+function releasePaint(cell: HTMLElement) {
+  releaseCell(cell);
+  if (cell.isConnected && !cell.classList.contains('editor')) cell.textContent = '';
 }
 
 function paintRow(paint: GridPaint, y: number) {
   const memo = paint.rowMemo.get(y);
-  if (rowUnchanged(paint, memo, y)) {
-    for (const cell of memo.cells) paint.touched.add(cell);
+  if (memo && rowUnchanged(paint, memo, y)) {
     for (const portal of memo.portals) paint.portals.push(portal);
     return;
   }
   const row = paint.rows[y];
   const cells: HTMLElement[] = [],
     rowPortals = paint.portals.length;
-  let settled = paint.presentation?.draft?.y !== y;
+  let transient = paint.presentation?.draft?.y === y;
   for (let x = 0; x < row.length; x++) {
-    const cell = paint.worksheet.getCellFromCoords(x, y);
+    const cell = gridCellAt(paint.worksheet, x, y);
     if (!cell) continue;
     if (cell.classList.contains('editor')) {
       // The engine rewrites the cell when its editor closes.
       forgetCell(cell);
-      settled = false;
+      transient = true;
       continue;
     }
     cells.push(cell);
-    paint.touched.add(cell);
     paintCell(paint, cell, { x, y });
   }
-  if (!settled) return void paint.rowMemo.delete(y);
+  if (memo) {
+    const current = new Set(cells);
+    for (const cell of memo.cells) if (!current.has(cell)) releasePaint(cell);
+  }
   paint.rowMemo.set(y, {
     settings: paint.settings,
-    values: row,
+    values: paint.values?.[y],
     raw: paint.raw[y],
     formats: paint.formats,
     hints: paint.hints,
+    transient,
     cells,
-    nodes: cells.map((cell) => cell.firstChild),
+    nodes: paint.dirtyRows ? [] : cells.map((cell) => cell.firstChild),
     portals: paint.portals.slice(rowPortals),
   });
 }
 
-function paintDraft(paint: GridPaint) {
+function paintDraft(paint: GridPaint, previous: HTMLElement | undefined) {
   const draft = paint.presentation?.draft;
-  if (!draft) return;
-  const cell = paint.worksheet.getCellFromCoords(draft.x, draft.y);
-  if (!cell || cell.classList.contains('editor')) return;
-  paintDraftCell(cell, draft.text);
-  paint.touched.add(cell);
+  // The row pass paints existing authored cells. A draft can also be in blank grid padding.
+  const cell =
+    draft && draft.x >= (paint.rows[draft.y]?.length ?? 0)
+      ? gridCellAt(paint.worksheet, draft.x, draft.y)
+      : null;
+  if (previous && previous !== cell) releasePaint(previous);
+  if (!cell?.isConnected || cell.classList.contains('editor')) return undefined;
+  paintDraftCell(cell, draft?.text ?? '');
+  return cell;
 }
 
 /** Only engine-owned cells are painted; raw data and formulas remain untouched. A cell
@@ -242,17 +261,27 @@ export function renderCalculatedCells(
   values: CellValue[][] | undefined,
   options: CellPaintOptions = {},
 ): CellPortal[] {
-  const worksheet = worksheetFrom(handle);
-  if (!hasCellLookup(worksheet)) return [];
-  const previous = previousPresentations.get(handle) ?? new Set<HTMLElement>();
-  const paint = startPaint(handle, worksheet, { values, options });
-  for (let y = 0; y < paint.rows.length; y++) paintRow(paint, y);
-  paintDraft(paint);
-  for (const cell of previous)
-    if (!paint.touched.has(cell)) {
-      releaseCell(cell);
-      if (!cell.classList.contains('editor')) cell.textContent = '';
+  const worksheet = gridWorksheet(handle);
+  if (!worksheet) return [];
+  const writes = observeWrites(handle, worksheet);
+  const paint = startPaint(handle, worksheet, {
+    values,
+    options,
+    dirtyRows: writes?.changedRows(),
+  });
+  const visible = gridRowWindow(worksheet);
+  const start = visible?.start ?? 0,
+    end = Math.min(visible?.end ?? paint.rows.length, paint.rows.length);
+  for (const [y, row] of paint.rowMemo) {
+    if (y < start || y >= end) {
+      for (const cell of row.cells) releasePaint(cell);
+      paint.rowMemo.delete(y);
     }
-  previousPresentations.set(handle, paint.touched);
+  }
+  const draft = paintDraft(paint, previousDraftCells.get(handle));
+  if (draft) previousDraftCells.set(handle, draft);
+  else previousDraftCells.delete(handle);
+  for (let y = start; y < end; y++) paintRow(paint, y);
+  writes?.ignorePaint();
   return paint.portals;
 }

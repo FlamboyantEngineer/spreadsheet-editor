@@ -3,12 +3,9 @@ import {
   type ExternalCalculationSnapshot,
   orderedJson,
 } from '../calculation/publication.js';
-import { copyWorkbook, type Workbook } from '../model/workbook.js';
-import {
-  createDocumentInsertion,
-  type DocumentTableInsertion,
-  type InsertionOptions,
-} from './insertion.js';
+import type { Workbook } from '../model/workbook.js';
+import type { InsertionOptions } from './insertion.js';
+import { createDocumentTable, type DocumentTableInsertion } from './table-capture.js';
 
 /** Opaque source identity and host-authoritative revision, independent of storage/transport. */
 export interface SpreadsheetSourceReference {
@@ -47,17 +44,14 @@ export function createLinkedSpreadsheetInsertion(
     Object.values(publication.cellStates ?? {}).some((state) => state !== 'ready')
   )
     throw new Error('A linked spreadsheet requires ready authoritative results.');
-  const table = createDocumentInsertion(workbook, publication.result, {
-    ...options,
-    mode: 'table',
-  }) as DocumentTableInsertion;
+  const table = createDocumentTable(workbook, publication.result, options);
   return {
     kind: 'linked-spreadsheet',
     schemaVersion: 1,
     source: structuredClone(options.source),
     sheetId: table.sheetId,
     range: table.range,
-    workbook: copyWorkbook(workbook),
+    workbook: structuredClone(workbook),
     publication: structuredClone(publication),
     table,
   };

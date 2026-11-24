@@ -54,4 +54,34 @@ describe('SE-HOST-MODEL-3.1: authored clipboard references', () => {
     expect(next.worksheets[0].rowIds).toEqual(['row-1', 'host-row']);
     expect(next.worksheets[0].columnIds).toEqual(['column-1', 'host-column']);
   });
+  it('rejects a cut if the source line moved even when its replacement has the same value', () => {
+    const workbook = createWorkbook([['same'], ['same']]);
+    workbook.worksheets[0].rowIds = ['first-row', 'second-row'];
+    workbook.worksheets[0].columnIds = ['first-column'];
+    const cut = createSpreadsheetCopy(
+      workbook,
+      { sheetId: 'sheet-1', range: { x1: 0, y1: 0, x2: 0, y2: 0 } },
+      { text: 'same', cut: true },
+    );
+    const reordered = structuredClone(workbook);
+    reordered.worksheets[0].rowIds?.reverse();
+    expect(() => pasteSpreadsheetCopy(reordered, cut, { sheetId: 'sheet-1', x: 1, y: 0 })).toThrow(
+      'cut source row or column moved',
+    );
+    expect(reordered.worksheets[0].data).toEqual([['same'], ['same']]);
+  });
+  it('rejects a cut when an identical row is inserted into a worksheet without row identities', () => {
+    const workbook = createWorkbook([['same'], ['other']]);
+    const cut = createSpreadsheetCopy(
+      workbook,
+      { sheetId: 'sheet-1', range: { x1: 0, y1: 0, x2: 0, y2: 0 } },
+      { text: 'same', cut: true },
+    );
+    const inserted = structuredClone(workbook);
+    inserted.worksheets[0].data.unshift(['same']);
+    expect(() => pasteSpreadsheetCopy(inserted, cut, { sheetId: 'sheet-1', x: 1, y: 0 })).toThrow(
+      'cut source worksheet changed',
+    );
+    expect(inserted.worksheets[0].data).toEqual([['same'], ['same'], ['other']]);
+  });
 });

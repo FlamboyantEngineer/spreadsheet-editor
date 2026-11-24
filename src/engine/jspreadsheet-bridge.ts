@@ -53,29 +53,9 @@ function rectFromElement(target: unknown): JSpreadsheetAnchorRect {
   return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
 }
 
-export function safeCoord(value: unknown): number {
+function safeCoord(value: unknown): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
-}
-
-export function readActiveWorksheet(
-  instance: JSpreadsheetInstance | null,
-): JSpreadsheetWorksheetInstance | null {
-  if (!instance) return null;
-  if (Array.isArray(instance)) {
-    return instance[0] || null;
-  }
-  if ('worksheets' in instance && Array.isArray(instance.worksheets)) {
-    const worksheets = instance.worksheets;
-    try {
-      const index =
-        typeof instance.getWorksheetActive === 'function' ? instance.getWorksheetActive() : 0;
-      return worksheets[index] || worksheets[0] || null;
-    } catch {
-      // ignore
-    }
-  }
-  return instance as JSpreadsheetWorksheetInstance;
 }
 
 /** An instance's own root element: its `el`, its `element`, or a test stub's `root`. */

@@ -5,15 +5,13 @@ import {
   parseSpreadsheetRange,
 } from '../model/spreadsheet-addressing.js';
 import type { Worksheet } from '../model/workbook.js';
-import { worksheetFrom } from './cell-renderer.js';
 import { collaboratorColorIndex } from './collaborator-color.js';
+import { gridCellAt, gridWorksheet } from './grid-cell.js';
 import type {
   JSpreadsheetHostHandle,
   JSpreadsheetWorksheetInstance,
 } from './jspreadsheet-types.js';
 
-type MarkedWorksheet = JSpreadsheetWorksheetInstance &
-  Required<Pick<JSpreadsheetWorksheetInstance, 'getCellFromCoords'>>;
 /** The review items a grid marks. */
 interface ReviewMarks {
   comments?: SpreadsheetComment[] | undefined;
@@ -31,10 +29,6 @@ const reviewMarkers = new WeakMap<
   { inputs: readonly unknown[]; cells: HTMLElement[] }
 >();
 
-const markedCell = (cell: HTMLElement) =>
-  cell.isConnected &&
-  (cell.dataset.seComments !== undefined || cell.dataset.seSuggestions !== undefined);
-
 function unmark(cells: HTMLElement[]) {
   for (const cell of cells) {
     delete cell.dataset.seComments;
@@ -50,14 +44,18 @@ const markedThread = (thread: SpreadsheetComment, sheetId: string) =>
   !thread.suggestion;
 
 /** Counts an open thread on every cell of its range that the engine has. */
-function markThread(worksheet: MarkedWorksheet, range: string, marked: Set<HTMLElement>) {
+function markThread(
+  worksheet: JSpreadsheetWorksheetInstance,
+  range: string,
+  marked: Set<HTMLElement>,
+) {
   const bounds = parseSpreadsheetRange(range);
   if (!bounds) return;
   const lastRow = Math.min(bounds.end.y, (worksheet.records?.length ?? 0) - 1);
   for (let y = bounds.start.y; y <= lastRow; y++) {
     const lastColumn = Math.min(bounds.end.x, (worksheet.records?.[y]?.length ?? 0) - 1);
     for (let x = bounds.start.x; x <= lastColumn; x++) {
-      const cell = worksheet.getCellFromCoords(x, y);
+      const cell = gridCellAt(worksheet, x, y);
       if (!cell) continue;
       cell.dataset.seComments = String(Number(cell.dataset.seComments ?? 0) + 1);
       cell.title = `${cell.dataset.seComments} open comment(s)`;
@@ -68,7 +66,7 @@ function markThread(worksheet: MarkedWorksheet, range: string, marked: Set<HTMLE
 
 /** Counts a pending suggestion on each cell it changes; a structural one marks A1. */
 function markSuggestion(
-  worksheet: MarkedWorksheet,
+  worksheet: JSpreadsheetWorksheetInstance,
   { suggestion, sheetId }: { suggestion: SpreadsheetSuggestion; sheetId: string },
   marked: Set<HTMLElement>,
 ) {
@@ -78,7 +76,7 @@ function markSuggestion(
   if (suggestion.structure) addresses.push('A1');
   for (const address of addresses) {
     const range = parseSpreadsheetRange(address),
-      cell = range && worksheet.getCellFromCoords(range.start.x, range.start.y);
+      cell = range && gridCellAt(worksheet, range.start.x, range.start.y);
     if (!cell) continue;
     cell.dataset.seSuggestions = String(Number(cell.dataset.seSuggestions ?? 0) + 1);
     cell.title = [cell.title, `Suggestion: ${suggestion.summary}`].filter(Boolean).join('; ');
@@ -88,7 +86,7 @@ function markSuggestion(
 
 /** Marks every open thread and pending suggestion of the sheet, returning the marked cells. */
 function markReview(
-  worksheet: MarkedWorksheet,
+  worksheet: JSpreadsheetWorksheetInstance,
   sheetId: string,
   { comments, suggestions }: Required<ReviewMarks>,
 ): Set<HTMLElement> {
@@ -101,9 +99,8 @@ function markReview(
   return marked;
 }
 
-const hasCellLookup = (
-  worksheet: JSpreadsheetWorksheetInstance | undefined,
-): worksheet is MarkedWorksheet => !!worksheet?.getCellFromCoords;
+const noComments: SpreadsheetComment[] = [];
+const noSuggestions: SpreadsheetSuggestion[] = [];
 
 /** Mark cells with open comments and pending suggestions. Returns false when nothing
  * changed: the same inputs on the same cells are left as they are.
@@ -113,17 +110,13 @@ export function renderReviewMarkers(
   sheetId: string,
   marks: ReviewMarks,
 ): boolean {
-  const worksheet = worksheetFrom(handle);
-  if (!hasCellLookup(worksheet)) return false;
-  const comments = marks.comments ?? [],
-    suggestions = marks.suggestions ?? [];
-  const inputs = [sheetId, comments, suggestions, worksheet.records?.length];
+  const worksheet = gridWorksheet(handle);
+  if (!worksheet) return false;
+  const comments = marks.comments ?? noComments,
+    suggestions = marks.suggestions ?? noSuggestions;
+  const inputs = [sheetId, comments, suggestions, worksheet.records];
   const previous = reviewMarkers.get(handle);
-  if (
-    previous?.inputs.every((input, index) => Object.is(input, inputs[index])) &&
-    previous.cells.every(markedCell)
-  )
-    return false;
+  if (previous?.inputs.every((input, index) => Object.is(input, inputs[index]))) return false;
   unmark(previous?.cells ?? []);
   const marked = markReview(worksheet, sheetId, { comments, suggestions });
   reviewMarkers.set(handle, { inputs, cells: [...marked] });
@@ -191,7 +184,7 @@ export function renderContributors(
   sheet: Worksheet,
   paint: ContributorPaint,
 ): void {
-  const worksheet = worksheetFrom(handle);
+  const worksheet = gridWorksheet(handle);
   if (!worksheet?.records) return;
   const inputs = contributorInputs(worksheet, sheet, paint);
   const previous = paintedContributors.get(handle);

@@ -1,10 +1,14 @@
 'use client';
 
+import { gridWorksheetExtent } from '../model/extent.js';
 import { clearCalculatedPresentation } from './cell-renderer.js';
 import type { GridSurfaceContext } from './grid-context.js';
-import { placeGridCorner } from './grid-geometry.js';
-import { paint } from './grid-sync.js';
-import { releaseJSpreadsheetKeyboardOwner } from './jspreadsheet-measures.js';
+import { gridViewport, placeGridCorner } from './grid-geometry.js';
+import { paint, paintCurrentGrid } from './grid-sync.js';
+import {
+  focusJSpreadsheetWorksheet,
+  releaseJSpreadsheetKeyboardOwner,
+} from './jspreadsheet-measures.js';
 import type {
   JSpreadsheetHostHandle,
   JSpreadsheetSelectionRange,
@@ -12,7 +16,6 @@ import type {
 } from './jspreadsheet-types.js';
 import { refreshGridRowWindow, revealGridRows, windowGridRows } from './row-window.js';
 import { observeGridBorderCopies, syncSharedGridBorders } from './shared-grid-borders.js';
-import { gridWorksheetExtent } from './worksheet-data.js';
 import { presentAttachedRows, syncWorksheetPresentation } from './worksheet-presentation.js';
 
 type Context = GridSurfaceContext;
@@ -29,6 +32,7 @@ function startRowWindow(context: Context, sheet: JSpreadsheetWorksheetInstance |
     syncSharedGridBorders(sheet);
     const corner = Number(sheet.highlighted?.at(-1)?.element?.dataset.y);
     if (rows.includes(corner)) placeGridCorner(sheet);
+    if (!context.suppress.current) paintCurrentGrid(context, context.latest.current);
   });
 }
 
@@ -66,6 +70,14 @@ function focusAfterMount(context: Context) {
 export function engineMounted(context: Context, api: JSpreadsheetHostHandle) {
   context.handle.current = api;
   const sheet = context.worksheet();
+  const surface = context.surface.current;
+  const engine = surface?.querySelector<HTMLElement>('[data-jspreadsheet-host]');
+  const viewport = sheet && gridViewport(sheet);
+  if (engine) engine.tabIndex = -1;
+  if (viewport) viewport.tabIndex = -1;
+  if (sheet && surface?.contains(surface.ownerDocument.activeElement))
+    focusJSpreadsheetWorksheet(sheet);
+  else releaseJSpreadsheetKeyboardOwner(sheet);
   context.stopBorderCopies.current?.();
   context.stopBorderCopies.current = sheet ? observeGridBorderCopies(sheet) : null;
   startRowWindow(context, sheet);

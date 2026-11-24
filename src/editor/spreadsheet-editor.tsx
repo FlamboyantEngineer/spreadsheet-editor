@@ -3,7 +3,7 @@
 import { ContextMenu } from '@flamboyantengineer/ui-components/context-menu';
 import { FindBar } from '@flamboyantengineer/ui-components/find-bar';
 import { InlineError } from '@flamboyantengineer/ui-components/inline-error';
-import { type RefObject, useRef, useState } from 'react';
+import { type RefObject, useLayoutEffect, useRef, useState } from 'react';
 import { formatWorksheetCell } from '../calculation/cell-format.js';
 import { parseFormulaReferenceHighlights } from '../model/formula-reference-parser.js';
 import { formatSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
@@ -25,6 +25,7 @@ import { EditorWorkspace } from './editor-workspace.js';
 import { type SpreadsheetEditorController, useSpreadsheetEditor } from './use-editor.js';
 import { useSessionState } from './use-session-state.js';
 
+export type { SpreadsheetClipboardData } from './clipboard-payload.js';
 export type {
   CalculationMode,
   SpreadsheetChrome,
@@ -38,7 +39,7 @@ export * from './public-host.js';
 export { useWorkbookSession } from './use-workbook-session.js';
 export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   const session = useSessionState(props.session ?? undefined);
-  if (props.session !== undefined && !props.value && !session.workbook) {
+  if (props.session !== undefined && !session.workbook) {
     const failed = session.status?.phase === 'unavailable';
     return (
       <section
@@ -61,7 +62,8 @@ export function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   return (
     <SpreadsheetEditorInstance
       key={`${props.workbookId ?? ''}\n${props.sessionKey ?? 'spreadsheet'}`}
-      {...props}
+      props={props}
+      session={session}
     />
   );
 }
@@ -109,7 +111,13 @@ function FormulaBarSection({
         e.cancelFormula();
         e.grid.current?.focus?.();
       }}
-      onNavigate={(next) => e.attempt(() => e.select(next))}
+      onNavigate={(next) => {
+        let selected = false;
+        e.attempt(() => {
+          selected = e.select(next);
+        });
+        return selected;
+      }}
       onEditingChange={onEditingChange}
       keepsEditing={keepsEditing}
       onLeaveEditor={() =>
@@ -121,11 +129,21 @@ function FormulaBarSection({
   );
 }
 
-function FindSection({ editor: e }: { editor: SpreadsheetEditorController }) {
+function FindSection({
+  editor: e,
+  input,
+}: {
+  editor: SpreadsheetEditorController;
+  input: RefObject<HTMLInputElement | null>;
+}) {
   const active = e.matches[e.matchIndex] ?? e.matches[0];
+  useLayoutEffect(() => {
+    input.current?.focus({ preventScroll: true });
+  }, [input]);
   return (
-    <div className="se-editor__find" onFocusCapture={() => e.grid.current?.releaseKeyboard()}>
+    <div className="se-editor__find">
       <FindBar
+        inputRef={input}
         label="Find in workbook"
         query={e.query}
         onQueryChange={(value) => e.setQuery(value)}
@@ -139,7 +157,10 @@ function FindSection({ editor: e }: { editor: SpreadsheetEditorController }) {
         onReplaceAll={(text) => e.attempt(() => e.replace(true, text))}
         isReplaceDisabled={!e.canWrite || !active?.authored}
         isReplaceAllDisabled={!e.canWrite || !e.matches.some((match) => match.authored)}
-        onClose={() => e.setShowFind(false)}
+        onClose={() => {
+          e.setShowFind(false);
+          e.grid.current?.focus?.();
+        }}
       />
     </div>
   );
@@ -170,15 +191,25 @@ function useReferencePicking(
   };
 }
 
-function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
-  const { panelRef, panelId, panelData } = props;
-  const e = useSpreadsheetEditor(props);
-  const chrome = props.chrome ?? 'full';
+function SpreadsheetEditorInstance({
+  props,
+  session,
+}: {
+  props: SpreadsheetEditorProps;
+  session: ReturnType<typeof useSessionState>;
+}) {
+  const { chrome = 'full', panelRef, panelId, panelData } = props;
+  const e = useSpreadsheetEditor(props, session);
   const root = useRef<HTMLElement | null>(null);
   const formulaBar = useRef<EditorFormulaBarHandle | null>(null);
+  const findInput = useRef<HTMLInputElement | null>(null);
   const menu = useEditorContextMenu(e);
   const bubble = useCommentBubbleAnchor(e);
   const picking = useReferencePicking(e, formulaBar);
+  function openFind() {
+    e.setShowFind(true);
+    findInput.current?.focus({ preventScroll: true });
+  }
   function keepsEditing(target: EventTarget | null) {
     if (!(target instanceof Element)) return false;
     return !!(
@@ -195,11 +226,9 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
       data-mode={e.mode}
       data-calculation-mode={props.calculation?.mode ?? 'client'}
       data-pending={e.calculation.pending}
-      onKeyDownCapture={(event) => handleEditorKey(e, event, menu.openCellMenu)}
-      onFocusCapture={(event) => {
-        if (event.target instanceof Element && !event.target.closest('.se-editor__grid'))
-          e.grid.current?.releaseKeyboard();
-      }}
+      onKeyDownCapture={(event) =>
+        handleEditorKey(e, event, { openCellMenu: menu.openCellMenu, openFind })
+      }
     >
       <EditorToolbar editor={e} />
       {e.viewedVersion && <HistoricalBanner editor={e} version={e.viewedVersion} />}
@@ -211,7 +240,9 @@ function SpreadsheetEditorInstance(props: SpreadsheetEditorProps) {
           onEditingChange={picking.onFormulaEditingChange}
         />
       )}
-      {e.showFind && <FindSection editor={e} />}
+      {e.showFind && props.features?.search !== false && (
+        <FindSection editor={e} input={findInput} />
+      )}
       <div className="se-editor__workspace">
         <EditorWorkspace
           editor={e}

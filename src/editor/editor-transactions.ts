@@ -1,10 +1,9 @@
 import { selectionAddress, writeCells } from '../model/editing.js';
 import { createWorkbookEntityId } from '../model/extent.js';
-import {
-  collectCellOperations,
-  type WorkbookChangeContext,
-  type WorkbookCommandResult,
-  type WorkbookOperation,
+import type {
+  WorkbookChangeContext,
+  WorkbookCommandResult,
+  WorkbookOperation,
 } from '../model/operations.js';
 import { lockedChange } from '../model/presence.js';
 import { attributeCellChanges } from '../model/provenance.js';
@@ -37,12 +36,13 @@ export function stampOf({ actor }: EditorCore): ReviewStamp {
   return { id: globalThis.crypto.randomUUID(), time: new Date().toISOString(), actor };
 }
 
-const readOnlyMessage = (core: EditorCore) =>
-  core.viewedVersion
-    ? 'A saved version is read-only.'
-    : core.props.session && !core.props.session.workbook()
-      ? 'The workbook is still opening.'
-      : null;
+function readOnlyMessage({ viewedVersion, props }: EditorCore) {
+  if (viewedVersion) return 'A saved version is read-only.';
+  if (props.session === undefined) return null;
+  if (props.value && typeof props.acceptChange !== 'function')
+    return 'A controlled workbook with a session requires acceptChange.';
+  return props.session?.workbook() ? null : 'The workbook is still opening.';
+}
 
 /** Hands `next` to the host, then to the session or the editor's own state. */
 export function publishChange(
@@ -70,15 +70,22 @@ export function publishChange(
     core.setNotice(refused);
     throw new Error(refused);
   }
+  let accepted = next;
   try {
-    props.onChange?.(next, context);
+    if (props.acceptChange) {
+      accepted = props.acceptChange(next, context);
+      if (accepted !== next) assertWorkbook(accepted);
+    } else {
+      props.onChange?.(next, context);
+    }
+    if (props.session) props.session.change(accepted, context);
+    else if (!props.value) core.setLocal(accepted);
   } catch (error) {
     core.setNotice(error instanceof Error ? error.message : 'The workbook change was rejected.');
     throw error;
   }
-  core.latestWorkbook.current = next;
-  if (props.session) props.session.change(next, context);
-  else if (!props.value) core.setLocal(next);
+  core.latestWorkbook.current = accepted;
+  return accepted;
 }
 
 /** Publishes `next` as one undo step. */
@@ -90,13 +97,18 @@ export function commitChange(
   const { workbook, currentHistory } = core;
   if (next === workbook) return;
   const acceptedOperations = operations ?? commandOperations(workbook, next, targets);
-  publishChange(core, next, { operations: acceptedOperations });
+  const accepted = publishChange(core, next, { operations: acceptedOperations });
+  // An inverse based on the candidate cannot safely replace fields changed by host rebasing.
+  const past =
+    accepted === next
+      ? [
+          ...currentHistory.past.slice(-49),
+          historyEntry({ previous: workbook, next }, label, structuredClone(acceptedOperations)),
+        ]
+      : [];
   core.setHistory({
-    head: next,
-    past: [
-      ...currentHistory.past.slice(-49),
-      historyEntry({ previous: workbook, next }, label, structuredClone(acceptedOperations)),
-    ],
+    head: accepted,
+    past,
     future: [],
   });
   core.setEditingCell(false);
@@ -104,8 +116,9 @@ export function commitChange(
 
 /** Why a change cannot be made now, already shown to the reader, or null when it can. */
 function refusedChange(core: EditorCore, next: Workbook) {
-  const { workbook, peers } = core;
-  if (!core.canWrite) {
+  const { workbook } = core;
+  const { canWrite, canEdit, peers } = core.live.current;
+  if (!core.canWrite || !canWrite || core.canEdit !== canEdit) {
     core.warn('This workbook is read-only.');
     return true;
   }
@@ -137,6 +150,7 @@ export function mutateChange(
           actor,
           source: 'human',
           at: new Date().toISOString(),
+          targets,
         });
   commitChange(core, accepted, {
     label: canSuggest ? `Suggest: ${label}` : label,
@@ -182,6 +196,7 @@ function withPendingDraft(
       actor,
       source: 'human',
       at: new Date().toISOString(),
+      targets: draftTargets,
     });
   return { base, draftTargets };
 }
@@ -203,7 +218,7 @@ export function mutateWithDraftChange(
     label,
     operation,
     operations: result.operations
-      ? [...collectCellOperations(core.workbook, base, draftTargets), ...result.operations]
+      ? [...commandOperations(core.workbook, base, draftTargets), ...result.operations]
       : undefined,
     targets: written && mergeTargets(written, draftTargets),
   });

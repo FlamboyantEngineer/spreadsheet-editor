@@ -1,5 +1,9 @@
 import type { CellSelection } from '../model/editing.js';
-import { createWorkbookEntityId } from '../model/extent.js';
+import {
+  createWorkbookEntityId,
+  extendWorksheetIdentities,
+  type WorkbookIdFactory,
+} from '../model/extent.js';
 import { requireDefined } from '../model/require-defined.js';
 import { deleteWorksheet } from '../model/structure.js';
 import { appendWorksheet, copyWorkbook, type Workbook } from '../model/workbook.js';
@@ -30,7 +34,10 @@ function addSheet(
   const targetSheet = requireDefined(base.worksheets.find((value) => value.id === targetSheetId));
   const next = appendWorksheet(base);
   const added = requireDefined(next.worksheets.at(-1));
-  added.id = (idFactory ?? createWorkbookEntityId)('sheet');
+  const makeId = idFactory ?? createWorkbookEntityId;
+  added.id = makeId('sheet');
+  if (command !== 'duplicate' && targetSheet.rowIds) added.rowIds = [makeId('row')];
+  if (command !== 'duplicate' && targetSheet.columnIds) added.columnIds = [makeId('column')];
   if (command === 'insert') {
     next.worksheets.pop();
     next.worksheets.splice(indexOf(next, targetSheetId), 0, added);
@@ -94,7 +101,11 @@ interface SelectionResize {
 /** Sets the height of the selected rows or the width of the selected columns to `measure`. */
 export function resizeSelection(
   base: Workbook,
-  { sheetId, selection }: { sheetId: string; selection: CellSelection },
+  {
+    sheetId,
+    selection,
+    idFactory,
+  }: { sheetId: string; selection: CellSelection; idFactory?: WorkbookIdFactory | undefined },
   { dialog, measure }: SelectionResize,
 ): Workbook {
   const next = copyWorkbook(base),
@@ -108,5 +119,6 @@ export function resizeSelection(
     for (let x = selection.x1; x <= selection.x2; x++)
       target.columns[x] = { ...target.columns[x], width: measure };
   }
+  extendWorksheetIdentities(target, idFactory);
   return next;
 }

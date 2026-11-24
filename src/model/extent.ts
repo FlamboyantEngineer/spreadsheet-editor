@@ -64,6 +64,20 @@ export function worksheetExtent(sheet: Worksheet, workbook?: Workbook): Workshee
   return extent;
 }
 
+/** Mounted geometry, with the initial blank viewport only when it fits the cell budget. */
+export function gridWorksheetExtent(
+  sheet: Worksheet,
+  logicalExtent?: WorksheetExtent,
+): [number, number] {
+  const extent = worksheetExtent(sheet);
+  const columns = Math.max(extent.columns, logicalExtent?.columns ?? 0);
+  const rows = Math.max(extent.rows, logicalExtent?.rows ?? 0);
+  const padded: [number, number] = [Math.max(columns, 26), Math.max(rows, 100)];
+  return sheet.minDimensions || padded[0] * padded[1] > DEFAULT_WORKBOOK_LIMITS.maxCells
+    ? [columns, rows]
+    : padded;
+}
+
 /** Calculation ranges ignore annotation and decoration anchors which only extend the viewport. */
 export function calculationFormats(sheet: Worksheet) {
   const formats = Object.fromEntries(
@@ -116,8 +130,10 @@ export function materializeWorksheetExtent(
 export function extendWorksheetIdentities(
   sheet: Worksheet,
   factory: WorkbookIdFactory = createWorkbookEntityId,
+  workbook?: Workbook,
 ): void {
-  const extent = worksheetExtent(sheet);
+  if (!sheet.rowIds && !sheet.columnIds) return;
+  const extent = worksheetExtent(sheet, workbook);
   for (const [axis, length] of [
     ['row', extent.rows],
     ['column', extent.columns],

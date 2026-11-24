@@ -7,6 +7,7 @@ import {
   worksheetExtent,
 } from './extent.js';
 import type {
+  LinePreparation,
   WorkbookCellChange,
   WorkbookCommandResult,
   WorkbookOperation,
@@ -45,8 +46,8 @@ export function mergeOperation(before: Worksheet, after: Worksheet): WorkbookOpe
   return {
     kind: 'merges',
     sheetId: before.id,
-    before: structuredClone(before.mergeCells ?? {}),
-    after: structuredClone(after.mergeCells ?? {}),
+    before: structuredClone(before.mergeCells),
+    after: structuredClone(after.mergeCells),
   };
 }
 /** Which worksheet command a sheet operation records, and the worksheet it applies to. */
@@ -74,7 +75,6 @@ export function sheetOperation(
   return {
     kind,
     sheet: structuredClone(sheet),
-    index: (kind === 'sheet-add' ? afterOrder : beforeOrder).indexOf(sheet.id),
     beforeOrder,
     afterOrder,
   };
@@ -113,7 +113,7 @@ function deletedCells(
   change: StructureChange,
   count: number,
 ): WorkbookCellChange[] {
-  return [...authoredAddresses(sheet)].flatMap((address) => {
+  return [...authoredAddresses(sheet, true)].flatMap((address) => {
     const cell = requireDefined(parseSpreadsheetAddress(address)),
       coordinate = change.axis === 'row' ? cell.y : cell.x;
     if (coordinate < change.index || coordinate >= change.index + count) return [];
@@ -122,6 +122,7 @@ function deletedCells(
         address,
         rowId: sheet.rowIds?.[cell.y],
         columnId: sheet.columnIds?.[cell.x],
+        ...(cell.x < (sheet.data[cell.y]?.length ?? 0) && { materializeValue: true as const }),
         before: authoredCellState(sheet, address),
         after: { value: null },
       },
@@ -152,22 +153,24 @@ function survivingChanges(
   move: { sheetId: string; change: StructureChange; count: number },
 ): WorkbookCellChange[] {
   const changes: WorkbookCellChange[] = [];
-  for (const address of authoredAddresses(previousSheet)) {
-    const destination = previousSheet.id === move.sheetId ? movedAddress(address, move) : address;
-    if (destination === null) continue;
-    const before = authoredCellState(previousSheet, address),
-      after = authoredCellState(currentSheet, destination);
-    if (equal(before, after)) continue;
-    const position = requireDefined(parseSpreadsheetAddress(address));
-    changes.push({
-      address: destination,
-      beforeAddress: address,
-      rowId: previousSheet.rowIds?.[position.y],
-      columnId: previousSheet.columnIds?.[position.x],
-      before,
-      after,
-    });
-  }
+  previousSheet.data.forEach((row, y) =>
+    row.forEach((value, x) => {
+      if (typeof value !== 'string' || !value.trimStart().startsWith('=')) return;
+      const address = formatSpreadsheetAddress(x, y);
+      const destination = previousSheet.id === move.sheetId ? movedAddress(address, move) : address;
+      if (destination === null) return;
+      const { x: nextX, y: nextY } = requireDefined(parseSpreadsheetAddress(destination));
+      if (currentSheet.data[nextY]?.[nextX] === value) return;
+      changes.push({
+        address: destination,
+        beforeAddress: address,
+        rowId: previousSheet.rowIds?.[y],
+        columnId: previousSheet.columnIds?.[x],
+        before: authoredCellState(previousSheet, address),
+        after: authoredCellState(currentSheet, destination),
+      });
+    }),
+  );
   return changes;
 }
 
@@ -175,15 +178,57 @@ function survivingChanges(
 export interface StructureTarget {
   sheetId: string;
   idFactory?: WorkbookIdFactory | undefined;
+  /** Persist the grid's implicit viewport before editing one of its lines. */
+  materialize?: boolean;
+}
+
+function linePreparation(previous: Worksheet, prepared: Worksheet): LinePreparation | undefined {
+  const frame = ({ minDimensions, rowIds, columnIds }: Worksheet) =>
+    structuredClone({ minDimensions, rowIds, columnIds });
+  const before = frame(previous),
+    after = frame(prepared);
+  return equal(before, after) ? undefined : { before, after };
+}
+
+function recordLineChange(
+  { original, sheet, nextSheet }: { original: Worksheet; sheet: Worksheet; nextSheet: Worksheet },
+  { change, ids, oldIds }: { change: StructureChange; ids: string[]; oldIds: string[] },
+): LinesOperation {
+  const { axis, kind, index, count } = change;
+  const preparation = linePreparation(original, sheet);
+  return {
+    kind: 'lines',
+    sheetId: sheet.id,
+    axis,
+    action: kind,
+    index,
+    count,
+    ids,
+    ...(preparation && { preparation }),
+    ...(axis === 'row' &&
+      sheet.data.length !== nextSheet.data.length && {
+        dataRows: { before: sheet.data.length, after: nextSheet.data.length },
+      }),
+    beforeId: oldIds[index - 1],
+    afterId: oldIds[kind === 'insert' ? index : index + count],
+    beforeGeometry: geometryOf(sheet),
+    afterGeometry: geometryOf(nextSheet),
+    beforeMerges: structuredClone(sheet.mergeCells),
+    afterMerges: structuredClone(nextSheet.mergeCells),
+    ...(kind === 'delete' ? { deletedCells: deletedCells(sheet, change, count) } : {}),
+  };
 }
 
 /** A structural operation is recorded directly, including on identical blank rows. */
 export function changeWorkbookStructureWithOperations(
   workbook: Workbook,
-  { sheetId, idFactory = createWorkbookEntityId }: StructureTarget,
+  { sheetId, idFactory = createWorkbookEntityId, materialize = true }: StructureTarget,
   change: StructureChange,
 ): WorkbookCommandResult {
-  const materialized = materializeWorksheetExtent(workbook, sheetId),
+  const original = requireDefined(workbook.worksheets.find((sheet) => sheet.id === sheetId));
+  const materialized = materialize
+      ? materializeWorksheetExtent(workbook, sheetId)
+      : copyWorkbook(workbook),
     sheet = requireDefined(materialized.worksheets.find((sheet) => sheet.id === sheetId));
   const extent = worksheetExtent(sheet, materialized);
   identifyLines(sheet, extent, idFactory);
@@ -194,25 +239,13 @@ export function changeWorkbookStructureWithOperations(
   const actual = { ...change, count, ...(change.kind === 'insert' ? { ids } : {}) };
   const next = changeWorkbookStructure(materialized, sheetId, actual);
   const nextSheet = requireDefined(next.worksheets.find((candidate) => candidate.id === sheetId));
-  const operation: LinesOperation = {
-    kind: 'lines',
-    sheetId,
-    axis: change.axis,
-    action: change.kind,
-    index: change.index,
-    count,
-    ids,
-    beforeId: oldIds[change.index - 1],
-    afterId: oldIds[change.kind === 'insert' ? change.index : change.index + count],
-    beforeGeometry: geometryOf(sheet),
-    afterGeometry: geometryOf(nextSheet),
-    beforeMerges: structuredClone(sheet.mergeCells ?? {}),
-    afterMerges: structuredClone(nextSheet.mergeCells ?? {}),
-    ...(change.kind === 'delete' ? { deletedCells: deletedCells(sheet, change, count) } : {}),
-  };
+  const operation = recordLineChange(
+    { original, sheet, nextSheet },
+    { change: actual, ids, oldIds },
+  );
   // Compare surviving cells by their structural mapping, so moving a cell is not emitted as a second write.
   const operations: WorkbookOperation[] = [operation];
-  for (const previousSheet of workbook.worksheets) {
+  for (const previousSheet of materialized.worksheets) {
     const currentSheet = requireDefined(
       next.worksheets.find((candidate) => candidate.id === previousSheet.id),
     );

@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CellInput, createWorkbook } from '../model/workbook.js';
+import { renderReviewMarkers } from './cell-markers.js';
 import { renderCalculatedCells } from './cell-renderer.js';
 import type {
   JSpreadsheetHostHandle,
   JSpreadsheetWorksheetInstance,
 } from './jspreadsheet-types.js';
+import { windowGridRows } from './row-window.js';
 import { syncSharedGridBorders } from './shared-grid-borders.js';
-import { patchWorksheetData, sameCapture } from './worksheet-data.js';
+import { patchWorksheetData } from './worksheet-data.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
 
 /**
@@ -41,6 +43,8 @@ function engineGrid(data: CellInput[][], height = 100) {
   document.body.append(table);
   const engine = {
     table,
+    tbody: body,
+    content: table,
     rows,
     records,
     cols: [],
@@ -84,14 +88,54 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
     ];
     renderCalculatedCells(handle, values, { raw });
     const read = vi.spyOn(records[1][0].element.classList, 'contains');
+    const child = vi.spyOn(records[1][0].element, 'firstChild', 'get');
     // Row 0 has a new values row; row 1 keeps its identity, so its cells are not visited.
     renderCalculatedCells(handle, [['A', 'b'], values[1]], { raw });
     expect(records[0][0].element.textContent).toBe('A');
     expect(read).not.toHaveBeenCalled();
+    expect(child).not.toHaveBeenCalled();
     // A cell the engine rewrote is painted again even in an unchanged row.
     records[1][1].element.textContent = '=raw';
     renderCalculatedCells(handle, [['A', 'b'], values[1]], { raw });
     expect(records[1][1].element.textContent).toBe('d');
+    const text = records[1][1].element.firstChild;
+    if (text) text.textContent = '=native';
+    renderCalculatedCells(handle, [['A', 'b'], values[1]], { raw });
+    expect(records[1][1].element.textContent).toBe('d');
+  });
+
+  it('paints current input dimensions while a differently shaped result is pending', () => {
+    const { handle, records } = engineGrid([]);
+    const sheetId = 'sheet';
+    renderCalculatedCells(handle, [['computed'], ['old row']], {
+      raw: [['=A2', '=A2']],
+      presentation: { sheetId, readyCells: new Set([JSON.stringify([sheetId, 0, 0])]) },
+    });
+    expect(records[0][0].element.textContent).toBe('computed');
+    expect(records[0][1].element.textContent).toBe('…');
+    expect(records[1][0].element.textContent).toBe('');
+  });
+
+  it('paints only attached rows and keeps stable review markers on detached rows', () => {
+    const { engine, handle, records } = engineGrid([], 200);
+    const values = Array.from({ length: 200 }, () => ['result']);
+    const stop = windowGridRows(engine, () => renderCalculatedCells(handle, values));
+    renderCalculatedCells(handle, values);
+    expect(records[199][0].element.isConnected).toBe(false);
+    expect(records[199][0].element.textContent).toBe('');
+    const marks = {
+      comments: [
+        { id: 'comment', range: 'A200', sheetId: 'sheet', state: 'open' as const, entries: [] },
+      ],
+    };
+    expect(renderReviewMarkers(handle, 'sheet', marks)).toBe(true);
+    expect(renderReviewMarkers(handle, 'sheet', marks)).toBe(false);
+    const viewport = engine.content as HTMLElement;
+    viewport.scrollTop = 199 * 24;
+    viewport.dispatchEvent(new Event('scroll'));
+    expect(records[199][0].element.isConnected).toBe(true);
+    expect(records[199][0].element.textContent).toBe('result');
+    stop();
   });
 
   it('paints a draft row again once its draft ends', () => {
@@ -163,17 +207,6 @@ describe('SE-PERF-1.1: grid work scales with what changed', () => {
     const many = Array.from({ length: 100 }, () => Array<CellInput>(26).fill('x'));
     expect(patchWorksheetData(engine, createWorkbook(many).worksheets[0])).toBe(false);
     expect(data[1][0]).toBe('');
-  });
-
-  it('compares captured worksheets as their JSON would compare', () => {
-    const sheet = createWorkbook([['1', null]]).worksheets[0];
-    expect(sameCapture(sheet, { ...sheet, data: [['1', null]] })).toBe(true);
-    expect(sameCapture(sheet, { ...sheet, data: [['1', undefined as unknown as null]] })).toBe(
-      true,
-    );
-    expect(sameCapture(sheet, { ...sheet, data: [['1', '2']] })).toBe(false);
-    expect(sameCapture(sheet, { ...sheet, data: [['1', null], []] })).toBe(false);
-    expect(sameCapture(sheet, { ...sheet, mergeCells: {} })).toBe(false);
   });
 
   it('measures only cells with an inline border or a clipboard edge, and their neighbors', () => {

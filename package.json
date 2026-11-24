@@ -81,7 +81,8 @@
     "fflate": "^0.8.3",
     "parse5": "^8.1.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "saxes": "^6.0.0"
   },
   "peerDependenciesMeta": {
     "exceljs": {
@@ -91,6 +92,9 @@
       "optional": true
     },
     "parse5": {
+      "optional": true
+    },
+    "saxes": {
       "optional": true
     }
   },
@@ -142,6 +146,7 @@
     "prettier": "^3.9.10",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "saxes": "6.0.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.1.0"

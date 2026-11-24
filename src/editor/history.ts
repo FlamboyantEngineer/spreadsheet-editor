@@ -1,14 +1,8 @@
+import { writeAuthoredCellState } from '../model/authored-cell.js';
 import { invertWorkbookOperations, type WorkbookOperation } from '../model/operations.js';
 import { requireDefined } from '../model/require-defined.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import { copyWorkbook, type Workbook, type Worksheet } from '../model/workbook.js';
-
-const CELL_MAPS = [
-  ['style', 'style'],
-  ['formats', 'format'],
-  ['inputValues', 'inputValue'],
-  ['cellProvenance', 'provenance'],
-] as const;
 
 /** The parts of a worksheet a cell write can change besides its cells, to restore them exactly. */
 interface SheetShape {
@@ -58,6 +52,8 @@ function shapeOf(workbook: Workbook, operations: readonly WorkbookOperation[]): 
       shapes.set(sheet.id, shape);
     }
     if (operation.kind !== 'cells') continue;
+    for (const { row } of operation.shape?.lengths ?? [])
+      shape.rowLengths.set(row, sheet.data[row]?.length ?? 0);
     for (const change of operation.changes) {
       const { y } = requireDefined(parseSpreadsheetAddress(change.address));
       shape.rowLengths.set(y, sheet.data[y]?.length ?? 0);
@@ -97,21 +93,6 @@ function restoreShape(sheet: Worksheet, shape: SheetShape) {
 
 type Side = 'before' | 'after';
 type Operation<K extends WorkbookOperation['kind']> = Extract<WorkbookOperation, { kind: K }>;
-type CellChange = Operation<'cells'>['changes'][number];
-
-function rebuildCell(sheet: Worksheet, change: CellChange, side: Side) {
-  const state = change[side],
-    { x, y } = requireDefined(parseSpreadsheetAddress(change.address));
-  while (sheet.data.length <= y) sheet.data.push([]);
-  while (sheet.data[y].length <= x) sheet.data[y].push(null);
-  sheet.data[y][x] = structuredClone(state.value);
-  for (const [field, key] of CELL_MAPS) {
-    const value = state[key];
-    if (value !== undefined)
-      (sheet[field] ??= {} as never)[change.address] = structuredClone(value as never);
-    else if (sheet[field]) delete sheet[field][change.address];
-  }
-}
 
 function rebuildGeometry(sheet: Worksheet, geometry: Operation<'geometry'>[Side]) {
   for (const field of ['minDimensions', 'columns', 'rows', 'freezeColumns'] as const)
@@ -127,20 +108,25 @@ function rebuildAnnotations(next: Workbook, annotations: Operation<'annotations'
   }
 }
 
+function rebuildMerges(sheet: Worksheet, merges: Worksheet['mergeCells']) {
+  if (merges === undefined) delete sheet.mergeCells;
+  else sheet.mergeCells = structuredClone(merges);
+}
+
 /** Applies one side of a rebuilt operation to `next`. */
 function rebuildOperation(next: Workbook, operation: WorkbookOperation, side: Side) {
   const sheetOf = (id: string) => requireDefined(next.worksheets.find((sheet) => sheet.id === id));
   switch (operation.kind) {
     case 'cells': {
       const sheet = sheetOf(operation.sheetId);
-      for (const change of operation.changes) rebuildCell(sheet, change, side);
+      for (const change of operation.changes)
+        writeAuthoredCellState(sheet, change.address, change[side]);
       return;
     }
     case 'geometry':
       return rebuildGeometry(sheetOf(operation.sheetId), operation[side]);
     case 'merges':
-      sheetOf(operation.sheetId).mergeCells = structuredClone(operation[side]);
-      return;
+      return rebuildMerges(sheetOf(operation.sheetId), operation[side]);
     case 'annotations':
       return rebuildAnnotations(next, operation[side]);
     case 'workbook-metadata':
@@ -154,6 +140,7 @@ function rebuildOperation(next: Workbook, operation: WorkbookOperation, side: Si
       next.worksheets = operation[side].map(sheetOf);
       return;
     case 'lines':
+    case 'line-frame':
     case 'sheet-add':
     case 'sheet-delete':
     case 'replace':

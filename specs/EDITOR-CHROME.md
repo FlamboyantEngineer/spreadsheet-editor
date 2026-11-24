@@ -34,9 +34,13 @@ Find/replace shall search raw values/formulas and current formatted result text 
 
 The first Previous command selects the last match. Changing the query resets its active result, and navigation advances only after a protected draft successfully commits. Replace is disabled for result-only targets; Replace all is disabled when no authored match can change. Copying while results are pending or unavailable uses authored inputs for those cells rather than blank or stale displayed values.
 
+Grid keyboard commands follow focus, including when focus moves to a host control or returns from a menu. Tab moves between the grid and adjacent controls outside cell editing. The active selection has an accessible announcement. The Find shortcut focuses the query, and closing Find returns focus to the grid.
+
+Grid clipboard shortcuts use the browser's copy, cut and paste events unless a host supplies a clipboard adapter. Plain text is interoperable. A structured paste that retains formulas and formats, including a cut that clears its source, requires the current clipboard data to identify the corresponding editor copy. Matching displayed text alone is insufficient. Malformed clipboard text is reported through the editor notice. Pending paste retains its original destination and rechecks access and edit locks before writing it.
+
 Implementation: `src/editor/use-editor.ts`, `src/engine/workbook-grid.tsx`, `src/model/editing.ts`.
 
-Verification: `e2e/full-editor.spec.ts` (SE-CHROME-3.1, SE-REVIEW-2.1), `e2e/host-integration.spec.ts`, `src/editor/editor-search.test.tsx`, `src/editor/review-panels.test.tsx`, `src/model/structure.test.ts`.
+Verification: `e2e/full-editor.spec.ts` (SE-CHROME-3.1, SE-REVIEW-2.1), `e2e/host-integration.spec.ts`, `e2e/grid-input.spec.ts`, `src/editor/editor-clipboard.test.tsx`, `src/editor/editor-search.test.tsx`, `src/editor/review-panels.test.tsx`, `src/model/structure.test.ts`.
 
 ## SE-CHROME-4 - Interaction parity
 
@@ -46,6 +50,8 @@ Verification: `e2e/full-editor.spec.ts` (SE-CHROME-3.1, SE-REVIEW-2.1), `e2e/hos
 
 The engine root remains mounted through cell/style/geometry changes. Protected edits defer data/presentation replacement until commit/cancel. Fractional header resize previews only engine measure channels and commits one immutable workbook change on release; Escape, blur, pointer cancellation, permission loss and teardown restore original measures. Optional host blur subscriptions avoid requiring a global application event bus. Row/column header menus and header Delete/Backspace use canonical structural commands; changes intersecting merges require shared-modal confirmation. Worksheets support insert-before and wraparound left/right moves.
 
+An address in Go To must be within the worksheet shown by the grid and fit the range operation limit. A rejected address retains the previous selection and shows field feedback. Delete and Backspace clear cells after navigating from a header selection back to a cell.
+
 Native text entry shall fit inside the existing cell or complete merged span without changing row heights, column widths or neighboring cell positions. Its input stays out of table sizing, inherits the cell's font, padding and text color, and restores temporary positioning on commit/cancel. Frozen anchors retain sticky positioning. Text and formula-reference highlighting remain visible in both themes; the formula mirror follows single-line input alignment instead of moving merged-cell text to the top of its span.
 
 Initial engine adoption must not steal keyboard focus from chrome controls already being used. Later worksheet switches restore grid focus. Reference presentation reserves the fixed viewport's space during lazy engine loading, so adopting the grid cannot move the worksheet controls between pointer press and release. Hosts retain ownership of viewport sizing through the public grid hook.
@@ -54,7 +60,7 @@ Save appears when the editor has a workbook session (SE-SESSION-1.4); its status
 
 Implementation: `src/editor/use-editor.ts`, `src/editor/editor-formula-bar.tsx`, `src/engine/workbook-grid.tsx`, `src/engine/header-resize.ts`.
 
-Verification: `src/editor/use-editor.test.ts`, `e2e/native-cell-editing.spec.ts`, `e2e/interaction-parity.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-COMPATIBILITY.md).
+Verification: `src/editor/use-editor.test.ts`, `e2e/native-cell-editing.spec.ts`, `e2e/interaction-parity.spec.ts`, `e2e/grid-input.spec.ts`, `e2e/full-editor.spec.ts` and the pinned [comparison](HOST-COMPATIBILITY.md).
 
 ## SE-CHROME-5 - Grid zoom and visual integration
 

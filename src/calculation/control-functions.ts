@@ -76,7 +76,9 @@ function position(call: LazyCall): Value {
   const { math } = call.evaluation;
   if (!call.node.args.length) return math.parse(String((row ? call.frame.y : call.frame.x) + 1));
   const reference = call.node.args[0];
+  if (reference.kind === 'error') throw new CalculationError(reference.code);
   if (reference.kind !== 'reference') throw new CalculationError('#VALUE!');
+  call.evaluation.resolveSheet(reference.sheetName, call.frame.sheet);
   return math.parse(String((row ? reference.start.y : reference.start.x) + 1));
 }
 

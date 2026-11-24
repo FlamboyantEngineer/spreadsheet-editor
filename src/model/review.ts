@@ -17,6 +17,7 @@ export {
 } from './review-comments.js';
 export {
   decideSuggestion,
+  decideSuggestionWithOperations,
   previewSuggestions,
   proposeWorkbookChange,
   type SuggestionDecision,

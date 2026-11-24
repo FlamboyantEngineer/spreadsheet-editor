@@ -66,6 +66,18 @@ describe('SE-CALC-5.1: portable pinned behavior corpus', () => {
       expected,
     ),
   );
+  it('distinguishes blank lookup results from invalid indices and matches text patterns only against text', () => {
+    const data = [
+      ['1', null, 'item'],
+      ['2', null, null],
+    ];
+    expectDecimal(evaluate('VLOOKUP(1,A1:B1,2,FALSE)', data), '0');
+    expect(evaluate('VLOOKUP(1,A1:B1,3,FALSE)', data)).toMatchObject({ code: '#REF!' });
+    expectDecimal(evaluate('LOOKUP(2,A1:A2,B1:B2)', data), '0');
+    expect(evaluate('MATCH("1",A1:A2,0)', data)).toMatchObject({ code: '#N/A' });
+    expectDecimal(evaluate('COUNTIF(A1:C2,"*")', data), '1');
+    expectDecimal(evaluate('COUNTIF(A1:C2,"i?em")', data), '1');
+  });
   it.each(['SUM(INDEX(A1:A3,0))', 'SUM(INDEX(A1:C3,0,2))'])(
     'preserves quantity rows %s',
     (formula) => {

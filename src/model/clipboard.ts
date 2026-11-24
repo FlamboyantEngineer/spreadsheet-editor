@@ -1,3 +1,4 @@
+import { writeAuthoredCellState } from './authored-cell.js';
 import {
   type CellPlacement,
   type CellSelection,
@@ -24,6 +25,10 @@ export interface SpreadsheetCopy {
   selection: CellSelection;
   cells: CellInput[][];
   cellStates?: AuthoredCellState[][];
+  rowIds?: string[] | undefined;
+  columnIds?: string[] | undefined;
+  /** Without complete stable line identities, a cut needs the original worksheet state. */
+  legacySource?: string | undefined;
   cut: boolean;
 }
 
@@ -36,6 +41,9 @@ export function createSpreadsheetCopy(
     sheet = workbook.worksheets.find((sheet) => sheet.id === sheetId);
   if (!sheet) throw new RangeError('Unknown worksheet.');
   const cells = readSelection(workbook, sheetId, range);
+  const rowIds = sheet.rowIds?.slice(range.y1, range.y2 + 1);
+  const columnIds = sheet.columnIds?.slice(range.x1, range.x2 + 1);
+  const stableLines = rowIds?.length === cells.length && columnIds?.length === cells[0].length;
   return {
     text,
     sheetId,
@@ -46,6 +54,9 @@ export function createSpreadsheetCopy(
         authoredCellState(sheet, formatSpreadsheetAddress(range.x1 + dx, range.y1 + dy)),
       ),
     ),
+    rowIds,
+    columnIds,
+    legacySource: cut && !stableLines ? JSON.stringify(sheet) : undefined,
     cut,
   };
 }
@@ -79,42 +90,30 @@ function pasteSize(
   };
 }
 
+function assertOriginalCutLines(source: Sheet, copy: SpreadsheetCopy) {
+  if (
+    copy.rowIds?.some((id, offset) => source.rowIds?.[copy.selection.y1 + offset] !== id) ||
+    copy.columnIds?.some((id, offset) => source.columnIds?.[copy.selection.x1 + offset] !== id)
+  )
+    throw new Error('A cut source row or column moved. Copy it again before moving.');
+  if (copy.legacySource !== undefined && JSON.stringify(source) !== copy.legacySource)
+    throw new Error('The cut source worksheet changed. Copy it again before moving.');
+}
+
 /** Clears a cut's source once, after checking none of its cells changed since the copy. */
 function clearCutSource(next: Workbook, copy: SpreadsheetCopy) {
   const source = next.worksheets.find((candidate) => candidate.id === copy.sheetId);
   if (!source) throw new RangeError('The cut worksheet no longer exists.');
+  assertOriginalCutLines(source, copy);
   const cells = selectionCells(copy.selection);
   for (const { address, x, y } of cells) {
-    const expected = copy.cellStates?.[y - copy.selection.y1]?.[x - copy.selection.x1];
-    if (expected && JSON.stringify(authoredCellState(source, address)) !== JSON.stringify(expected))
+    const dy = y - copy.selection.y1,
+      dx = x - copy.selection.x1;
+    const expected = copy.cellStates?.[dy]?.[dx] ?? { value: copy.cells[dy]?.[dx] ?? null };
+    if (JSON.stringify(authoredCellState(source, address)) !== JSON.stringify(expected))
       throw new Error('A cut source cell changed. Copy it again before moving.');
   }
-  for (const { address, x, y } of cells) {
-    if (source.data[y]?.[x] !== undefined) source.data[y][x] = null;
-    for (const map of [source.style, source.formats, source.inputValues, source.cellProvenance])
-      if (map) delete map[address];
-  }
-}
-
-const STATE_FIELDS = [
-  ['style', 'style'],
-  ['formats', 'format'],
-  ['inputValues', 'inputValue'],
-  ['cellProvenance', 'provenance'],
-] as const;
-
-/** Copies a source cell's style, format, input value and provenance, or clears absent ones. */
-function pasteState(sheet: Sheet, address: string, state: AuthoredCellState | undefined) {
-  for (const [field, stateField] of STATE_FIELDS) {
-    const value = state?.[stateField];
-    if (value === undefined) {
-      if (sheet[field]) delete sheet[field][address];
-      continue;
-    }
-    // Each field retains its own schema; assignment is bounded by the copy's validated workbook.
-    const map = (sheet[field] ??= {}) as Record<string, unknown>;
-    map[address] = structuredClone(value);
-  }
+  for (const { address } of cells) writeAuthoredCellState(source, address, { value: null });
 }
 
 /** One pasted cell: copies translate relative references, cuts move formulas unchanged. */
@@ -124,8 +123,7 @@ function pasteCell(
   { x, y, sourceX, sourceY }: { x: number; y: number; sourceX: number; sourceY: number },
 ) {
   const raw = copy.cells[sourceY][sourceX] ?? null;
-  while (sheet.data[y].length <= x) sheet.data[y].push(null);
-  sheet.data[y][x] =
+  const value =
     typeof raw === 'string' && !copy.cut
       ? translateFormulaReferences(
           raw,
@@ -133,7 +131,11 @@ function pasteCell(
           y - copy.selection.y1 - sourceY,
         )
       : raw;
-  pasteState(sheet, formatSpreadsheetAddress(x, y), copy.cellStates?.[sourceY]?.[sourceX]);
+  writeAuthoredCellState(sheet, formatSpreadsheetAddress(x, y), {
+    ...copy.cellStates?.[sourceY]?.[sourceX],
+    value,
+    materialize: true,
+  });
 }
 
 /** Exact multiples tile against original source coordinates; cuts move once atomically. */
@@ -161,7 +163,6 @@ export function pasteSpreadsheetCopy(
     throw new RangeError('Paste exceeds the cell limit.');
   if (copy.cut) clearCutSource(next, copy);
   for (let dy = 0; dy < height; dy++) {
-    while (sheet.data.length <= y + dy) sheet.data.push([]);
     for (let dx = 0; dx < width; dx++) {
       const position = {
         x: x + dx,

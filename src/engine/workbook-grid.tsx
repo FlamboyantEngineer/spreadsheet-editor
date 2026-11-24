@@ -1,14 +1,16 @@
 'use client';
 
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { VisuallyHidden } from '@flamboyantengineer/ui-components/visually-hidden';
+import { type CSSProperties, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { selectionAddress } from '../model/editing.js';
 import { type CellPortal, clearCalculatedPresentation } from './cell-renderer.js';
+import { gridWorksheet } from './grid-cell.js';
 import { useGridConfig } from './grid-config.js';
 import {
   type GridContext,
   type GridFrame,
   type GridRefs,
-  gridWorksheet,
   useGridRefs,
   type WorkbookGridProps,
 } from './grid-context.js';
@@ -77,10 +79,10 @@ function useGridResize(context: GridContext, props: WorkbookGridProps) {
     getWorksheet: context.worksheet,
     canResize: !props.readOnly && !props.reviewMode,
     zoom: props.zoom,
-    onChange: props.onChange,
+    onChange: (worksheet) => props.onChange(worksheet, { kind: 'layout' }),
     onGeometryChange: () => {
       const sheet = context.worksheet();
-      if (sheet) syncFrozenColumns(sheet);
+      if (sheet?.options?.freezeColumns) syncFrozenColumns(sheet);
       context.scheduleReferences();
     },
     subscribeBlur: props.subscribeWindowBlur,
@@ -116,6 +118,7 @@ function gridOutlines(
 }
 
 export function WorkbookGrid(props: WorkbookGridProps) {
+  const selectionId = useId();
   const latest = useLatest(props);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const handle = useRef<JSpreadsheetHostHandle | null>(null);
@@ -161,11 +164,17 @@ export function WorkbookGrid(props: WorkbookGridProps) {
   return (
     <div
       ref={surfaceRef}
-      tabIndex={-1}
+      tabIndex={0}
+      role="group"
+      aria-label="Workbook grid"
+      aria-describedby={selectionId}
       className="se-editor__grid-surface"
       style={{ position: 'relative', minWidth: 0 }}
       {...handlers}
     >
+      <VisuallyHidden id={selectionId} role="status">
+        Selected {selectionAddress(props.selection)}
+      </VisuallyHidden>
       <JSpreadsheetHost
         ref={handle}
         className="se-editor__engine"

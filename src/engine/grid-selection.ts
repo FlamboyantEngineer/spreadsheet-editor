@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import type { CellSelection } from '../model/editing.js';
 import { parseSpreadsheetAddress } from '../model/spreadsheet-addressing.js';
 import type { Worksheet } from '../model/workbook.js';
+import { gridCellAt } from './grid-cell.js';
 import { expandMergedSelection, gridBodyBounds } from './grid-geometry.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
 import { gridRowWindow } from './row-window.js';
@@ -40,7 +41,7 @@ const overlapsMerge = (sheet: Worksheet, range: CellSelection) =>
 function cellRects(engine: JSpreadsheetWorksheetInstance) {
   const measured = new Map<HTMLElement, DOMRect | null>();
   return (x: number, y: number): DOMRect | null => {
-    const cell = engine.getCellFromCoords?.(x, y);
+    const cell = gridCellAt(engine, x, y);
     if (!cell || cell.style.display === 'none') return null;
     // A hidden cell is measured as null, so presence is read with has().
     if (measured.has(cell)) return measured.get(cell) as DOMRect | null;
@@ -123,6 +124,15 @@ function coveredLefts(engine: JSpreadsheetWorksheetInstance, body: Body, frozenC
   return [cornerRight, frozenRight] as const;
 }
 
+/** Geometry shared by all outlines in one frame. */
+export function gridSelectionGeometry(
+  engine: JSpreadsheetWorksheetInstance,
+  body: Body,
+  frozenCount: number,
+) {
+  return { body, lefts: coveredLefts(engine, body, frozenCount), rectAt: cellRects(engine) };
+}
+
 /** One outline fragment, without a stroke on an edge that is clipped or meets the other part. */
 function fragment(
   box: Box,
@@ -154,13 +164,21 @@ function fragment(
  */
 export function measureGridSelection(
   engine: JSpreadsheetWorksheetInstance,
-  { sheet, selection }: { sheet: Worksheet; selection: CellSelection },
+  {
+    sheet,
+    selection,
+    geometry,
+  }: {
+    sheet: Worksheet;
+    selection: CellSelection;
+    geometry?: ReturnType<typeof gridSelectionGeometry>;
+  },
   viewport: HTMLElement,
 ): CSSProperties[] {
   const range = expandMergedSelection(selection, sheet);
-  const body = gridBodyBounds(engine, viewport);
-  const lefts = coveredLefts(engine, body, sheet.freezeColumns ?? 0);
-  const rectAt = cellRects(engine);
+  const { body, lefts, rectAt } =
+    geometry ??
+    gridSelectionGeometry(engine, gridBodyBounds(engine, viewport), sheet.freezeColumns ?? 0);
   const span = selectionSpan(engine, sheet, range);
   const boxes = ([0, 1] as const).map((part) => partBox(rectAt, { span, range }, part));
   return boxes.flatMap((box, index) => {

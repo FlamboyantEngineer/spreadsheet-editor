@@ -93,7 +93,7 @@ function resizeDialog(core: EditorCore, dialog: 'row-height' | 'column-width') {
     (base) =>
       resizeSelection(
         base,
-        { sheetId: core.sheet.id, selection: core.selection },
+        { sheetId: core.sheet.id, selection: core.selection, idFactory: core.props.idFactory },
         { dialog, measure },
       ),
     { label: dialog === 'row-height' ? 'Set row height' : 'Set column width' },

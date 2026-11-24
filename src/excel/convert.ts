@@ -3,6 +3,7 @@ import { createArithmetic } from '../calculation/rational.js';
 import { requireDefined } from '../model/require-defined.js';
 import {
   formatSpreadsheetAddress,
+  parseSpreadsheetAddress,
   parseSpreadsheetRange,
 } from '../model/spreadsheet-addressing.js';
 import { assertWorkbook, type Workbook, type Worksheet } from '../model/workbook.js';
@@ -10,56 +11,43 @@ import { hostFunctionMap, validateFormulaCapabilities } from './capabilities.js'
 import { readThemeColors } from './colors.js';
 import type { ExcelFormulaCapabilities, XlsxImport, XlsxReport } from './contracts.js';
 import { inspectXlsx, type XlsxLimits } from './guard.js';
-import { importCell, type ImportContext, type SheetImport } from './import-cell.js';
+import { importCell, type ImportContext } from './import-cell.js';
 import { createWarnings } from './warnings.js';
+import type { WorksheetXml } from './worksheet-xml.js';
+import { readXlsxXml } from './xlsx-xml.js';
 
 const decode = new TextDecoder();
-function attrs(tag: string): Record<string, string> {
-  return Object.fromEntries(
-    [...tag.matchAll(/([\w:]+)="([^"]*)"/g)].map((match) => [match[1], match[2]]),
-  );
-}
 type Parts = Record<string, Uint8Array>;
 const text = (parts: Parts, name: string) => decode.decode(parts[name] ?? new Uint8Array());
 
 /** The worksheet part paths, in workbook order, from the workbook and its relationships. */
 function worksheetPaths(parts: Parts): (string | undefined)[] {
-  const relationships = new Map(
-    [...text(parts, 'xl/_rels/workbook.xml.rels').matchAll(/<Relationship\b[^>]*>/g)].map(
-      (match) => {
-        const a = attrs(match[0]);
-        return [a.Id, a.Target];
-      },
-    ),
-  );
-  return [...decode.decode(parts['xl/workbook.xml']).matchAll(/<sheet\b[^>]*>/g)].map((match) =>
-    relationships.get(attrs(match[0])['r:id']),
-  );
+  const relationships = new Map<string, string>();
+  const paths: (string | undefined)[] = [];
+  readXlsxXml(parts['xl/_rels/workbook.xml.rels'], {
+    open(name, attributes, depth) {
+      if (depth === 2 && name === 'Relationship')
+        relationships.set(attributes.Id, attributes.Target);
+    },
+  });
+  readXlsxXml(parts['xl/workbook.xml'], {
+    open(name, attributes, depth) {
+      if (depth === 3 && name === 'sheet') paths.push(relationships.get(attributes['r:id']));
+    },
+  });
+  return paths;
 }
 
 /** The XML of a worksheet part; only `xl/worksheets/sheetN.xml` parts are read. */
-function worksheetXml(parts: Parts, target: string | undefined): string {
+function worksheetXml(parts: ReadonlyMap<string, WorksheetXml>, target: string | undefined) {
   const part = target?.startsWith('/xl/')
     ? target.slice(1)
     : target?.startsWith('xl/')
       ? target
       : `xl/${target}`;
-  if (!/^xl\/worksheets\/sheet[1-9]\d*\.xml$/.test(part) || !parts[part])
-    throw new TypeError('Unsupported workbook part layout.');
-  return decode.decode(parts[part]);
-}
-
-/** Plain numeric cells as the XML wrote them, so no binary float rounding reaches the model. */
-function authoredNumbers(xml: string): Map<string, string> {
-  const numbers = new Map<string, string>();
-  for (const cell of xml.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
-    const a = attrs(cell[1]);
-    if ((a.t && a.t !== 'n') || /<f(?:\s|>)/.test(cell[2])) continue;
-    const number = /<v>([^<]+)<\/v>/.exec(cell[2])?.[1];
-    if (number && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(number))
-      numbers.set(a.r, number);
-  }
-  return numbers;
+  const worksheet = parts.get(part);
+  if (!worksheet) throw new TypeError('Unsupported workbook part layout.');
+  return worksheet;
 }
 
 const emptySheet = (index: number, name: string): Worksheet => ({
@@ -87,16 +75,13 @@ function importColumns(context: ImportContext, source: ExcelJS.Worksheet, sheet:
   });
 }
 
-function importRows(
+function importRowGeometry(
   context: ImportContext,
   source: ExcelJS.Worksheet,
-  { target, maxCells }: { target: SheetImport; maxCells: number },
+  { sheet, rows }: { sheet: Worksheet; rows: readonly number[] },
 ) {
-  const { sheet } = target;
-  source.eachRow({ includeEmpty: false }, (row, y) => {
-    if (y > maxCells)
-      throw new RangeError('Worksheet extent exceeds the standalone editor row limit.');
-    while (sheet.data.length < y) sheet.data.push([]);
+  for (const y of rows) {
+    const row = source.getRow(y);
     if (row.height) requireDefined(sheet.rows)[String(y - 1)] = { height: (row.height * 4) / 3 };
     if (row.hidden)
       context.warn({
@@ -105,8 +90,7 @@ function importRows(
         location: `${source.name}!${y}`,
         disposition: 'skipped',
       });
-    row.eachCell({ includeEmpty: false }, (cell, x) => importCell(context, target, { cell, x, y }));
-  });
+  }
 }
 
 function importLayout(context: ImportContext, source: ExcelJS.Worksheet, sheet: Worksheet) {
@@ -134,16 +118,20 @@ function importLayout(context: ImportContext, source: ExcelJS.Worksheet, sheet: 
 
 const SHEET_FEATURES = [
   [
-    /<conditionalFormatting\b/,
+    'conditionalFormatting',
     'conditional-formatting',
     'Conditional formatting is not imported.',
     'not-imported',
   ],
-  [/<dataValidation\b/, 'validation', 'Data validation is not imported.', 'not-imported'],
-  [/<pageSetup\b/, 'page-setup', 'Page setup is not imported.', 'skipped'],
+  ['dataValidations', 'validation', 'Data validation is not imported.', 'not-imported'],
+  ['pageSetup', 'page-setup', 'Page setup is not imported.', 'skipped'],
 ] as const;
 
-function featureWarnings(context: ImportContext, source: ExcelJS.Worksheet, xml: string) {
+function featureWarnings(
+  context: ImportContext,
+  source: ExcelJS.Worksheet,
+  features: ReadonlySet<string>,
+) {
   const location = source.name;
   if (source.headerFooter && Object.values(source.headerFooter).some(Boolean))
     context.warn({
@@ -152,17 +140,16 @@ function featureWarnings(context: ImportContext, source: ExcelJS.Worksheet, xml:
       location,
       disposition: 'skipped',
     });
-  for (const [pattern, code, message, disposition] of SHEET_FEATURES)
-    if (pattern.test(xml)) context.warn({ code, message, location, disposition });
+  for (const [element, code, message, disposition] of SHEET_FEATURES)
+    if (features.has(element)) context.warn({ code, message, location, disposition });
 }
 
 function importWorksheet(
   context: ImportContext,
   source: ExcelJS.Worksheet,
-  { index, xml, maxCells }: { index: number; xml: string; maxCells: number },
+  { index, xml, maxCells }: { index: number; xml: WorksheetXml; maxCells: number },
 ): Worksheet {
   const sheet = emptySheet(index, source.name);
-  const target = { sheet, name: source.name, authoredNumbers: authoredNumbers(xml) };
   if (source.state !== 'visible')
     context.warn({
       code: 'hidden-worksheet',
@@ -171,10 +158,16 @@ function importWorksheet(
       disposition: 'skipped',
     });
   importColumns(context, source, sheet);
-  importRows(context, source, { target, maxCells });
+  importRowGeometry(context, source, { sheet, rows: xml.rows });
+  for (const [address, number] of xml.cells) {
+    const { x, y } = requireDefined(parseSpreadsheetAddress(address));
+    if ((x + 1) * (y + 1) > maxCells)
+      throw new RangeError('Worksheet extent exceeds the standalone editor cell limit.');
+    importCell(context, sheet, { cell: source.getCell(address), address, x, y, number });
+  }
   if (!sheet.data.length) sheet.data = [['']];
   importLayout(context, source, sheet);
-  featureWarnings(context, source, xml);
+  featureWarnings(context, source, xml.features);
   return sheet;
 }
 
@@ -206,7 +199,7 @@ export async function convertXlsx(
   formulaCapabilities?: ExcelFormulaCapabilities,
 ): Promise<XlsxImport> {
   const external = hostFunctionMap(validateFormulaCapabilities(formulaCapabilities));
-  const { parts } = inspectXlsx(bytes, limits),
+  const { parts, worksheets } = inspectXlsx(bytes, limits),
     warnings = createWarnings('not-imported');
   const theme = readThemeColors(text(parts, 'xl/theme/theme1.xml'));
   const document = new ExcelJS.Workbook();
@@ -230,7 +223,7 @@ export async function convertXlsx(
   const paths = worksheetPaths(parts),
     maxCells = limits.maxCells ?? 250000;
   document.worksheets.forEach((source, index) => {
-    const xml = worksheetXml(parts, paths[index]);
+    const xml = worksheetXml(worksheets, paths[index]);
     workbook.worksheets.push(importWorksheet(context, source, { index, xml, maxCells }));
     report.worksheets++;
   });

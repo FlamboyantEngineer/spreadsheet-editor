@@ -114,6 +114,14 @@ describe('SE-CALC-2.1: workbook formulas', () => {
     expect(calculate('=2+')).toEqual({ kind: 'error', code: '#ERROR!' });
     expect(calculate('=1/0')).toEqual({ kind: 'error', code: '#DIV/0!' });
   });
+  it('bounds deeply nested authored formulas and validates coordinate-only references', () => {
+    expect(calculate('=' + '('.repeat(400) + '1' + ')'.repeat(400))).toEqual({
+      kind: 'error',
+      code: '#LIMIT!',
+    });
+    expect(calculate('=ROW(Missing!A1)')).toEqual({ kind: 'error', code: '#REF!' });
+    expect(calculate('=COLUMN(XFE1)')).toEqual({ kind: 'error', code: '#REF!' });
+  });
   it('detects cross-sheet cycles and bounds expensive ranges', () => {
     const workbook: Workbook = {
       schemaVersion: 1,
@@ -150,6 +158,14 @@ describe('SE-CALC-2.1: workbook formulas', () => {
 });
 
 describe('SE-4: evaluation cost does not depend on reading order', () => {
+  it('applies the remaining range budget after a forward formula read resumes', () => {
+    const values = Array.from({ length: 25 }, (_, index) => [index === 24 ? '=1' : '1']);
+    const above = createWorkbook([['=SUM(A2:A26)'], ...values]);
+    const below = createWorkbook([...values, ['=SUM(A1:A25)']]);
+    const options = { maxOperations: 60 };
+    expect(calculateWorkbook(above, options).worksheets[0].values[0][0]).toEqual(exact('25'));
+    expect(calculateWorkbook(below, options).worksheets[0].values[25][0]).toEqual(exact('25'));
+  });
   it('sums a range placed above its data about as fast as below it', () => {
     const values = Array.from({ length: 9_999 }, (_, y) => [String(y + 1)]);
     const above = createWorkbook([['=SUM(A2:A10000)'], ...values]),

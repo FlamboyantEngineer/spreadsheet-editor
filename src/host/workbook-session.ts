@@ -51,6 +51,15 @@ export interface WorkbookDraftOffer {
   readonly stale: boolean;
 }
 
+/** A consistent view of the session, stable until its subscribers are notified. */
+export interface WorkbookSessionSnapshot {
+  readonly workbook: Workbook | null;
+  readonly status: WorkbookSessionStatus;
+  readonly draft: WorkbookDraftOffer | null;
+  /** Monotonically increases for accepted edits and restored drafts. */
+  readonly localRevision: number;
+}
+
 export interface WorkbookSession {
   readonly workbookId: string;
   /** Resolves true once loaded, false when loading failed or the session closed first. */
@@ -59,6 +68,7 @@ export interface WorkbookSession {
   workbook(): Workbook | null;
   status(): WorkbookSessionStatus;
   draft(): WorkbookDraftOffer | null;
+  getSnapshot(): WorkbookSessionSnapshot;
   /** Calls `listener` whenever the workbook, the status or the draft offer changes. */
   subscribe(listener: () => void): () => void;
   /** Records an accepted local change: the editor's `onChange`. */

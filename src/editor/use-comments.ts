@@ -2,16 +2,18 @@
 
 import { type RefObject, useEffect, useEffectEvent, useState } from 'react';
 import { type CellSelection, selectionAddress } from '../model/editing.js';
+import type { WorkbookIdFactory } from '../model/extent.js';
 import {
   addComment,
   addWorkbookComment,
-  decideSuggestion,
+  decideSuggestionWithOperations,
   findOpenComment,
   type ReviewStamp,
 } from '../model/review.js';
 import { parseSpreadsheetRange } from '../model/spreadsheet-addressing.js';
 import type { Workbook, Worksheet } from '../model/workbook.js';
 import type { GridController } from './contracts.js';
+import type { CommitOptions } from './editor-transactions.js';
 
 interface CommentNavigation {
   workbook: Workbook;
@@ -71,8 +73,9 @@ interface CommentInputs extends CommentNavigation {
   canComment: boolean;
   canDecide: boolean;
   openPanel: (id: string) => void;
-  commit: (next: Workbook, label?: string) => void;
+  commit: (next: Workbook, label?: string, options?: CommitOptions) => void;
   stamp: () => ReviewStamp;
+  idFactory?: WorkbookIdFactory | undefined;
 }
 
 /** The workbook with a new range or workbook comment. */
@@ -82,12 +85,18 @@ function commentedWorkbook(
     scope,
     sheetId,
     selection,
-  }: { scope: 'range' | 'workbook'; sheetId: string; selection: CellSelection },
+    idFactory,
+  }: {
+    scope: 'range' | 'workbook';
+    sheetId: string;
+    selection: CellSelection;
+    idFactory?: WorkbookIdFactory | undefined;
+  },
   { text, meta }: { text: string; meta: ReviewStamp },
 ) {
   return scope === 'workbook'
     ? addWorkbookComment(workbook, text, meta)
-    : addComment(workbook, { sheetId, range: selectionAddress(selection), text }, meta);
+    : addComment(workbook, { sheetId, range: selectionAddress(selection), text, idFactory }, meta);
 }
 
 /** Comment threads and suggestion decisions: the composer, the open thread and reply drafts. */
@@ -103,6 +112,7 @@ export function useComments({
   openPanel,
   commit,
   stamp,
+  idFactory,
 }: CommentInputs) {
   const { commentComposer, setCommentComposer, activeCommentId, setActiveCommentId, openComment } =
     useOpenComment({ workbook, initialCommentId, grid, select });
@@ -133,7 +143,7 @@ export function useComments({
     commit(
       commentedWorkbook(
         workbook,
-        { scope: commentScope, sheetId: sheet.id, selection },
+        { scope: commentScope, sheetId: sheet.id, selection, idFactory },
         { text, meta },
       ),
       'Add comment',
@@ -146,11 +156,12 @@ export function useComments({
     if (item?.commentThreadId) openComment(item.commentThreadId);
   }
   function decide(id: string, action: 'accepted' | 'rejected') {
-    if (canDecide)
-      commit(
-        decideSuggestion(workbook, { id, decision: action }, stamp()),
-        `${action === 'accepted' ? 'Accept' : 'Reject'} suggestion`,
-      );
+    if (!canDecide) return;
+    const options = { id, decision: action, idFactory };
+    const result = decideSuggestionWithOperations(workbook, options, stamp());
+    commit(result.workbook, `${action === 'accepted' ? 'Accept' : 'Reject'} suggestion`, {
+      operations: result.operations,
+    });
   }
   return {
     commentComposer,

@@ -1,5 +1,6 @@
 import { jspreadsheet } from '@jspreadsheet-ce/react';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
+import { invalidateGridRowHeights } from './row-window.js';
 
 export interface JSpreadsheetColumnMeasureSnapshot {
   readonly attributeWidth: string;
@@ -76,7 +77,10 @@ export function applyJSpreadsheetRowMeasure(
     attributeHeight = measure.attributeHeight ?? cssHeight;
   const rowElement = worksheet.rows?.[rowIndex]?.element;
   if (!(rowElement instanceof HTMLElement)) return false;
-  if (rowElement.style.height !== cssHeight) rowElement.style.height = cssHeight;
+  if (rowElement.style.height !== cssHeight) {
+    rowElement.style.height = cssHeight;
+    invalidateGridRowHeights(worksheet);
+  }
   if (rowElement.getAttribute('height') !== attributeHeight)
     rowElement.setAttribute('height', attributeHeight);
   return true;
