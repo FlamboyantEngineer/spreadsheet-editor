@@ -1,6 +1,7 @@
 import type { NumericValue } from '../calculation/values.js';
 import type { CellOperationShape } from './operation-cell-shape.js';
 import type { CellFormat } from './review.js';
+import type { ReviewReferenceMove } from './review-reference-move.js';
 import type { CellInput, CellProvenance, Workbook, Worksheet } from './workbook.js';
 
 export {
@@ -35,6 +36,8 @@ export interface WorkbookCellChange {
   columnId?: string;
   /** Restoring a deleted line can restore an explicit blank value. */
   materializeValue?: true;
+  /** Formula text produced by the inverse line move before the authored text is restored. */
+  inverseBaselineValue?: string;
   before: AuthoredCellState;
   after: AuthoredCellState;
 }
@@ -95,6 +98,7 @@ export type WorkbookOperation =
       kind: 'annotations';
       before: Pick<Workbook, 'comments' | 'suggestions'>;
       after: Pick<Workbook, 'comments' | 'suggestions'>;
+      inverseReferenceMove?: ReviewReferenceMove | undefined;
     }
   | {
       kind: 'replace';

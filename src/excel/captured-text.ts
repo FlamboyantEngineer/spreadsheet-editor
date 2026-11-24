@@ -51,22 +51,27 @@ function unrepresentable(character: string): boolean {
   );
 }
 
+/** A reason a cell or formula literal cannot carry the exact string. */
+export function excelTextProblem(value: string, maxLength: 255 | 32767 = 32767) {
+  if (value.length > maxLength)
+    return maxLength === 255
+      ? 'Excel formula strings have a 255-character limit.'
+      : 'Excel cell strings have a 32767-character limit.';
+  for (const character of value)
+    if (unrepresentable(character)) return 'Text contains characters Excel cannot represent.';
+  return undefined;
+}
+
 /** parse5 decodes HTML entities without executing markup; work and output remain explicitly bounded. */
 export function capturedText(
   value: string,
   policy: 'plain' | 'html-to-text',
   maxLength: 255 | 32767 = 255,
 ): string {
-  if (value.length > 65_536) throw new RangeError('Captured text exceeds the HTML input limit.');
+  if (policy === 'html-to-text' && value.length > 65_536)
+    throw new RangeError('Captured text exceeds the HTML input limit.');
   const output = policy === 'html-to-text' ? htmlText(value) : value;
-  // XML/Excel cannot preserve these control characters; never silently alter an operand.
-  if ([...output].some(unrepresentable))
-    throw new TypeError('Captured text contains characters Excel cannot represent.');
-  if (output.length > maxLength)
-    throw new RangeError(
-      maxLength === 255
-        ? 'Excel formula strings have a 255-character limit.'
-        : 'Excel cell strings have a 32767-character limit.',
-    );
+  const problem = excelTextProblem(output, maxLength);
+  if (problem) throw new RangeError(problem);
   return output;
 }

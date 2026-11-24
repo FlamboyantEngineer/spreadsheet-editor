@@ -38,11 +38,11 @@ function columnWidth(engine: JSpreadsheetWorksheetInstance, x: number): number {
 
 /** The engine's first-row cells of a column, each visited once across merged rows. */
 function* columnCells(
-  engine: JSpreadsheetWorksheetInstance,
+  records: NonNullable<JSpreadsheetWorksheetInstance['records']>,
   x: number,
   positioned: Set<HTMLElement>,
 ): Generator<HTMLElement> {
-  for (const row of engine.records ?? []) {
+  for (const row of records) {
     const cell = row?.[x]?.element;
     if (!(cell instanceof HTMLElement) || positioned.has(cell)) continue;
     positioned.add(cell);
@@ -75,7 +75,7 @@ function freezeColumn(
     header.classList.toggle('jss_freezed', frozen);
     position(header, { position: header.style.position, left: offset, zIndex: frozen ? '3' : '' });
   }
-  for (const cell of columnCells(engine, x, positioned)) {
+  for (const cell of columnCells(engine.records ?? [], x, positioned)) {
     cell.classList.toggle('jss_freezed', frozen);
     position(cell, { position: frozen ? 'sticky' : '', left: offset, zIndex: frozen ? '1' : '' });
   }
@@ -113,17 +113,28 @@ function position(
   if (element.style.zIndex !== zIndex) element.style.zIndex = zIndex;
 }
 
-/** Restore sticky offsets after CE's scroll handler writes relative-scroll offsets over them. */
-export function syncFrozenColumnOffsets(engine: JSpreadsheetWorksheetInstance) {
+function mountedRecords(engine: JSpreadsheetWorksheetInstance, entering?: readonly number[]) {
+  const records = engine.records ?? [];
+  if (entering) return entering.map((row) => records[row]);
+  const attached = gridRowWindow(engine);
+  return attached ? records.slice(attached.start, attached.end) : records;
+}
+
+/** Repair visible offsets after CE scrolls, on resize previews, or as rows come into view. */
+export function syncFrozenColumnOffsets(
+  engine: JSpreadsheetWorksheetInstance,
+  entering?: readonly number[],
+) {
   const count = engine.options?.freezeColumns ?? 0;
   if (!count) return;
   let left = cornerOf(engine)?.getBoundingClientRect().width ?? DEFAULT_ROW_HEADER_WIDTH;
+  const records = mountedRecords(engine, entering);
   const positioned = new Set<HTMLElement>();
   for (let x = 0; x < count; x++) {
     const offset = `${left}px`,
       header = engine.headers?.[x];
     if (header && header.style.left !== offset) header.style.left = offset;
-    for (const cell of columnCells(engine, x, positioned))
+    for (const cell of columnCells(records, x, positioned))
       if (cell.style.left !== offset) cell.style.left = offset;
     left += columnWidth(engine, x);
   }

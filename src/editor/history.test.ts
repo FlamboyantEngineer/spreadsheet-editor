@@ -42,7 +42,14 @@ describe('SE-9: undo keeps operations, not workbook copies', () => {
       ['add sheet', () => e().sheetCommand('add')],
       ['reorder', () => e().sheetCommand('right', 'sheet-1')],
       ['insert row', select(0, 0), () => e().structure('row', 'insert')],
-      ['replace', () => e().setQuery('text'), () => e().replace(true, 'words')],
+      [
+        'replace',
+        () => {
+          e().setShowFind(true);
+          e().setQuery('text');
+        },
+        () => e().replace(true, 'words'),
+      ],
     ];
     const states: Workbook[] = [e().workbook];
     for (const [, ...actions] of steps) {

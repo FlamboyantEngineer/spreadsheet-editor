@@ -358,7 +358,9 @@ describe('SE-XLSX-4.1: locale, exact decimals and explicit metadata losses', () 
       formats.map((format, index) => [String.fromCharCode(65 + index) + '1', format]),
     );
     const output = await exportXlsxWithReport(workbook, calculateWorkbook(workbook));
-    expect(output.report.warnings).toEqual([]);
+    expect(output.report.warnings).toEqual([
+      expect.objectContaining({ code: 'numeric-text', disposition: 'stored-value' }),
+    ]);
     const imported = await convertXlsx(output.bytes);
     expect(imported.workbook.worksheets[0].data[0]).toEqual([
       "'9007199254740993",

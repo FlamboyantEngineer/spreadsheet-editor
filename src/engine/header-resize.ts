@@ -29,7 +29,7 @@ interface Options {
   canResize: boolean;
   zoom?: number;
   onChange(worksheet: Worksheet): void;
-  onGeometryChange(): void;
+  onGeometryChange(axis: Drag['axis']): void;
   subscribeBlur?: (callback: () => void) => () => void;
 }
 interface Drag {
@@ -162,16 +162,18 @@ function previewDrag(current: Drag, event: PointerEvent<HTMLDivElement>) {
 
 /** The worksheet with the dragged lines at their new sizes. */
 function resizedWorksheet(worksheet: Worksheet, current: Drag): Worksheet {
-  const next = structuredClone(worksheet);
-  for (const original of current.originals) {
-    const size = clampedSize(original.size + current.delta);
-    if (current.axis === 'column') {
-      next.columns = [...(next.columns ?? [])];
-      while (next.columns.length <= original.index) next.columns.push({});
-      next.columns[original.index] = { ...next.columns[original.index], width: size };
-    } else (next.rows ??= {})[String(original.index)] = { height: size };
+  if (current.axis === 'column') {
+    const columns = [...(worksheet.columns ?? [])];
+    for (const { index, size } of current.originals) {
+      while (columns.length <= index) columns.push({});
+      columns[index] = { ...columns[index], width: clampedSize(size + current.delta) };
+    }
+    return { ...worksheet, columns };
   }
-  return next;
+  const rows = { ...worksheet.rows };
+  for (const { index, size } of current.originals)
+    rows[index] = { height: clampedSize(size + current.delta) };
+  return { ...worksheet, rows };
 }
 
 /** Ends drags when the window blurs, resizing is turned off, the zoom changes or it unmounts. */
@@ -217,7 +219,7 @@ export function useHeaderResize(options: Options) {
     drag.current = null;
     releasePointer(latest.current.root.current, current.pointerId);
     if (notify) setActive(false);
-    latest.current.onGeometryChange();
+    latest.current.onGeometryChange(current.axis);
   }
   useDragCancellation(options, { active, drag }, cancel);
   function start(event: PointerEvent<HTMLDivElement>): boolean {
@@ -240,7 +242,7 @@ export function useHeaderResize(options: Options) {
       return true;
     }
     previewDrag(current, event);
-    latest.current.onGeometryChange();
+    latest.current.onGeometryChange(current.axis);
     return true;
   }
   function finish(event: PointerEvent<HTMLDivElement>): boolean {
@@ -253,7 +255,7 @@ export function useHeaderResize(options: Options) {
     drag.current = null;
     setActive(false);
     releasePointer(latest.current.root.current, current.pointerId);
-    latest.current.onGeometryChange();
+    latest.current.onGeometryChange(current.axis);
     const options = latest.current;
     if (unchanged || !options.canResize || options.getWorksheet() !== current.worksheet)
       return true;

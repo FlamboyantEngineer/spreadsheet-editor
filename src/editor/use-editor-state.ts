@@ -167,8 +167,8 @@ export function useEditorLive(
   { panel, panelOpen }: { panel: string | null; panelOpen: boolean },
 ) {
   const listeners = useRef(new Set<() => void>());
-  const alive = useRef(true);
-  useEffect(() => {
+  const alive = useRef(false);
+  useLayoutEffect(() => {
     alive.current = true;
     const subscribed = listeners.current;
     return () => {

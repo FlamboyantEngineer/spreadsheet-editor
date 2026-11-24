@@ -51,13 +51,10 @@ function refusal(node: FormulaNode): [string, string] | undefined {
   if (node.kind === 'quantity' || (node.kind === 'call' && ['EXPM1', 'LOG1P'].includes(node.name)))
     return [
       'formula-stored-value',
-      'Excel has no equivalent for this quantity or numerical extension; the stored result is exported.',
+      'Excel has no equivalent for this quantity or numerical extension.',
     ];
   if (node.kind === 'literal' && typeof node.value === 'string' && node.value.length > 255)
-    return [
-      'formula-string-limit',
-      'A formula string exceeds Excel’s 255-character limit; the stored result is exported.',
-    ];
+    return ['formula-string-limit', 'A formula string exceeds Excel’s 255-character limit.'];
   return undefined;
 }
 
@@ -75,7 +72,7 @@ function capturedOperand(inlining: Inlining, node: FormulaNode): CellValue | und
     return unavailable(
       inlining,
       'captured-operand',
-      'A matching representable captured operand is unavailable; the stored result is exported.',
+      'A matching representable captured operand is unavailable.',
     );
   return stored.value;
 }
@@ -92,8 +89,7 @@ function representable(inlining: Inlining, node: FormulaNode, captured: CellValu
       return unavailable(
         inlining,
         'captured-text',
-        (error instanceof Error ? error.message : 'Captured text cannot be represented.') +
-          ' The stored result is exported.',
+        error instanceof Error ? error.message : 'Captured text cannot be represented.',
       );
     }
   }
@@ -104,7 +100,7 @@ function representable(inlining: Inlining, node: FormulaNode, captured: CellValu
     return unavailable(
       inlining,
       'captured-operand',
-      'Excel cannot represent the captured operand; the stored result is exported.',
+      'Excel cannot represent the captured operand.',
     );
   return { value };
 }
@@ -147,10 +143,7 @@ export function inlineHostOperands(node: FormulaNode, request: InlineRequest): s
   for (const replacement of inlining.replacements.sort((a, b) => b.start - a.start))
     output = output.slice(0, replacement.start) + replacement.text + output.slice(replacement.end);
   if (output.length > 8192) {
-    request.loss(
-      'formula-length',
-      'The expanded formula exceeds Excel’s 8192-character limit; the stored result is exported.',
-    );
+    request.loss('formula-length', 'The expanded formula exceeds Excel’s 8192-character limit.');
     return null;
   }
   return output;

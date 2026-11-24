@@ -1,6 +1,6 @@
 import type { AuthoredCellState } from './operations.js';
 import { requireDefined } from './require-defined.js';
-import { parseSpreadsheetAddress } from './spreadsheet-addressing.js';
+import { formatSpreadsheetAddress, parseSpreadsheetAddress } from './spreadsheet-addressing.js';
 import type { Worksheet } from './workbook.js';
 
 const metadataFields = [
@@ -9,6 +9,15 @@ const metadataFields = [
   ['inputValues', 'inputValue'],
   ['cellProvenance', 'provenance'],
 ] as const;
+
+/** A cell has authored calculation input if it has raw content or a canonical numeric value. */
+export function hasAuthoredInput(sheet: Worksheet, x: number, y: number): boolean {
+  const input = sheet.data[y]?.[x];
+  return (
+    (input != null && input !== '') ||
+    sheet.inputValues?.[formatSpreadsheetAddress(x, y)] !== undefined
+  );
+}
 
 /** Writes authored state without allocating data for cells that carry only presentation. */
 export function writeAuthoredCellState(

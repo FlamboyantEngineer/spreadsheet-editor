@@ -14,6 +14,7 @@ import {
 } from './grid-geometry.js';
 import { measureGridSelection } from './grid-selection.js';
 import type { JSpreadsheetWorksheetInstance } from './jspreadsheet-types.js';
+import { gridRowWindow, revealGridRows, windowGridRows } from './row-window.js';
 import { syncWorksheetPresentation } from './worksheet-presentation.js';
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -67,6 +68,7 @@ function grid() {
   );
   const engine = {
     table,
+    tbody: table.tBodies[0],
     content: viewport,
     cols,
     rows,
@@ -79,7 +81,7 @@ function grid() {
     ['1', '2', '3'],
     ['4', '5', '6'],
   ]).worksheets[0];
-  return { engine, sheet, viewport, table, records, cols };
+  return { engine, sheet, viewport, table, rows, records, cols };
 }
 afterEach(() => {
   document.body.innerHTML = '';
@@ -156,6 +158,44 @@ describe('SE-CHROME-5.1: grid-only zoom keeps authored geometry and pixel stroke
     expect(requireDefined(engine.headers)[0].style.left).toBe('50px');
     expect(records[0][0].element.style.left).toBe('50px');
     expect(records[0][1].element.getAttribute('style')).toBe(plain);
+  });
+
+  it('SE-PERF-1.1 repairs frozen offsets in the attached window and its entering rows', () => {
+    const { engine, cols, rows, records, table } = grid();
+    const body = table.tBodies[0];
+    for (let y = rows.length; y < 400; y++) {
+      const element = body.insertRow();
+      element.insertCell().textContent = String(y + 1);
+      rows.push({ element });
+      records.push([{ element: element.insertCell() }, { element: element.insertCell() }]);
+    }
+    const readRow = vi.fn();
+    Object.defineProperty(engine, 'records', {
+      value: new Proxy(records, {
+        get(target, key, receiver) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) readRow();
+          return Reflect.get(target, key, receiver);
+        },
+      }),
+    });
+    requireDefined(engine.options).freezeColumns = 2;
+    const stop = windowGridRows(engine, (entering) => syncFrozenColumnOffsets(engine, entering));
+    syncFrozenColumns(engine);
+    cols[0].colElement.style.width = '150.75px';
+    const detached = records[399][1].element;
+    expect(detached.isConnected).toBe(false);
+    readRow.mockClear();
+
+    syncFrozenColumnOffsets(engine);
+    const { start, end } = requireDefined(gridRowWindow(engine));
+    expect(readRow).toHaveBeenCalledTimes(end - start);
+    expect(records[0][1].element.style.left).toBe('200.75px');
+    expect(detached.style.left).toBe('150px');
+
+    revealGridRows(engine, 399);
+    expect(detached.isConnected).toBe(true);
+    expect(detached.style.left).toBe('200.75px');
+    stop();
   });
 });
 

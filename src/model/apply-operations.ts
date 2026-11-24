@@ -4,6 +4,7 @@ import { applyWorkbookOperations } from './operation-apply.js';
 import { equal, WorkbookOperationConflict } from './operation-delta.js';
 import type { WorkbookChangeContext, WorkbookOperation } from './operations.js';
 import { requireDefined } from './require-defined.js';
+import { checkSheetDeletions } from './sheet-delete-conflicts.js';
 import { assertWorkbook, copyWorkbook, type Workbook } from './workbook.js';
 
 export { applyWorkbookOperations } from './operation-apply.js';
@@ -83,6 +84,7 @@ export function applyWorkbookTransaction(
   )
     throw new WorkbookOperationConflict('referential-rename-baseline');
   checkDeletedLines(current, transaction);
+  checkSheetDeletions(current, transaction);
   checkReferences(current, transaction);
   checkStructure(current, transaction);
   return applyWorkbookOperations(current, transaction.operations);

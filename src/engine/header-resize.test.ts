@@ -75,7 +75,7 @@ afterEach(() => {
 
 describe('SE-CHROME-5.1: resize commits logical geometry once at grid zoom', () => {
   it.each([50, 75, 100, 125, 150])('compensates a fractional column resize at %s%%', (zoom) => {
-    const { result, event, col, onChange, sheet } = setup(zoom);
+    const { result, event, col, onChange, onGeometryChange, sheet } = setup(zoom);
     act(() => {
       expect(result.current.start(event())).toBe(true);
     });
@@ -83,18 +83,21 @@ describe('SE-CHROME-5.1: resize commits logical geometry once at grid zoom', () 
       result.current.move(event(37.5));
     });
     expect(Number.parseFloat(col.style.width)).toBeCloseTo((150.5 * zoom) / 100 + 37.5);
+    expect(onGeometryChange).toHaveBeenLastCalledWith('column');
     expect(onChange).not.toHaveBeenCalled();
     act(() => {
       result.current.finish(event(37.5));
     });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0].columns[0].width).toBeCloseTo(150.5 + 37.5 / (zoom / 100));
+    expect(onChange.mock.calls[0][0].data).toBe(sheet.data);
+    expect(onChange.mock.calls[0][0].rows).toBe(sheet.rows);
     expect(sheet.columns?.[0].width).toBe(150.5);
     expect(col.style.width).toBe(`${(150.5 * zoom) / 100}px`);
   });
 
   it('scales row previews and restores exact presentation on cancellation', () => {
-    const { result, event, row, onChange } = setup(125, 'row');
+    const { result, event, row, onChange, onGeometryChange } = setup(125, 'row');
     const original = { css: row.style.height, attribute: row.getAttribute('height') };
     act(() => {
       result.current.start(event());
@@ -103,12 +106,27 @@ describe('SE-CHROME-5.1: resize commits logical geometry once at grid zoom', () 
       result.current.move(event(31.25));
     });
     expect(row.style.height).toBe('69.375px');
+    expect(onGeometryChange).toHaveBeenLastCalledWith('row');
     act(() => {
       result.current.cancel();
     });
     expect(row.style.height).toBe(original.css);
     expect(row.getAttribute('height')).toBe(original.attribute);
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('SE-PERF-1.1 preserves data and column identity when a row measure is committed', () => {
+    const { result, event, onChange, sheet } = setup(125, 'row');
+    act(() => {
+      result.current.start(event());
+      result.current.move(event(31.25));
+      result.current.finish(event(31.25));
+    });
+    const [[next]] = onChange.mock.calls;
+    expect(next.rows[0].height).toBe(55.5);
+    expect(sheet.rows?.[0].height).toBe(30.5);
+    expect(next.data).toBe(sheet.data);
+    expect(next.columns).toBe(sheet.columns);
   });
 
   it('cancels a live preview when zoom or edit permission changes', () => {

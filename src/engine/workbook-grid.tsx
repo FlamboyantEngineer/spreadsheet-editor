@@ -23,7 +23,7 @@ import {
   engineSelected,
 } from './grid-engine-events.js';
 import { useReferenceFrames } from './grid-frames.js';
-import { syncFrozenColumns } from './grid-geometry.js';
+import { syncFrozenColumnOffsets } from './grid-geometry.js';
 import { useSurfaceHandlers } from './grid-surface.js';
 import { useWorksheetSync } from './grid-sync.js';
 import { useHeaderResize } from './header-resize.js';
@@ -80,9 +80,9 @@ function useGridResize(context: GridContext, props: WorkbookGridProps) {
     canResize: !props.readOnly && !props.reviewMode,
     zoom: props.zoom,
     onChange: (worksheet) => props.onChange(worksheet, { kind: 'layout' }),
-    onGeometryChange: () => {
-      const sheet = context.worksheet();
-      if (sheet?.options?.freezeColumns) syncFrozenColumns(sheet);
+    onGeometryChange: (axis) => {
+      const sheet = axis === 'column' && context.worksheet();
+      if (sheet) syncFrozenColumnOffsets(sheet);
       context.scheduleReferences();
     },
     subscribeBlur: props.subscribeWindowBlur,

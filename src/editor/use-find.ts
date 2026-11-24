@@ -26,43 +26,57 @@ interface FindSources {
   display: DisplayOptions | undefined;
 }
 
+type SheetFindSources = Omit<FindSources, 'result'> & {
+  values: CalculationResult['worksheets'][number]['values'] | undefined;
+};
+
+const noMatches: FindMatch[] = [];
+
 /** The text the grid shows for a cell, or nothing while its value is not ready. */
-function shownText(sheet: Worksheet, { x, y }: { x: number; y: number }, sources: FindSources) {
-  const { result, readyCells, presentation, display } = sources;
+function shownText(
+  sheet: Worksheet,
+  { x, y }: { x: number; y: number },
+  sources: SheetFindSources,
+) {
+  const { values, readyCells, presentation, display } = sources;
   const key = calculationCellKey(sheet.id, x, y);
   if (!readyCells.has(key)) return '';
-  const rawResult =
-    result?.worksheets.find((entry) => entry.id === sheet.id)?.values[y]?.[x] ?? null;
   const cellPresentation = presentation?.cells[key];
   if (cellPresentation?.text !== undefined) return cellPresentation.text;
   const unit = cellPresentation?.defaultUnit;
   return formatWorksheetCell(
-    rawResult,
+    values?.[y]?.[x] ?? null,
     sheet.formats?.[formatSpreadsheetAddress(x, y)] ?? (unit ? { kind: 'unit', unit } : undefined),
     display,
   );
 }
 
-function findMatches(workbook: Workbook, query: string, sources: FindSources): FindMatch[] {
-  if (!query) return [];
+function findMatches(
+  workbook: Workbook,
+  query: string,
+  { result, ...sources }: FindSources,
+): FindMatch[] {
   const needle = query.toLowerCase();
+  const valuesBySheet = new Map(result?.worksheets.map((sheet) => [sheet.id, sheet.values]));
   const matches: FindMatch[] = [];
-  for (const sheet of workbook.worksheets)
+  for (const sheet of workbook.worksheets) {
+    const sheetSources = { ...sources, values: valuesBySheet.get(sheet.id) };
     sheet.data.forEach((row, y) =>
       row.forEach((value, x) => {
         const authored = String(value ?? '')
           .toLowerCase()
           .includes(needle);
-        if (authored || shownText(sheet, { x, y }, sources).toLowerCase().includes(needle))
+        if (authored || shownText(sheet, { x, y }, sheetSources).toLowerCase().includes(needle))
           matches.push({ sheetId: sheet.id, x, y, authored });
       }),
     );
+  }
   return matches;
 }
 
 /** Find state, and the cells whose authored input or shown value contains the query. */
-export function useFind(workbook: Workbook, sources: FindSources) {
-  const [showFind, setShowFind] = useState(false),
+export function useFind(workbook: Workbook, sources: FindSources, enabled: boolean) {
+  const [requested, setShowFind] = useState(false),
     [query, setQueryState] = useState(''),
     [replacement, setReplacement] = useState('');
   const [activeMatch, setActiveMatch] = useState<string | null>(null);
@@ -70,17 +84,24 @@ export function useFind(workbook: Workbook, sources: FindSources) {
     setQueryState(value);
     setActiveMatch(null);
   }
+  const showFind = requested && enabled;
   const { result, readyCells, presentation, display } = sources;
   const matches = useMemo(
-    () => findMatches(workbook, query, { result, readyCells, presentation, display }),
-    [workbook, query, result, readyCells, presentation, display],
+    () =>
+      showFind && query
+        ? findMatches(workbook, query, { result, readyCells, presentation, display })
+        : noMatches,
+    [showFind, workbook, query, result, readyCells, presentation, display],
   );
-  const matchIndex =
-    activeMatch === null
-      ? -1
-      : matches.findIndex(
-          (match) => calculationCellKey(match.sheetId, match.x, match.y) === activeMatch,
-        );
+  const matchIndex = useMemo(
+    () =>
+      activeMatch === null
+        ? -1
+        : matches.findIndex(
+            (match) => calculationCellKey(match.sheetId, match.x, match.y) === activeMatch,
+          ),
+    [activeMatch, matches],
+  );
   return {
     showFind,
     setShowFind,
@@ -101,24 +122,30 @@ export interface Replacement {
   all: boolean;
 }
 
-/** Writes `text` over the query in each authored match, all in one copy of `base` (SE-8). */
+/** Replaces changed authored text in one copy of `base` (SE-8). */
 export function replaceMatches(
   base: Workbook,
   targets: readonly FindMatch[],
   { query, text, all }: Replacement,
-): Workbook {
-  const next = copyWorkbook(base),
-    pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
-  for (const match of targets) {
-    const target = requireDefined(next.worksheets.find((sheet) => sheet.id === match.sheetId));
-    target.data[match.y][match.x] = String(target.data[match.y][match.x] ?? '').replace(
-      pattern,
-      () => text,
-    );
-    if (target.inputValues) delete target.inputValues[formatSpreadsheetAddress(match.x, match.y)];
+): { workbook: Workbook; count: number } | null {
+  const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
+  const sources = new Map(base.worksheets.map((sheet) => [sheet.id, sheet]));
+  const replacements = targets.flatMap(({ sheetId, x, y }) => {
+    const sheet = requireDefined(sources.get(sheetId));
+    const before = String(sheet.data[y]?.[x] ?? '');
+    const value = before.replace(pattern, () => text);
+    return value === before ? [] : [{ sheetId, x, y, value }];
+  });
+  if (!replacements.length) return null;
+  const workbook = copyWorkbook(base);
+  const destinations = new Map(workbook.worksheets.map((sheet) => [sheet.id, sheet]));
+  for (const { sheetId, x, y, value } of replacements) {
+    const target = requireDefined(destinations.get(sheetId));
+    target.data[y][x] = value;
+    if (target.inputValues) delete target.inputValues[formatSpreadsheetAddress(x, y)];
   }
-  assertWorkbook(next);
-  return next;
+  assertWorkbook(workbook);
+  return { workbook, count: replacements.length };
 }
 
 /** The cells `targets` write, by worksheet id. */

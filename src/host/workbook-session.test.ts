@@ -54,6 +54,38 @@ describe('SE-SESSION-1.1: opening a stored workbook', () => {
 });
 
 describe('SE-SESSION-1.2: causal save coverage', () => {
+  it('waits for Take Stored before saving and never re-saves the discarded data', async () => {
+    const memory = host();
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const load = vi.fn<WorkbookStoreAdapter['load']>(async (id, signal) => {
+      const stored = await memory.workbooks.load(id, signal);
+      if (load.mock.calls.length > 1) await pending;
+      return stored;
+    });
+    const save = vi.fn(memory.workbooks.save);
+    const session = createWorkbookSession({
+      workbooks: { load, save },
+      workbookId: 'book',
+      autosaveDelay: Infinity,
+    });
+    await session.ready;
+    change(session, 'discarded');
+    const choosing = session.takeStored();
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    const saving = session.save();
+    await Promise.resolve();
+    expect(save).not.toHaveBeenCalled();
+    finish();
+    await Promise.all([choosing, saving]);
+    expect(session.status()).toMatchObject({ phase: 'saved', dirty: false });
+    expect(session.workbook()?.worksheets[0].data).toEqual([['0']]);
+    expect(save).not.toHaveBeenCalled();
+    session.close();
+  });
+
   it('keeps an edit made while a save is in flight dirty after that save answers', async () => {
     const memory = host();
     const { store, held } = heldStore(memory.workbooks);

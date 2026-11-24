@@ -1,5 +1,6 @@
 import { invertCellShape } from './operation-cell-shape.js';
 import type { WorkbookOperation } from './operations.js';
+import { moveReviewReferences } from './review-reference-move.js';
 
 type CellsOperation = Extract<WorkbookOperation, { kind: 'cells' }>;
 type LinesOperation = Extract<WorkbookOperation, { kind: 'lines' }>;
@@ -34,11 +35,14 @@ function invertCells(
     .filter(
       (change) => !axes?.row.has(change.rowId ?? '') && !axes?.column.has(change.columnId ?? ''),
     )
-    .map((change) => ({
+    .map(({ inverseBaselineValue, ...change }) => ({
       ...change,
       address: change.beforeAddress ?? change.address,
       beforeAddress: change.address,
-      before: structuredClone(change.after),
+      before: {
+        ...structuredClone(change.after),
+        value: inverseBaselineValue ?? change.after.value,
+      },
       after: structuredClone(change.before),
     }));
   const shape = operation.shape && invertCellShape(operation.shape);
@@ -99,6 +103,12 @@ function invertOther(operation: WorkbookOperation): WorkbookOperation {
       beforeOrder: [...operation.afterOrder],
       afterOrder: [...operation.beforeOrder],
     };
+  if (operation.kind === 'annotations') {
+    const before = structuredClone(operation.after);
+    if (operation.inverseReferenceMove)
+      moveReviewReferences(before, operation.inverseReferenceMove);
+    return { kind: 'annotations', before, after: structuredClone(operation.before) };
+  }
   const swapped = operation as WorkbookOperation & { before: unknown; after: unknown };
   return {
     ...swapped,

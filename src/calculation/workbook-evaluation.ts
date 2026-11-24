@@ -1,6 +1,5 @@
 import { worksheetCalculationExtent } from '../model/extent.js';
 import { type FormulaNode, parseFormula } from '../model/formula-parser.js';
-import { requireDefined } from '../model/require-defined.js';
 import {
   formatSpreadsheetAddress,
   MAX_COLUMN_INDEX,
@@ -28,6 +27,7 @@ import type {
   FormulaHost,
 } from './evaluator.js';
 import { evaluateNode } from './formula-evaluation.js';
+import { FormulaStack } from './formula-stack.js';
 import type { Arithmetic, Value } from './function-call.js';
 import { createQuantityArithmetic } from './units.js';
 import { CalculationError, type CellValue, errorValue } from './values.js';
@@ -93,7 +93,7 @@ export class WorkbookEvaluation implements CellContext {
   private readonly cellDependencies = new Map<string, Set<string>>();
   private readonly extentDependencies = new Map<string, Set<string>>();
   private readonly cache = new Map<string, CellValue>();
-  private readonly visiting = new Set<string>();
+  private readonly stack = new FormulaStack();
   private readonly parsed = new Map<string, FormulaNode>();
   private readonly cellMemos = new Map<string, WeakMap<FormulaNode, Value>>();
   private readonly extents = new Map<number, { columns: number; rows: number }>();
@@ -170,7 +170,7 @@ export class WorkbookEvaluation implements CellContext {
     const key = keyFor(target);
     // An empty cell's value is null, so presence is read with has().
     if (this.cache.has(key)) return this.cache.get(key) as CellValue;
-    if (this.visiting.has(key)) return errorValue('#CYCLE!');
+    this.stack.rejectCycle(key);
     // A value cell reads nothing, so it is calculated in place instead of suspending the reader.
     if (!isFormula(this.cellInput(target))) return this.evaluateCell(target, 0);
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- a suspension signal, not a failure: an Error would capture a stack on every suspended read
@@ -179,25 +179,38 @@ export class WorkbookEvaluation implements CellContext {
 
   /** Calculates a cell, first calculating every formula cell it reads, without recursion. */
   ensureCell(cell: CellPosition): CellValue {
-    const stack = [cell];
-    this.visiting.add(keyFor(cell));
-    while (stack.length) {
-      const current = requireDefined(stack.at(-1)),
-        key = keyFor(current);
+    const key = keyFor(cell);
+    const cached = this.cache.get(key);
+    if (cached !== undefined) return cached;
+    if (!isFormula(this.cellInput(cell))) return this.evaluateCell(cell, 0);
+    this.stack.push(cell);
+    try {
+      this.evaluateStack();
+      return this.cache.get(key) as CellValue;
+    } finally {
+      while (this.stack.current) this.releaseCell(this.stack.current.key);
+    }
+  }
+
+  private evaluateStack(): void {
+    while (this.stack.current) {
+      const current = this.stack.current;
       try {
-        if (!this.cache.has(key)) this.evaluateCell(current, 0);
-        this.visiting.delete(key);
-        this.cellMemos.delete(key);
-        this.rangeMemos.delete(key);
-        this.readBudgets.delete(key);
-        stack.pop();
+        if (!current.cyclic) this.evaluateCell(current.cell, 0);
+        if (current.cyclic) this.cache.set(current.key, errorValue('#CYCLE!'));
+        this.releaseCell(current.key);
       } catch (error) {
         if (!(error instanceof NeedCell)) throw error;
-        this.visiting.add(keyFor(error.cell));
-        stack.push(error.cell);
+        this.stack.push(error.cell);
       }
     }
-    return this.cache.get(keyFor(cell)) as CellValue;
+  }
+
+  private releaseCell(key: string): void {
+    this.cellMemos.delete(key);
+    this.rangeMemos.delete(key);
+    this.readBudgets.delete(key);
+    this.stack.pop();
   }
 
   evaluateCell(cell: CellPosition, depth: number): CellValue {
@@ -265,7 +278,7 @@ export class WorkbookEvaluation implements CellContext {
             ),
           }
         : {}),
-      scope: 'formulas',
+      ...(this.operations <= this.maxOperations ? { scope: 'formulas' as const } : {}),
     };
   }
 
