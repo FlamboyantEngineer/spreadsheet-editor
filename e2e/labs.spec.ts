@@ -111,6 +111,21 @@ test('SE-LABS-4.2: the shadcn/ui stylesheet redraws the chrome and keeps the gri
   expect(dark.cell).toEqual(reference.cell);
 });
 
+test('SE-LABS-4.2: the shadcn/ui stylesheet keeps the worksheet bar flush under the grid', async ({
+  page,
+}) => {
+  await page.goto('/minimal.html?stylesheet=shadcn&theme=light');
+  const editor = page.locator('.se-editor').first();
+  await expect(editor.locator('td[data-x="1"][data-y="1"]').first()).toBeVisible();
+  const gap = await editor.evaluate((root) => {
+    const panel = root.querySelector('.se-editor__worksheet-panel');
+    const sheets = root.querySelector('.se-editor__sheets');
+    if (!panel || !sheets) throw new Error('The worksheet panel or bar was missing');
+    return sheets.getBoundingClientRect().top - panel.getBoundingClientRect().bottom;
+  });
+  expect(gap).toBe(0);
+});
+
 test('SE-LABS-4.1: system theme follows browser changes and labs work when storage is refused', async ({
   page,
 }) => {

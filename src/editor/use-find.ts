@@ -116,7 +116,7 @@ export function useFind(workbook: Workbook, sources: FindSources, enabled: boole
 }
 
 /** What a replace writes: `text` over the first, or every, occurrence of `query`. */
-export interface Replacement {
+interface Replacement {
   query: string;
   text: string;
   all: boolean;

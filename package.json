@@ -127,7 +127,7 @@
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
-    "@flamboyantengineer/ui-components": "git+https://github.com/FlamboyantEngineer/ui-components.git#fa30b68e476605b3d79ff0ff8a2ee045b858f727",
+    "@flamboyantengineer/ui-components": "git+https://github.com/FlamboyantEngineer/ui-components.git#f93109b5df3e80816c02fed29ffc03bc0b304495",
     "@playwright/test": "^1.64.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
