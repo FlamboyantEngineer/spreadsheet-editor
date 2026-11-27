@@ -2,9 +2,8 @@
  * shadcn/ui retouch of the editor chrome. The library's sheet already redraws the controls (buttons,
  * fields, tabs, menus, popovers, dialogs); these rules draw the editor's own frame around them the
  * way shadcn/ui draws a card: a rounded hairline border on the page background, chrome rows split by
- * hairlines, the worksheet tabs as a pill list without the reference sheet's rule under it, and the
- * side panels' cards on the same radius. The grid keeps the engine's measurements: nothing here
- * sizes cells, rows or columns.
+ * hairlines, the worksheet bar flush under the grid with no rule under its pill list, and the side
+ * panels' cards on the same radius. The grid keeps the engine's measurements: nothing here sizes cells, rows or columns.
  */
 
 .se-editor {
@@ -22,16 +21,14 @@
   font-family: var(--ref-mono);
 }
 
-.se-editor__sheets {
-  background: var(--background);
+/* The worksheet bar sits right under the grid, without the gap the tabs partial puts between a
+   tab list and its panel. */
+.se-editor__worksheet-tabs {
+  gap: 0;
 }
 
 .se-editor__sheets > .ui-tabs__bar {
   border-bottom: 0;
-}
-
-.se-editor__sheet-tabs .ui-tabs__indicator {
-  display: none;
 }
 
 .se-editor__notice {
@@ -42,10 +39,6 @@
   border-radius: var(--ref-radius);
   border-color: var(--border);
   box-shadow: var(--ref-shadcn-shadow-sm);
-}
-
-.se-editor__historical {
-  background: var(--muted);
 }
 
 /* Side panels sit on shadcn/ui's sidebar color (the card color where a theme defines none), not on

@@ -8,7 +8,7 @@ export const RETRY_WINDOW = 30_000;
 
 export type Timer = ReturnType<typeof setTimeout>;
 
-export function failure(error: unknown): HostError {
+function failure(error: unknown): HostError {
   return { kind: 'unavailable', message: error instanceof Error ? error.message : undefined };
 }
 

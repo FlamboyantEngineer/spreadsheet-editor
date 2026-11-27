@@ -50,7 +50,7 @@ export function editorState({
 }
 
 /** The refs the host's handle reads between renders. */
-export interface EditorHandleRefs {
+interface EditorHandleRefs {
   alive: RefObject<boolean>;
   latestWorkbook: RefObject<Workbook>;
   draftRef: RefObject<DraftText>;
